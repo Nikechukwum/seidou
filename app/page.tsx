@@ -1,65 +1,183 @@
-import Image from "next/image";
+'use client'
+import { Footer } from "@/components/Footer";
+import { Header } from "@/components/Header";
+import InfiniteScroll from "react-infinite-scroll-component";
+import { sanityClient } from "../sanity/lib/client";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { HomeProduct } from "@/types";
+import { PRODUCT_QUERY, SEARCH_FILTERS } from "@/utils/defaults";
+import { ProductContainer } from "@/components/ProductContainer";
+import WelcomeModal from "@/components/WelcomeModal";
+import { ProductInfo } from "@/components/ProductInfo";
 
 export default function Home() {
+  const [productData, setProductData] = useState<HomeProduct>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [userLikedProducts, setUserLikedProducts] = useState();
+  const [userSavedProducts, setUserSavedProducts] = useState();
+  const lastId = useRef<string | null>('');
+  const initialLoad = useRef(true);
+  const [activeFilter, setActiveFilter] = useState<keyof typeof SEARCH_FILTERS>("All");
+  const LOCAL_DISABLE_KEY = "seidou_welcome_disabled";
+
+   async function fetchNextPage() {
+      const { current } = lastId;
+      if (current === null) {
+         setHasMore(false);
+      }
+      const tagFilter = SEARCH_FILTERS[activeFilter].length
+         ? `count(tags[@ in $selectedTags]) > 0 &&`
+         : "";
+      const data = await sanityClient.fetch(
+         `*[_type == "product" && _id > $current && 
+         ${tagFilter}
+         true
+         ] | order(_id) [0...3] {
+         defaultProductVariant,
+         _id,
+         title,
+         slug,
+         category,
+         vendor->{
+            title,
+            logo,
+            _id
+         },
+      }`,
+         {
+         current: current,
+         selectedTags: SEARCH_FILTERS[activeFilter],
+         tagFilter: tagFilter,
+         }
+      );
+      if (data.length > 0) {
+         lastId.current = data[data.length - 1]._id;
+         setProductData((prev) => [...prev, ...data]);
+      } else {
+         lastId.current = null; // Reached the end
+         setHasMore(false);
+      }
+   }
+
+   useEffect(()=>{
+    const initialFetch = async () => {
+    const results = await sanityClient.fetch(PRODUCT_QUERY);
+    setProductData(results)
+    lastId.current = results[results.length - 1]._id
+   }
+    initialFetch()
+   }, [])
+
+   useEffect(() => {
+    async function filteredNewFetch() {
+      const tagFilter = SEARCH_FILTERS[activeFilter].length
+        ? `count(tags[@ in $selectedTags]) > 0 &&`
+        : "";
+      setHasMore(true);
+      const data = await sanityClient.fetch(
+        `*[_type == "product" &&
+            ${tagFilter}
+            true
+            ] | order(_id) [0...3] {
+          defaultProductVariant,
+          _id,
+          title,
+          slug,
+          category,
+          vendor->{
+            title,
+            logo,
+            _id
+          },
+          }`,
+        {
+          selectedTags: SEARCH_FILTERS[activeFilter],
+          tagFilter: tagFilter,
+        }
+      );
+      if (data.length > 0) {
+        lastId.current = data[data.length - 1]._id;
+        setProductData(data);
+      } else {
+        setProductData([]);
+        setHasMore(false);
+      }
+      window.scrollTo(0,0)
+    }
+
+    if (!initialLoad.current) {
+      filteredNewFetch();
+    } else {
+      initialLoad.current = false;
+    }
+  }, [activeFilter]);
+
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    const permanentlyDisabled = localStorage.getItem(LOCAL_DISABLE_KEY) === "true";
+
+    if (permanentlyDisabled) {
+      setShowWelcome(false); // user opted out permanently
+      return;
+    }
+
+    setShowWelcome(true);
+    }, []);
+
+    const handleWelcomeClose = (opts?: { permanentlyDisabled?: boolean }) => {
+      if (opts?.permanentlyDisabled) {
+        localStorage.setItem(LOCAL_DISABLE_KEY, "true");
+      }
+      setShowWelcome(false);
+    };
+
+    const handleWelcomeStart = () => {
+      // whatever you want to do when user hits Start
+      // e.g., open an inline player, navigate, or just close
+      setShowWelcome(false);
+    };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="min-h-dvh">
+      <Header activeFilter={activeFilter} setActiveFilter={setActiveFilter}/>
+      <WelcomeModal
+        isOpen={showWelcome}
+        onClose={handleWelcomeClose}
+        onStart={handleWelcomeStart}
+      />
+      <InfiniteScroll
+        dataLength={productData.length}
+        next={fetchNextPage}
+        hasMore={hasMore}
+        loader={<span className="material-symbols-outline">progress_activity</span>}
+        endMessage={
+          <p className="text-center my-7">
+            <b>That's all for now</b>
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        }
+        scrollableTarget="parent"
+        className="flex flex-col items-center pt-2 pb-20"
+      >
+        {productData.map((product) => {
+          if (product.vendor && product.vendor.logo)
+            return (
+              <ProductContainer
+                productDetails={product}
+                // setLoading={setLoading}
+                // userLikedProducts={userLikedProducts}
+                // userSavedProducts={userSavedProducts}
+                key={product._id}
+              />
+            );
+        })}
+      </InfiniteScroll>
+
+      <Suspense>
+        <ProductInfo />
+      </Suspense>
+
+      <Footer />
     </div>
   );
 }
