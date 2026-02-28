@@ -103,12 +103,12 @@ export const ProductInfo = ({}: Props) => {
 
                                 {/* Primary Actions */}
                                 <div className="flex gap-4 mt-8">
-                                <button className="flex-1 py-3 border-[1.5px] border-black rounded-lg font-bold text-center hover:bg-gray-50 transition">
-                                    Add to Bag
-                                </button>
-                                <button className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:opacity-90 transition">
-                                    Play
-                                </button>
+                                    <button className="flex-1 py-3 border-[1.5px] border-black rounded-lg font-bold text-center hover:opacity-90 transition">
+                                        Share
+                                    </button>
+                                    <button className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:bg-gray-50 transition">
+                                        Add to Bag
+                                    </button>
                                 </div>
 
                                 {/* Accordion Section */}

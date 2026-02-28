@@ -17,7 +17,7 @@ export const ProductContainer = ({productDetails}: Props) => {
     const [likes, setLikes] = useState({ likeCount: 5, likeState: false });
     const router = useRouter();
     return (
-        <div className="bg-white mb-6 w-full mx-auto overflow-hidden first:mt-25 rounded-b-2xl shadow-[0px_4px_4px_#0000000D]">
+        <div className="bg-white mb-6 w-full mx-auto overflow-hidden first:mt-25 rounded-b-2xl">
             <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex items-center">
                     <Image
