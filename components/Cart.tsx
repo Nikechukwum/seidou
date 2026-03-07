@@ -31,6 +31,15 @@ export const Cart = ({}) => {
         return total
     }
 
+    const totalQuantity = () => {
+        let total = 0
+        products.forEach((item)=>{
+            total += item.quantity
+        })
+
+        return total
+    }
+
     const handleDragEnd = (info: PanInfo) => {
         if(Math.abs(info.offset.x ) >= 220){
             setDeleteTrigger(true)
@@ -59,11 +68,12 @@ export const Cart = ({}) => {
                                 return(
                                     <motion.div key={item.id} layout className="space-y-4">
                                         <div className="relative w-full h-fit shrink-0 overflow-hidden">
-                                            <motion.div drag='x' dragConstraints={{left: 0, right: 0}} dragElastic={{right: 0, left: 0.7}} animate={{x: dragTarget===item.id && deleteTrigger? '-100%': 0, transition:{duration: 0.3}}}
+                                            <motion.div drag='x' dragConstraints={{left: 0, right: 0}} dragElastic={{right: 0, left: 1}} animate={{x: dragTarget===item.id && deleteTrigger? '-100%': 0, transition:{duration: 0.3}}}
                                             onDragStart={()=>{setDragTarget(item.id)}}
                                             onDragEnd={(e, info)=>{handleDragEnd(info)}}
                                             className="flex bg-white relative z-1">
-                                                <div className="relative h-36 w-28">
+                                                {/* Image container */}
+                                                <div className="relative h-36 w-28 shrink-0">
                                                     <Image
                                                         className="object-cover rounded-lg"
                                                         fill
@@ -74,20 +84,21 @@ export const Cart = ({}) => {
                                                     />
                                                 </div>
 
-                                                <div className="flex flex-col px-4 py-1">
-                                                    <span>{item.title}</span>
+                                                <div className="flex flex-col grow pl-4 pr-6 py-1">
+                                                    <span className="line-clamp-3">{item.title}</span>
                                                     <span className="font-bold">{formatCurrency(item.price)}</span>
                                                 </div>
 
-                                                <div className="absolute right-2 bottom-2 flex w-20 cursor-pointer justify-evenly text-xl text-gray-300">
-                                                    <div onClick={() => {dispatch(DecreaseQuantity(item.id))}}> - </div>
-                                                    <div className="bg-gray-100  px-3 text-base flex items-center text-black">
+                                                <div className="absolute right-2 bottom-2 flex w-fit cursor-pointer justify-evenly items-center text-xl text-gray-300">
+                                                    <div onClick={() => {dispatch(DecreaseQuantity(item.id))}} className="px-1.5"> - </div>
+                                                    <div className="bg-gray-100 px-3 text-base flex items-center text-black font-bold">
                                                         {item.quantity}
                                                     </div>
-                                                    <div onClick={() => {dispatch(IncreaseQuantity(item.id))}}> + </div>
+                                                    <div onClick={() => {dispatch(IncreaseQuantity(item.id))}} className="px-1.5"> + </div>
                                                 </div>
                                             </motion.div>
-                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 text-white -translate-y-1/2 z-0 flex justify-between items-center text-lg px-5 bg-red-400 h-[calc(100%-3px)] w-[calc(100%-3px)]">
+                                            {/* Red deletion background */}
+                                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 text-white -translate-y-1/2 z-0 flex justify-between items-center text-lg px-5 bg-rose-500 h-[calc(100%-3px)] w-[calc(100%-3px)]">
                                                 <span>Removing...</span> <Trash2 size={30} className="text-white "/>
                                             </div>
                                         </div>
@@ -98,7 +109,7 @@ export const Cart = ({}) => {
                         </div>
                         <div className="h-fit shrink-0 py-5 px-3 w-full">
                             <div className="mb-5 flex justify-between items-center text-[#7a7a7a]">
-                                <span>{products.length} item(s)</span>
+                                <span>{totalQuantity()} item(s)</span>
                                 <span>Total: <span className="font-bold text-lg text-black">{formatCurrency(totalPrice())}</span></span>
                             </div>
                             <button className="w-full bg-black p-3 rounded-md grid place-content-center text-white ">

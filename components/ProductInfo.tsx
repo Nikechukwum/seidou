@@ -193,13 +193,13 @@ export const ProductInfo = ({}: Props) => {
                                     {/* More from Vendor */}
                                     <div className="mt-12 mb-8">
                                         <h3 className="text-xl font-bold mb-6">More from this vendor</h3>
-                                        <div className="flex overflow-x-scroll snap-x snap-mandatory gap-5">
+                                        <div className="flex overflow-x-scroll snap-x snap-proximity gap-5">
                                             {productDetails?.moreFromVendor?.map((item: any, i: number) => (
                                                 <Link
                                                     href={`?productId=${item._id}`}
                                                     scroll={false}
                                                     key={i}
-                                                    onClick={()=>{setForcedLoader(true), selfRef.current?.scrollTo(0,0)}}
+                                                    onClick={()=>{setForcedLoader(true), setProductDetails(null), selfRef.current?.scrollTo(0,0)}}
                                                     className="shrink-0 w-48 snap-center"
                                                 >
                                                     <div className="w-full h-56 relative overflow-hidden rounded-xl">

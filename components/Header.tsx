@@ -6,6 +6,7 @@ import { Handbag, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SetStateAction, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { Badge } from "./Badge";
 
 type Props = {
     activeFilter: keyof typeof SEARCH_FILTERS;
@@ -17,6 +18,19 @@ export const Header = ({activeFilter, setActiveFilter}: Props) => {
     const [fullHeader, setFullHeader] = useState(true);
     const lastScrollValue = useRef<number>(0);
     const dispatch = useDispatch()
+
+    const cartItems = useSelector(
+        (state: RootState) => state.cart.products
+    );
+
+    const totalQuantity = () => {
+        let total = 0
+        cartItems.forEach((item)=>{
+            total += item.quantity
+        })
+
+        return total
+    }
 
     const handleTagSelection = (filter: keyof typeof SEARCH_FILTERS) => {
         const feed: HTMLElement | null = document.getElementById("parent");
@@ -67,14 +81,9 @@ export const Header = ({activeFilter, setActiveFilter}: Props) => {
                     }}
                     className="w-7.5 text-black"
                     >
-                        <Handbag className="w-6.5 h-6.5" strokeWidth={2.2}/>
-                    {/* <Badge
-                        badgeContent={getCartQuantity()}
-                        color="error"
-                        overlap="rectangular"
-                    >
-                        <ShoppingBagIcon />
-                    </Badge> */}
+                        <Badge showNotifier={cartItems.length > 0} quantity={totalQuantity()}>
+                            <Handbag className="w-6.5 h-6.5" strokeWidth={2.2}/>
+                        </Badge>
                     </button>
                 </div>
             </div>
