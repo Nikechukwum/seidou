@@ -68,7 +68,7 @@ export const ProductInfo = ({}: Props) => {
 
     return ( 
         <>
-            {modal && <div onClick={()=>{setModal(false)}} className="fixed h-dvh top-0 left-0 w-full z-20 bg-white/40 flex justify-center items-center">
+            {modal && <div onClick={()=>{setModal(false)}} className="fixed h-dvh top-0 left-0 w-full z-20 bg-white/40 flex justify-center items-center touch-none">
                 <div className="relative w-[95%] py-10 px-3.5 max-w-md h-fit border border-[#e8e8e8] shadow-lg bg-white rounded-lg">
                     <h2 className="text-center w-full mb-5 font-semibold text-lg">Item has been added to your Bag</h2>
                     <div className="flex justify-center gap-x-3 text-sm">
