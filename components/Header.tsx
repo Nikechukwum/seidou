@@ -1,17 +1,22 @@
 'use client'
+import { ToggleCart } from "@/redux/cartSlice";
+import { RootState } from "@/redux/store";
 import { SEARCH_FILTERS } from "@/utils/defaults";
 import { Handbag, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SetStateAction, useEffect, useRef, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
 
 type Props = {
     activeFilter: keyof typeof SEARCH_FILTERS;
     setActiveFilter: React.Dispatch<SetStateAction<keyof typeof SEARCH_FILTERS>>
 }
+
 export const Header = ({activeFilter, setActiveFilter}: Props) => {
     const router = useRouter();
     const [fullHeader, setFullHeader] = useState(true);
     const lastScrollValue = useRef<number>(0);
+    const dispatch = useDispatch()
 
     const handleTagSelection = (filter: keyof typeof SEARCH_FILTERS) => {
         const feed: HTMLElement | null = document.getElementById("parent");
@@ -27,8 +32,6 @@ export const Header = ({activeFilter, setActiveFilter}: Props) => {
         });
         setActiveFilter(filter);
     }
-
-    
 
     useEffect(() => {
         const checkScrollDirection = () => {
@@ -60,7 +63,7 @@ export const Header = ({activeFilter, setActiveFilter}: Props) => {
 
                     <button
                     onClick={() => {
-                        // setCartOpen(true);
+                        dispatch(ToggleCart(true))
                     }}
                     className="w-7.5 text-black"
                     >

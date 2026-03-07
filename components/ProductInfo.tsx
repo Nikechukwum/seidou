@@ -1,4 +1,5 @@
 'use client'
+import { AddToCart, ToggleCart } from "@/redux/cartSlice";
 import { sanityClient, urlFor } from "@/sanity/lib/client";
 import { formatCurrency } from "@/utils/helpers";
 import { ChevronDown, X } from "lucide-react";
@@ -7,6 +8,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useDispatch } from "react-redux";
 
 type Props = {
     // productId: string | null
@@ -18,12 +20,19 @@ export const ProductInfo = ({}: Props) => {
     const [productDetails, setProductDetails] = useState<any>(null)
     const [isVisible, setIsVisible] = useState(false)
     const [forcedLoader, setForcedLoader] = useState(false)
+    const [modal, setModal] = useState(false)
     const selfRef = useRef<HTMLDivElement>(null)
+    const dispatch = useDispatch()
 
     const handleClose = () => {
         setIsVisible(false);
         router.push('/', {scroll: false})
         setProductDetails(null)
+    }
+
+    const goToCheckout = () => {
+        dispatch(ToggleCart(true))
+        setModal(false)
     }
 
     useEffect(()=>{
@@ -58,152 +67,174 @@ export const ProductInfo = ({}: Props) => {
     }, [productId])
 
     return ( 
-        <AnimatePresence>
-            {isVisible && 
-                <section ref={selfRef} className="fixed max-w-md -translate-x-1/2 -translate-y-1/2 z-10 left-1/2 top-1/2 h-dvh w-full overflow-y-scroll overscroll-contain">
-                    <motion.div initial={{y: '10%', opacity: 0}} animate={{y: 0, opacity: 1, transition:{duration: 0.3}}} exit={{y: '10%', opacity: 0, transition:{duration: 0.3}}}
-                    onClick={(e)=>{e.stopPropagation()}}  className="min-h-screen w-full bg-white relative">
-                        {/* Close btn */}
-                        <button onClick={()=>{handleClose()}} className="absolute top-3 right-3 z-12 p-2 rounded-full bg-black/20 backdrop-blur-sm">
-                            <X className="text-white"/>
-                        </button>
+        <>
+            {modal && <div onClick={()=>{setModal(false)}} className="fixed h-dvh top-0 left-0 w-full z-20 bg-white/40 flex justify-center items-center">
+                <div className="relative w-[95%] py-10 px-3.5 max-w-md h-fit border border-[#e8e8e8] shadow-lg bg-white rounded-lg">
+                    <h2 className="text-center w-full mb-5 font-semibold text-lg">Item has been added to your Bag</h2>
+                    <div className="flex justify-center gap-x-3 text-sm">
+                        <button onClick={()=>{setModal(false)}} className="flex-1 py-2 px-2 bg-black rounded-md text-white">Continue Shopping</button>
+                        <button onClick={()=>{goToCheckout()}} className="flex-1 py-2 px-2 bg-black rounded-md text-white">Go to Checkout</button>
+                    </div>
+                </div>
+            </div>}
 
-                        {/* Loader */}
-                        <AnimatePresence>
-                            {(!productDetails || forcedLoader) &&
-                                <motion.div exit={{opacity: 0, transition:{duration: 0.3}}} className="absolute top-0 left-0 w-full bg-white h-screen z-10 grid place-content-center">
-                                    <div className="animate-spin rounded-full h-16 w-16 border-11 border-b-transparent border-l-transparent border-zinc-500 mx-auto" />
-                                </motion.div>
+            <AnimatePresence>
+                {isVisible && 
+                    <section ref={selfRef} className="fixed max-w-md -translate-x-1/2 -translate-y-1/2 z-10 left-1/2 top-1/2 h-dvh w-full overflow-y-scroll overscroll-none">
+                        <motion.div initial={{y: '10%', opacity: 0}} animate={{y: 0, opacity: 1, transition:{duration: 0.3}}} exit={{y: '10%', opacity: 0, transition:{duration: 0.3}}}
+                        onClick={(e)=>{e.stopPropagation()}}  className="min-h-screen w-full bg-white relative">
+                            {/* Close btn */}
+                            <button onClick={()=>{handleClose()}} className="absolute top-3 right-3 z-12 p-2 rounded-full bg-black/20 backdrop-blur-sm">
+                                <X className="text-white"/>
+                            </button>
+
+                            {/* Loader */}
+                            <AnimatePresence>
+                                {(!productDetails || forcedLoader) &&
+                                    <motion.div exit={{opacity: 0, transition:{duration: 0.3}}} className="absolute top-0 left-0 w-full bg-white h-screen z-10 grid place-content-center">
+                                        <div className="animate-spin rounded-full h-16 w-16 border-11 border-b-transparent border-l-transparent border-zinc-500 mx-auto" />
+                                    </motion.div>
+                                }
+                            </AnimatePresence>
+
+                            {productDetails && 
+                            <>
+                                {/* Product Image Header */}
+                                <div className="w-full h-80 relative overflow-hidden">
+                                    <Image
+                                        placeholder="blur"
+                                        blurDataURL="/placeholder.png"
+                                        className="object-cover"
+                                        fill
+                                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                                        alt="Product Image"
+                                        onClick={() => {
+                                            // setLoading(true);
+                                        }}
+                                        sizes="(max-width: 768px) 600px, 680px"
+                                    />
+                                </div>
+
+                                {/* Product Info */}
+                                <div className="px-5 py-6">
+                                    <h1 className="font-semibold leading-[1.4] text-lg">{productDetails.title}</h1>
+                                    <p className="font-medium mt-1">{formatCurrency(productDetails.defaultProductVariant?.price)}</p>
+
+                                    {/* Primary Actions */}
+                                    <div className="flex gap-4 mt-8">
+                                        <button className="flex-1 py-3 border-[1.5px] border-black rounded-lg font-bold text-center hover:opacity-90 transition">
+                                            Share
+                                        </button>
+                                        <button onClick={()=>{
+                                            dispatch(AddToCart({
+                                            id: productDetails._id,
+                                            title: productDetails.title,
+                                            price: productDetails.defaultProductVariant?.price,
+                                            image: urlFor(productDetails.defaultProductVariant.images[0]).url(),
+                                            quantity: 1
+                                            })),
+                                            setModal(true)
+                                        }} className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:bg-gray-50 transition">
+                                            Add to Bag
+                                        </button>
+                                    </div>
+
+                                    {/* Accordion Section */}
+                                    <div className="mt-8 border-t border-gray-100">
+                                    {["Product Description", "Size Guide", "Shipping Info"].map((item, index) => (
+                                        <details key={item} className="group border-b border-gray-100">
+                                            <summary className="flex justify-between items-center py-5 cursor-pointer">
+                                                <span className="font-bold">{item}</span>
+                                                <ChevronDown className="group-open:rotate-180 text-gray-400 duration-300"/>
+                                                {/* <svg 
+                                                    xmlns="http://www.w3.org/2000/svg" 
+                                                    className="h-5 w-5 text-gray-400 transition-transform duration-300" 
+                                                    fill="none" 
+                                                    viewBox="0 0 24 24" 
+                                                    stroke="currentColor"
+                                                >
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                </svg> */}
+                                            </summary>
+                                            
+                                            <div className="pb-5 text-gray-600 leading-relaxed text-sm duration-300">
+                                                -
+                                            </div>
+                                        </details>
+                                    ))}
+                                    </div>
+
+                                    {/* Vendor Section */}
+                                    <div className="mt-10 flex justify-between items-center">
+                                        <div>
+                                            <h2 className="text-2xl font-bold tracking-tight">{productDetails.vendor?.title ?? 'Nil'}</h2>
+                                            <p className="text-gray-400 font-medium">
+                                                {`${productDetails.vendorProductCount} Product${
+                                                productDetails.vendorProductCount == 1 ? "" : "s"
+                                                } Available`}
+                                            </p>
+                                        </div>
+                                        <div className="w-fit h-fit">
+                                            <Image
+                                                placeholder="blur"
+                                                blurDataURL="/placeholder.png"
+                                                className="vendorImage"
+                                                width={50}
+                                                height={50}
+                                                src={urlFor(productDetails.vendor.logo).url()}
+                                                alt={productDetails.title}
+                                                onClick={() => {
+                                                    router.push(`/vendor/${productDetails.vendor._id}`);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* More from Vendor */}
+                                    <div className="mt-12 mb-8">
+                                        <h3 className="text-xl font-bold mb-6">More from this vendor</h3>
+                                        <div className="flex overflow-x-scroll snap-x snap-mandatory gap-5">
+                                            {productDetails?.moreFromVendor?.map((item: any, i: number) => (
+                                                <Link
+                                                    href={`?productId=${item._id}`}
+                                                    scroll={false}
+                                                    key={i}
+                                                    onClick={()=>{setForcedLoader(true), selfRef.current?.scrollTo(0,0)}}
+                                                    className="shrink-0 w-48 snap-center"
+                                                >
+                                                    <div className="w-full h-56 relative overflow-hidden rounded-xl">
+                                                        <Image
+                                                            placeholder="blur"
+                                                            blurDataURL="/placeholder.png"
+                                                            className="object-cover"
+                                                            fill
+                                                            src={urlFor(item.defaultProductVariant.images[0]).url()}
+                                                            alt="Product Image"
+                                                            sizes="(max-width: 768px) 200px, 200px"
+                                                            quality={65}
+                                                        />
+                                                    </div>
+                                                    <div className="p-2">
+                                                        <p className="mb-1 font-bold leading-[1.3] line-clamp-2">{item.title}</p>
+                                                        <h2 className="font-medium">
+                                                            {formatCurrency(item.defaultProductVariant.price)}
+                                                        </h2>
+                                                    </div>
+                                                </Link>
+                                            ))}
+                                            <div className="shrink-0 snap-start w-full h-64 flex items-center">
+                                                That's all from this vendor <br />for now...
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
                             }
-                        </AnimatePresence>
-
-                        {productDetails && 
-                        <>
-                            {/* Product Image Header */}
-                            <div className="w-full h-80 relative overflow-hidden">
-                                <Image
-                                    placeholder="blur"
-                                    blurDataURL="/placeholder.png"
-                                    className="object-cover"
-                                    fill
-                                    src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
-                                    alt="Product Image"
-                                    onClick={() => {
-                                        // setLoading(true);
-                                        // console.log(productDetails.slug)
-                                    }}
-                                    sizes="(max-width: 768px) 600px, 680px"
-                                />
-                            </div>
-
-                            {/* Product Info */}
-                            <div className="px-5 py-6">
-                                <h1 className="font-semibold leading-[1.4] text-lg">{productDetails.title}</h1>
-                                <p className="font-medium mt-1">{formatCurrency(productDetails.defaultProductVariant?.price)}</p>
-
-                                {/* Primary Actions */}
-                                <div className="flex gap-4 mt-8">
-                                    <button className="flex-1 py-3 border-[1.5px] border-black rounded-lg font-bold text-center hover:opacity-90 transition">
-                                        Share
-                                    </button>
-                                    <button className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:bg-gray-50 transition">
-                                        Add to Bag
-                                    </button>
-                                </div>
-
-                                {/* Accordion Section */}
-                                <div className="mt-8 border-t border-gray-100">
-                                {["Product Description", "Size Guide", "Shipping Info"].map((item, index) => (
-                                    <details key={item} className="group border-b border-gray-100">
-                                        <summary className="flex justify-between items-center py-5 cursor-pointer">
-                                            <span className="font-bold">{item}</span>
-                                            <ChevronDown className="group-open:rotate-180 text-gray-400 duration-300"/>
-                                            {/* <svg 
-                                                xmlns="http://www.w3.org/2000/svg" 
-                                                className="h-5 w-5 text-gray-400 transition-transform duration-300" 
-                                                fill="none" 
-                                                viewBox="0 0 24 24" 
-                                                stroke="currentColor"
-                                            >
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                            </svg> */}
-                                        </summary>
-                                        
-                                        <div className="pb-5 text-gray-600 leading-relaxed text-sm duration-300">
-                                            -
-                                        </div>
-                                    </details>
-                                ))}
-                                </div>
-
-                                {/* Vendor Section */}
-                                <div className="mt-10 flex justify-between items-center">
-                                    <div>
-                                        <h2 className="text-2xl font-bold tracking-tight">{productDetails.vendor?.title ?? 'Nil'}</h2>
-                                        <p className="text-gray-400 font-medium">
-                                            {`${productDetails.vendorProductCount} Product${
-                                            productDetails.vendorProductCount == 1 ? "" : "s"
-                                            } Available`}
-                                        </p>
-                                    </div>
-                                    <div className="w-fit h-fit">
-                                        <Image
-                                            placeholder="blur"
-                                            blurDataURL="/placeholder.png"
-                                            className="vendorImage"
-                                            width={50}
-                                            height={50}
-                                            src={urlFor(productDetails.vendor.logo).url()}
-                                            alt={productDetails.title}
-                                            onClick={() => {
-                                                router.push(`/vendor/${productDetails.vendor._id}`);
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* More from Vendor */}
-                                <div className="mt-12 mb-8">
-                                    <h3 className="text-xl font-bold mb-6">More from this vendor</h3>
-                                    <div className="flex overflow-x-scroll snap-x snap-mandatory gap-5">
-                                        {productDetails?.moreFromVendor?.map((item: any, i: number) => (
-                                            <Link
-                                                href={`?productId=${item._id}`}
-                                                scroll={false}
-                                                key={i}
-                                                onClick={()=>{setForcedLoader(true), selfRef.current?.scrollTo(0,0)}}
-                                                className="shrink-0 w-48 snap-center"
-                                            >
-                                                <div className="w-full h-56 relative overflow-hidden rounded-xl">
-                                                    <Image
-                                                        placeholder="blur"
-                                                        blurDataURL="/placeholder.png"
-                                                        className="object-cover"
-                                                        fill
-                                                        src={urlFor(item.defaultProductVariant.images[0]).url()}
-                                                        alt="Product Image"
-                                                        sizes="(max-width: 768px) 200px, 680px"
-                                                    />
-                                                </div>
-                                                <div className="p-2">
-                                                    <p className="mb-1 font-bold leading-[1.3] line-clamp-2">{item.title}</p>
-                                                    <h2 className="font-medium">
-                                                        {formatCurrency(item.defaultProductVariant.price)}
-                                                    </h2>
-                                                </div>
-                                            </Link>
-                                        ))}
-                                        <div className="shrink-0 snap-start w-full h-64 flex items-center">
-                                            That's all from this vendor <br />for now...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                        }
-                    </motion.div>
-                </section>
-            }
-        </AnimatePresence>
+                        </motion.div>
+                    </section>
+                }
+            </AnimatePresence>
+        
+        </>
     );
 }

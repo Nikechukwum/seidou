@@ -9,6 +9,7 @@ import { PRODUCT_QUERY, SEARCH_FILTERS } from "@/utils/defaults";
 import { ProductContainer } from "@/components/ProductContainer";
 import WelcomeModal from "@/components/WelcomeModal";
 import { ProductInfo } from "@/components/ProductInfo";
+import { Cart } from "@/components/Cart";
 
 export default function Home() {
   const [productData, setProductData] = useState<HomeProduct>([]);
@@ -176,6 +177,8 @@ export default function Home() {
       <Suspense>
         <ProductInfo />
       </Suspense>
+
+      <Cart />
 
       <Footer />
     </div>
