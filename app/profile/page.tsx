@@ -1,27 +1,108 @@
 'use client'
-// import { createClient } from '@/supabase/client';
+import { createClient } from '@/lib/supabase/client';
+import { ClearUser } from '@/redux/authSlice';
+import { RootState } from '@/redux/store';
+import { 
+  UserIcon, 
+  MapPinIcon, 
+  WalletIcon, 
+  QuestionMarkCircleIcon, 
+  Cog6ToothIcon, 
+  ChevronRightIcon,
+  ArrowLeftStartOnRectangleIcon, 
+} from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  // const supabase = createClient()
+  const supabase = createClient()
+  const router = useRouter()
+  const dispatch = useDispatch()
 
-  useEffect(() => {
-    const checkUser = async () => {
-      // const { data } = await supabase.auth.getUser()
-      // setUser(data.user)
-      setLoading(false)
+  const { user } = useSelector(
+        (state: RootState) => state.auth
+    );
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut()
+    
+    if (error) {
+      console.error('Error logging out:', error.message)
+    } else {
+      dispatch(ClearUser())
+      router.push('/')
     }
-    checkUser()
-  }, [])
+  }
 
-  if (loading) return <p>Checking auth...</p>
-  if (!user) return <p>Please <Link href={'/signin'}>sign in</Link> to view this content.</p>
+  const profileItems = [
+    {
+      label: 'My Details',
+      icon: UserIcon,
+      route: '/profile/my-details',
+    },
+    {
+      label: 'Address Book',
+      icon: MapPinIcon,
+      route: '/profile/address-book',
+    },
+    {
+      label: 'Wallet',
+      icon: WalletIcon,
+      route: '/profile/wallet',
+    },
+    {
+      label: 'Support',
+      icon: QuestionMarkCircleIcon,
+      route: '/profile/support',
+    },
+    {
+      label: 'Settings',
+      icon: Cog6ToothIcon,
+      route: '/profile/settings',
+    },
+  ]
   
   return (
-    <div>Yes</div>
+    <div className="py-24">
+      {/* Header */}
+      <header className="fixed top-0 left-0 shrink-0 bg-white h-16 w-full grid place-content-center font-semibold text-xl border-b-2 border-b-[#f0f0f0]">
+          Profile
+      </header>
+
+      {/* Hero Section */}
+      <div className="mb-7 text-center">
+        <h2 className="text-2xl font-bold">Hi,</h2>
+        <p className="text-gray-400 mt-1 font-medium">{user?.firstname || user?.email}</p>
+      </div>
+
+      {/* Menu List */}
+      <div className="space-y-4">
+        {profileItems.map((item, index)=>{
+          return(
+            <Link key={index} href={item.route} className="flex items-center justify-between w-full px-6 py-1 transition-colors group">
+              <div className="flex items-center gap-4">
+                <div className="bg-[#f3f4f6] p-4 rounded-xl group-active:scale-95 transition-transform">
+                  <item.icon className="size-5.5 text-[#4b5563]"/>
+                </div>
+                <span className="font-medium">{item.label}</span>
+              </div>
+              <ChevronRightIcon className="size-5 text-[#b5b6b8]" />
+            </Link>
+          )
+        })}
+        <button onClick={()=>{handleLogout()}} className="flex items-center justify-between w-fit px-6 py-1 transition-colors group" >
+          <div className="flex items-center gap-4 text-red-500">
+            <div className="p-4 rounded-xl group-active:scale-95 transition-transform">
+              <ArrowLeftStartOnRectangleIcon className="size-6 text-red-500 rotate-180"/>
+            </div>
+            <span className="font-medium">Log out</span>
+          </div>
+          {/* <ChevronRightIcon className="size-5 text-[#4b5563]" /> */}
+        </button>
+      </div>
+    </div>
   );
 }

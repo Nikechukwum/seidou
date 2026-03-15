@@ -1,0 +1,38 @@
+import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+
+
+export interface UserState {
+    id: string,
+    firstname: string,
+    lastname: string,
+    email: string,
+    gender: 'male'|'female'|'',
+    phone: string,
+    dob: string
+}
+
+const initialState: {user: UserState | null} = {
+    user: null
+};
+
+const authSlice = createSlice({
+  name: 'auth',
+  initialState,
+  reducers: {
+    
+    UpdateUser(state, action: PayloadAction<UserState>) {
+      state.user = action.payload
+    },
+    PartialUpdateUser(state, action: PayloadAction<Partial<UserState>>) {
+      if (state.user) {
+        state.user = { ...state.user, ...action.payload };
+      }
+    },
+    ClearUser(state) {
+      state.user = null
+    },
+  },
+});
+
+export const { UpdateUser, PartialUpdateUser, ClearUser } = authSlice.actions;
+export default authSlice.reducer;

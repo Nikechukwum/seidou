@@ -1,33 +1,69 @@
 'use client'
+import { createClient } from '@/lib/supabase/client';
+import { ExclamationCircleIcon, InformationCircleIcon } from '@heroicons/react/20/solid';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-// import { signup } from './actions';
 
 export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const router = useRouter()
 
-  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
-      e.preventDefault();
-      setLoading(true);
+  const supabase = createClient()
+  
+    async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
+        e.preventDefault();
+        setLoading(true);
+  
+        const formData = new FormData(e.currentTarget);
+        const email = formData.get('email') as string;
+        const password = formData.get('password') as string;
 
-      const formData = new FormData(e.currentTarget);
-      // const result = await signup(formData);
+        if(!email || !password){
+          setError('Please fill in the form')
+          setLoading(false)
+          return
+        }
+  
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          // options: {
+          //   data: { display_name: displayName }
+          // }
+        });
 
-      // if (!result.success) {
-      //   alert(result.error)
-      // }
-      setLoading(false);
-  }
+        if (authError) return setError(authError.message);
+
+        if (authData.user) {
+          const { error: profileError } = await supabase
+            .from('users')
+            .insert({ 
+              id: authData.user.id,
+              email: authData.user.email,
+              // display_name: displayName 
+            });
+
+          if (profileError){
+             setError("User created, but profile failed: " + profileError.message)
+             return
+            };
+        }
+
+        router.push('/')
+        // alert("Check your email to verify!");
+        setLoading(false);
+    }
 
   return (
-    <div className="flex flex-col bg-white px-6 py-8">
+    <div className="flex flex-col bg-white px-6 pb-20">
       
       {/* Back Button */}
-      <button onClick={()=>{router.back()}} className="mb-5 w-fit text-gray-900 transition-opacity hover:opacity-60">
-        <span className="material-symbols-outlined text-[28px]!">arrow_back</span>
+      <button onClick={()=>{router.back()}} className="my-6 w-fit text-gray-900">
+          <ArrowLeftIcon className='size-5.5' strokeWidth={2.5} /> 
       </button>
 
       {/* Header */}
@@ -38,12 +74,15 @@ export default function SignUpPage() {
         <p className="mt-2 text-gray-500 font-medium">
           Enter your details to get started.
         </p>
+        {error && <p className='max-w-lg flex gap-x-1.5 items-center font-semibold mt-3 text-sm text-red-600 bg-red-50 ring-1 ring-red-600 rounded-full px-3 py-2'>
+          <ExclamationCircleIcon className='size-5.5 shrink-0'/> {error}
+        </p>}
       </div>
 
       {/* Form */}
       <form className="space-y-6 mb-8" onSubmit={(e) => handleSubmit(e)}>
         {/* Phone Field */}
-        <div>
+        {/* <div>
           <label className="mb-2 block text-sm font-bold text-gray-900">
             Phone number
           </label>
@@ -53,7 +92,7 @@ export default function SignUpPage() {
             placeholder="+234 9094070547"
             className="w-full rounded-full border border-gray-200 px-5 py-3 text-gray-900 placeholder:text-gray-400 outline-none transition-all focus:border-black focus:ring-1 focus:ring-black"
           />
-        </div>
+        </div> */}
 
         {/* Email Field */}
         <div>

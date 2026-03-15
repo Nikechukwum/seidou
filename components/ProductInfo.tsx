@@ -1,5 +1,6 @@
 'use client'
 import { AddToCart, ToggleCart } from "@/redux/cartSlice";
+import { RootState } from "@/redux/store";
 import { sanityClient, urlFor } from "@/sanity/lib/client";
 import { formatCurrency } from "@/utils/helpers";
 import { ChevronDown, X } from "lucide-react";
@@ -8,7 +9,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 
 type Props = {
     // productId: string | null
@@ -24,6 +25,10 @@ export const ProductInfo = ({}: Props) => {
     const selfRef = useRef<HTMLDivElement>(null)
     const dispatch = useDispatch()
 
+    const { user } = useSelector(
+        (state: RootState) => state.auth
+    );
+
     const handleClose = () => {
         setIsVisible(false);
         router.push('/', {scroll: false})
@@ -33,6 +38,21 @@ export const ProductInfo = ({}: Props) => {
     const goToCheckout = () => {
         dispatch(ToggleCart(true))
         setModal(false)
+    }
+
+    const handleAddToBag = () => {
+        if(!user){
+            alert('Sign in to add to bag')
+            return
+        }
+        dispatch(AddToCart({
+            id: productDetails._id,
+            title: productDetails.title,
+            price: productDetails.defaultProductVariant?.price,
+            image: urlFor(productDetails.defaultProductVariant.images[0]).url(),
+            quantity: 1
+        })),
+        setModal(true)
     }
 
     useEffect(()=>{
@@ -126,14 +146,7 @@ export const ProductInfo = ({}: Props) => {
                                             Share
                                         </button>
                                         <button onClick={()=>{
-                                            dispatch(AddToCart({
-                                            id: productDetails._id,
-                                            title: productDetails.title,
-                                            price: productDetails.defaultProductVariant?.price,
-                                            image: urlFor(productDetails.defaultProductVariant.images[0]).url(),
-                                            quantity: 1
-                                            })),
-                                            setModal(true)
+                                            handleAddToBag()
                                         }} className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:bg-gray-50 transition">
                                             Add to Bag
                                         </button>

@@ -194,9 +194,9 @@ export const Cart = ({}) => {
 
                             {/* Submit Button Section */}
                             <div className="px-3 w-full h-fit">
-                            <button className="w-full bg-[#0aad53] font-bold p-3 rounded-lg grid place-content-center text-white">
-                                Submit Order
-                            </button>
+                                <button className="w-full bg-[#0aad53] font-bold p-3 rounded-lg grid place-content-center text-white">
+                                    Submit Order
+                                </button>
                             </div>
                         </motion.div>
                     </section>

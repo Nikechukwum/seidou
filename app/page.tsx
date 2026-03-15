@@ -179,8 +179,6 @@ export default function Home() {
       </Suspense>
 
       <Cart />
-
-      <Footer />
     </div>
   );
 }

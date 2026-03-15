@@ -9,10 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@reduxjs/toolkit": "^2.11.2",
     "@sanity/image-url": "^2.0.3",
     "@supabase/ssr": "^0.8.0",
-    "@supabase/supabase-js": "^2.97.0",
     "lucide-react": "^0.564.0",
     "motion": "^12.34.0",
     "next": "16.1.6",

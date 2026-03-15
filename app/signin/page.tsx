@@ -1,33 +1,44 @@
 'use client'
+import { createClient } from '@/lib/supabase/client';
+import { ExclamationCircleIcon } from '@heroicons/react/20/solid';
+import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-// import { login } from './actions';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const router = useRouter()
+  const supabase = createClient()
 
   async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
       e.preventDefault();
       setLoading(true);
 
       const formData = new FormData(e.currentTarget);
-      // const result = await login(formData);
+      const email = formData.get('email') as string;
+      const password = formData.get('password') as string;
 
-      // if (!result.success) {
-      //   alert(result.error)
-      // }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) {
+        setError(error.message)
+      } else {
+        router.push('/')
+      }
       setLoading(false);
   }
 
   return (
-    <div className="flex flex-col bg-white px-6 py-8">
+    <div className="flex flex-col bg-white px-6 pb-20">
       
       {/* Back Button */}
-      <button onClick={()=>{router.back()}} className="mb-5 w-fit text-gray-900 transition-opacity hover:opacity-60">
-        <span className="material-symbols-outlined text-[28px]!">arrow_back</span>
+      <button onClick={()=>{router.back()}} className="my-6 w-fit text-gray-900">
+          <ArrowLeftIcon className='size-5.5' strokeWidth={2.5} /> 
       </button>
 
       {/* Header */}
@@ -38,12 +49,15 @@ export default function LoginPage() {
         <p className="mt-2 text-gray-500 font-medium">
           Please enter your details to sign in.
         </p>
+        {error && <p className='max-w-lg flex gap-x-1.5 items-center font-semibold mt-3 text-sm text-red-600 bg-red-50 ring-1 ring-red-600 rounded-full px-3 py-2'>
+          <ExclamationCircleIcon className='size-5.5 shrink-0'/> {error}
+        </p>}
       </div>
 
       {/* Form */}
       <form className="space-y-6 mb-8" onSubmit={(e) => handleSubmit(e)}>
         {/* Phone Field */}
-        <div>
+        {/* <div>
           <label className="mb-2 block text-sm font-bold text-gray-700">
             Phone number
           </label>
@@ -53,7 +67,7 @@ export default function LoginPage() {
             placeholder="+234 9094070547"
             className="w-full rounded-full border border-gray-200 bg-white px-5 py-3 text-gray-900 placeholder:text-gray-400 outline-none transition-all focus:border-black focus:ring-1 focus:ring-black"
           />
-        </div>
+        </div> */}
 
         {/* Email Field */}
         <div>
