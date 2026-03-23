@@ -131,7 +131,7 @@ export default function MyDetailsPage() {
 
             {/* Gender Selection */}
             <div>
-            <label className="block font-medium text-gray-400 uppercase mb-3">Gender</label>
+            <label className="block text-sm font-medium text-gray-400 uppercase mb-3">Gender</label>
             <div className="space-y-3">
                 <label className="flex items-center cursor-pointer">
                 <input 
@@ -141,7 +141,7 @@ export default function MyDetailsPage() {
                     defaultChecked={profile.gender === 'male'}
                     className="w-5 h-5 accent-black mr-3" 
                 />
-                <span className="text-sm font-medium">Male</span>
+                <span className="font-medium">Male</span>
                 </label>
                 <label className="flex items-center cursor-pointer">
                 <input 
@@ -151,7 +151,7 @@ export default function MyDetailsPage() {
                     defaultChecked={profile.gender === 'female'}
                     className="w-5 h-5 accent-black mr-3" 
                 />
-                <span className="text-sm font-medium">Female</span>
+                <span className="font-medium">Female</span>
                 </label>
             </div>
             </div>

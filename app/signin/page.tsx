@@ -4,7 +4,7 @@ import { ExclamationCircleIcon } from '@heroicons/react/20/solid';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
+  const [redirectPath, setRedirectPath] = useState<string>('/');
 
   async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
       e.preventDefault();
@@ -25,20 +26,34 @@ export default function LoginPage() {
         email,
         password,
       })
+
       if (error) {
         setError(error.message)
       } else {
-        router.push('/')
+        router.replace(redirectPath)
       }
       setLoading(false);
   }
+
+  const handleBackClick = () => {
+    let backPath = redirectPath
+    if(backPath.startsWith('/profile')){
+      backPath = '/'
+    }
+    router.push(backPath)
+  }
+
+  useEffect(() => {
+    const path = sessionStorage.getItem('redirectPath') || '/';
+    setRedirectPath(path);
+  }, []);
 
   return (
     <div className="flex flex-col bg-white px-6 pb-20">
       
       {/* Back Button */}
-      <button onClick={()=>{router.back()}} className="my-6 w-fit text-gray-900">
-          <ArrowLeftIcon className='size-5.5' strokeWidth={2.5} /> 
+      <button onClick={handleBackClick} className="my-6 w-fit text-gray-900">
+        <ArrowLeftIcon className='size-5.5' strokeWidth={2.5} /> 
       </button>
 
       {/* Header */}

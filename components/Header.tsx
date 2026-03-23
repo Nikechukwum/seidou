@@ -81,7 +81,7 @@ export const Header = ({activeFilter, setActiveFilter}: Props) => {
                     }}
                     className="w-7.5 text-black"
                     >
-                        <Badge showNotifier={cartItems.length > 0} quantity={totalQuantity()}>
+                        <Badge showNotifier={cartItems?.length > 0} quantity={totalQuantity()}>
                             <Handbag className="w-6.5 h-6.5" strokeWidth={2.2}/>
                         </Badge>
                     </button>

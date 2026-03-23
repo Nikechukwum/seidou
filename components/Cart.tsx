@@ -1,4 +1,6 @@
 'use client'
+import useAuth from "@/hooks/useAuth";
+import useCart from "@/hooks/useCart";
 import { DecreaseQuantity, IncreaseQuantity, RemoveFromCart, ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { sanityClient, urlFor } from "@/sanity/lib/client";
@@ -6,7 +8,6 @@ import { formatCurrency } from "@/utils/helpers";
 import { ArrowLeftRight, ChevronDown, ChevronLeft, ChevronRight, Info, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion, PanInfo } from "motion/react";
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -15,13 +16,15 @@ import { useDispatch, useSelector } from "react-redux";
 export const Cart = ({}) => {
     const router = useRouter()
     const selfRef = useRef<HTMLDivElement>(null)
+    const dispatch = useDispatch()
+    const { addToCart, removeFromCart, decreaseQuantity, isLoading } = useCart()
     const [dragTarget, setDragTarget] = useState('')
     const [deleteTrigger, setDeleteTrigger] = useState(false)
     const [checkoutPage, setCheckoutPage] = useState(false)
-    const dispatch = useDispatch()
     const {isOpen, products} = useSelector(
         (state: RootState) => state.cart
     );
+    // const {checkSession} = useAuth()
 
     const subTotalPrice = () => {
         let total = 0
@@ -59,6 +62,10 @@ export const Cart = ({}) => {
             }, 1000);
         }
     }
+
+    // useEffect(()=>{
+    //     checkSession(false)
+    // }, [])
 
     return ( 
         <AnimatePresence>
@@ -101,11 +108,15 @@ export const Cart = ({}) => {
                                                     </div>
     
                                                     <div className="absolute right-2 bottom-2 flex w-fit cursor-pointer justify-evenly items-center text-xl text-gray-300">
-                                                        <div onClick={() => {dispatch(DecreaseQuantity(item.id))}} className="px-1.5"> - </div>
+                                                        <button disabled={isLoading} onClick={() => {decreaseQuantity(item.id)}} className="px-1.5"> - </button>
                                                         <div className="bg-gray-100 px-3 text-base flex items-center text-black font-bold">
-                                                            {item.quantity}
+                                                            {isLoading? 
+                                                                <div className="animate-spin rounded-full h-4.5 w-4.5 border-2 border-b-transparent border-l-transparent border-black/90 my-1 mx-auto" />
+                                                                :
+                                                                item.quantity
+                                                            }
                                                         </div>
-                                                        <div onClick={() => {dispatch(IncreaseQuantity(item.id))}} className="px-1.5"> + </div>
+                                                        <button disabled={isLoading} onClick={() => {addToCart(item)}} className="px-1.5"> + </button>
                                                     </div>
                                                 </motion.div>
                                                 {/* Red deletion background */}

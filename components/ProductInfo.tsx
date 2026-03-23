@@ -1,8 +1,13 @@
 'use client'
+import useAuth from "@/hooks/useAuth";
+import useCart from "@/hooks/useCart";
+import { createClient } from "@/lib/supabase/client";
 import { AddToCart, ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { sanityClient, urlFor } from "@/sanity/lib/client";
 import { formatCurrency } from "@/utils/helpers";
+import { CheckIcon } from "@heroicons/react/24/outline";
+import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { ChevronDown, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
@@ -16,17 +21,25 @@ type Props = {
 }
 export const ProductInfo = ({}: Props) => {
     const searchParams = useSearchParams()
-    const productId = searchParams.get('productId')
     const router = useRouter()
+    const dispatch = useDispatch()
+    const { checkSession } = useAuth()
+    const { addToCart } = useCart()
+    const productId = searchParams.get('productId')
     const [productDetails, setProductDetails] = useState<any>(null)
     const [isVisible, setIsVisible] = useState(false)
     const [forcedLoader, setForcedLoader] = useState(false)
     const [modal, setModal] = useState(false)
     const selfRef = useRef<HTMLDivElement>(null)
-    const dispatch = useDispatch()
+    const supabase = createClient()
+    const [loading, setLoading] = useState(false)
 
     const { user } = useSelector(
         (state: RootState) => state.auth
+    );
+
+    const { products } = useSelector(
+        (state: RootState) => state.cart
     );
 
     const handleClose = () => {
@@ -40,19 +53,22 @@ export const ProductInfo = ({}: Props) => {
         setModal(false)
     }
 
-    const handleAddToBag = () => {
-        if(!user){
-            alert('Sign in to add to bag')
-            return
-        }
-        dispatch(AddToCart({
+    const handleAddToBag = async () => {
+        setLoading(true)
+        const userId = await checkSession()
+        if(!userId) return
+
+        const newItem = {
             id: productDetails._id,
             title: productDetails.title,
             price: productDetails.defaultProductVariant?.price,
             image: urlFor(productDetails.defaultProductVariant.images[0]).url(),
             quantity: 1
-        })),
-        setModal(true)
+        };
+
+        const success = await addToCart(newItem)
+        if(success) setModal(true)
+        setLoading(false)
     }
 
     useEffect(()=>{
@@ -89,11 +105,27 @@ export const ProductInfo = ({}: Props) => {
     return ( 
         <>
             {modal && <div onClick={()=>{setModal(false)}} className="fixed h-dvh top-0 left-0 w-full z-20 bg-white/40 flex justify-center items-center touch-none">
-                <div className="relative w-[95%] py-10 px-3.5 max-w-md h-fit border border-[#e8e8e8] shadow-lg bg-white rounded-lg">
-                    <h2 className="text-center w-full mb-5 font-semibold text-lg">Item has been added to your Bag</h2>
-                    <div className="flex justify-center gap-x-3 text-sm">
-                        <button onClick={()=>{setModal(false)}} className="flex-1 py-2 px-2 bg-black rounded-md text-white">Continue Shopping</button>
-                        <button onClick={()=>{goToCheckout()}} className="flex-1 py-2 px-2 bg-black rounded-md text-white">Go to Checkout</button>
+                <div onClick={(e)=>{e.stopPropagation()}} className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[95%] max-w-md flex flex-col items-center text-center">
+                    <div className="w-18 h-18 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
+                        <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
+                    </div>
+
+                    <h2 className="text-xl font-bold text-slate-900 mb-2">
+                        Added to Cart
+                    </h2>
+                    <p className="text-slate-500 mb-8">
+                        Your item has been added to the cart
+                    </p>
+
+                    <div className="w-full space-y-3">
+                        <button onClick={()=>{goToCheckout()}} className="w-full bg-[#0D1310] hover:bg-black text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
+                            View Cart
+                            <ArrowRightIcon className="ml-2 w-5 h-5" />
+                        </button>
+
+                        <button onClick={()=>{setModal(false)}} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 py-4 px-6 rounded-2xl font-semibold transition-all active:scale-[0.98]">
+                            Continue Shopping
+                        </button>
                     </div>
                 </div>
             </div>}
@@ -140,15 +172,18 @@ export const ProductInfo = ({}: Props) => {
                                     <h1 className="font-semibold leading-[1.4] text-lg">{productDetails.title}</h1>
                                     <p className="font-medium mt-1">{formatCurrency(productDetails.defaultProductVariant?.price)}</p>
 
-                                    {/* Primary Actions */}
                                     <div className="flex gap-4 mt-8">
                                         <button className="flex-1 py-3 border-[1.5px] border-black rounded-lg font-bold text-center hover:opacity-90 transition">
                                             Share
                                         </button>
-                                        <button onClick={()=>{
+                                        <button disabled={loading} onClick={()=>{
                                             handleAddToBag()
                                         }} className="flex-1 py-3 bg-[#0aad53] text-white rounded-lg font-bold text-center hover:bg-gray-50 transition">
-                                            Add to Bag
+                                            {loading? 
+                                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-b-transparent border-l-transparent border-white mx-auto" />
+                                                :
+                                                'Add to Bag'
+                                            }
                                         </button>
                                     </div>
 
