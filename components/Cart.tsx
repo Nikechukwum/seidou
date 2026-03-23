@@ -24,7 +24,7 @@ export const Cart = ({}) => {
     const {isOpen, products} = useSelector(
         (state: RootState) => state.cart
     );
-    // const {checkSession} = useAuth()
+    const {checkSession} = useAuth()
 
     const subTotalPrice = () => {
         let total = 0
@@ -63,9 +63,9 @@ export const Cart = ({}) => {
         }
     }
 
-    // useEffect(()=>{
-    //     checkSession(false)
-    // }, [])
+    useEffect(()=>{
+        checkSession(false)
+    }, [])
 
     return ( 
         <AnimatePresence>

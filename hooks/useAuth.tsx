@@ -39,7 +39,7 @@ const useAuth = () => {
 
         if (data) {
             dispatch(UpdateUser(data))
-            dispatch(InitialiseCart(data.cart_items))
+            dispatch(InitialiseCart(data.cart_items ?? []))
         };
     };
 

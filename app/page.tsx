@@ -178,7 +178,7 @@ export default function Home() {
         <ProductInfo />
       </Suspense>
 
-      {/* <Cart /> */}
+      <Cart />
     </div>
   );
 }
