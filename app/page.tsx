@@ -151,7 +151,7 @@ export default function Home() {
         dataLength={productData.length}
         next={fetchNextPage}
         hasMore={hasMore}
-        loader={<span className="material-symbols-outline">progress_activity</span>}
+        loader={<div className="animate-spin rounded-full h-4.5 w-4.5 border-2 border-b-transparent border-l-transparent border-black/90 my-1 mx-auto" />}
         endMessage={
           <p className="text-center my-7">
             <b>That's all for now</b>

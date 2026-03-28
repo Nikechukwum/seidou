@@ -15,6 +15,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { Modal } from "./Modal";
 
 type Props = {
     // productId: string | null
@@ -104,10 +105,10 @@ export const ProductInfo = ({}: Props) => {
 
     return ( 
         <>
-            {modal && <div onClick={()=>{setModal(false)}} className="fixed h-dvh top-0 left-0 w-full z-20 bg-white/40 flex justify-center items-center touch-none">
-                <div onClick={(e)=>{e.stopPropagation()}} className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[95%] max-w-md flex flex-col items-center text-center">
+            <Modal isActive={modal} setIsActive={setModal}>
+                <div className="flex flex-col items-center text-center">
                     <div className="w-18 h-18 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
-                        <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
+                            <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                     </div>
 
                     <h2 className="text-xl font-bold text-slate-900 mb-2">
@@ -128,7 +129,7 @@ export const ProductInfo = ({}: Props) => {
                         </button>
                     </div>
                 </div>
-            </div>}
+            </Modal>
 
             <AnimatePresence>
                 {isVisible && 

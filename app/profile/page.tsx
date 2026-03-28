@@ -13,11 +13,9 @@ import {
 } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 export default function ProfilePage() {
-  const [loading, setLoading] = useState(true)
   const supabase = createClient()
   const router = useRouter()
   const dispatch = useDispatch()
