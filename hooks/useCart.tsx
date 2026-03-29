@@ -9,7 +9,7 @@ const useCart = () => {
     const supabase = createClient();
     const [isLoading, setIsLoading] = useState(false)
     const lastSyncTime = useRef<number>(0);
-    const throttleLimit = 2000;
+    const throttleLimit = 1000;
     const { user } = useSelector((state: RootState) => state.auth);
     const { products } = useSelector(
         (state: RootState) => state.cart

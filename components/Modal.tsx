@@ -20,7 +20,7 @@ export const Modal = ({isActive, setIsActive, children}: Props) => {
                 animate={{y: 0, opacity: 1, transition:{duration: 0.3}}} 
                 exit={{y: '10%', opacity: 0, transition:{duration: 0.3}}}
                 onClick={(e)=>{e.stopPropagation()}} 
-                className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[95%] max-w-md">
+                className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[90%] max-w-md">
                     { children }
                 </motion.div>
             </motion.div>}

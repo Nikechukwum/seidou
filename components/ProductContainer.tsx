@@ -33,11 +33,11 @@ export const ProductContainer = ({productDetails}: Props) => {
                     <h2 className="text-xl font-bold text-slate-900 mb-2">
                         Under Construction
                     </h2>
-                    <p className="text-slate-500 mb-8">
-                        We are working hard to bring this feauture to life. It will be available in a future update.
+                    <p className="text-slate-500 mb-8 text-sm">
+                        We are working hard to bring this feature to life. It will be available in a future update.
                     </p>
 
-                    <button onClick={()=>{setModal(false)}} className="w-full bg-[#0D1310] text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
+                    <button onClick={()=>{setModal(false)}} className="w-full text-sm bg-[#0D1310] text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
                         Got it
                     </button>
                 </div>

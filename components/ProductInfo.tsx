@@ -6,7 +6,7 @@ import { AddToCart, ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { sanityClient, urlFor } from "@/sanity/lib/client";
 import { formatCurrency } from "@/utils/helpers";
-import { CheckIcon } from "@heroicons/react/24/outline";
+import { ArrowsPointingOutIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { ArrowRightIcon } from "@heroicons/react/24/outline";
 import { ChevronDown, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -34,6 +34,7 @@ export const ProductInfo = ({}: Props) => {
     const selfRef = useRef<HTMLDivElement>(null)
     const supabase = createClient()
     const [loading, setLoading] = useState(false)
+    const [fullImageView, setFullImageView] = useState(false)
 
     const { user } = useSelector(
         (state: RootState) => state.auth
@@ -44,6 +45,10 @@ export const ProductInfo = ({}: Props) => {
     );
 
     const handleClose = () => {
+        if(fullImageView){
+            setFullImageView(false)
+            return
+        }
         setIsVisible(false);
         router.push('/', {scroll: false})
         setProductDetails(null)
@@ -105,41 +110,42 @@ export const ProductInfo = ({}: Props) => {
 
     return ( 
         <>
-            <Modal isActive={modal} setIsActive={setModal}>
+            <Modal isActive={modal && isVisible} setIsActive={setModal}>
                 <div className="flex flex-col items-center text-center">
                     <div className="w-18 h-18 bg-emerald-50 rounded-full flex items-center justify-center mb-6">
                             <CheckIcon className="w-8 h-8 text-emerald-500" strokeWidth={2} />
                     </div>
 
                     <h2 className="text-xl font-bold text-slate-900 mb-2">
-                        Added to Cart
+                        Added to Bag
                     </h2>
-                    <p className="text-slate-500 mb-8">
-                        Your item has been added to the cart
+                    <p className="text-slate-500 mb-8 text-sm">
+                        The item has been added to your bag
                     </p>
 
                     <div className="w-full space-y-3">
-                        <button onClick={()=>{goToCheckout()}} className="w-full bg-[#0D1310] hover:bg-black text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
-                            View Cart
+                        <button onClick={()=>{goToCheckout()}} className="w-full text-sm bg-[#0D1310] hover:bg-black text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
+                            View Bag
                             <ArrowRightIcon className="ml-2 w-5 h-5" />
                         </button>
 
-                        <button onClick={()=>{setModal(false)}} className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 py-4 px-6 rounded-2xl font-semibold transition-all active:scale-[0.98]">
+                        <button onClick={()=>{setModal(false)}} className="w-full text-sm bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 py-4 px-6 rounded-2xl font-semibold transition-all active:scale-[0.98]">
                             Continue Shopping
                         </button>
                     </div>
                 </div>
             </Modal>
 
+            {/* Close btn */}
+            {isVisible && <button onClick={()=>{handleClose()}} className="fixed top-3 left-3 z-12 p-2 rounded-full bg-black/30 backdrop-blur-md">
+                <X className="text-white"/>
+            </button>}
+
             <AnimatePresence>
                 {isVisible && 
                     <section ref={selfRef} className="fixed max-w-md -translate-x-1/2 -translate-y-1/2 z-10 left-1/2 top-1/2 h-dvh w-full overflow-y-scroll overscroll-none">
                         <motion.div initial={{y: '10%', opacity: 0}} animate={{y: 0, opacity: 1, transition:{duration: 0.3}}} exit={{y: '10%', opacity: 0, transition:{duration: 0.3}}}
                         onClick={(e)=>{e.stopPropagation()}}  className="min-h-screen w-full bg-white relative">
-                            {/* Close btn */}
-                            <button onClick={()=>{handleClose()}} className="absolute top-3 right-3 z-12 p-2 rounded-full bg-black/20 backdrop-blur-sm">
-                                <X className="text-white"/>
-                            </button>
 
                             {/* Loader */}
                             <AnimatePresence>
@@ -152,6 +158,19 @@ export const ProductInfo = ({}: Props) => {
 
                             {productDetails && 
                             <>
+                                {/* Expanded Image View */}
+                                {fullImageView && 
+                                <div className="sticky z-20 top-0 left-0 w-screen h-dvh bg-white">
+                                    <Image 
+                                        placeholder="blur"
+                                        blurDataURL="/placeholder.png"
+                                        className="object-contain"
+                                        fill
+                                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                                        alt="Product Image"
+                                    />
+                                </div>}
+
                                 {/* Product Image Header */}
                                 <div className="w-full h-80 relative overflow-hidden">
                                     <Image
@@ -166,6 +185,10 @@ export const ProductInfo = ({}: Props) => {
                                         }}
                                         sizes="(max-width: 768px) 600px, 680px"
                                     />
+                                     {/* Expand btn */}
+                                    <button onClick={()=>{setFullImageView(true)}} className="absolute bottom-3 right-3 z-12 p-2.5 rounded-full bg-black/30 backdrop-blur-md">
+                                        <ArrowsPointingOutIcon className="size-6.5 text-white"/>
+                                    </button>
                                 </div>
 
                                 {/* Product Info */}
