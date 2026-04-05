@@ -8,7 +8,10 @@ export interface UserState {
     email: string,
     gender: 'male'|'female'|'',
     phone: string,
-    dob: string
+    dob: string,
+    address_line1: string,
+    address_line2: string,
+    state: string
 }
 
 const initialState: {user: UserState | null} = {

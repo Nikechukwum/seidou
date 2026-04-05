@@ -1,4 +1,4 @@
-import { urlFor } from "@/sanity/lib/client";
+import { urlFor } from "@/lib/sanity/client";
 import { ProductVariant, Slug, Vendor } from "@/types";
 import { BookmarkIcon } from "@heroicons/react/24/outline";
 import { ChatBubbleOvalLeftIcon, HeartIcon, ShareIcon } from "@heroicons/react/24/outline";
@@ -30,7 +30,7 @@ export const ProductContainer = ({productDetails}: Props) => {
                             <WrenchScrewdriverIcon className="w-8 h-8 text-black" />
                     </div>
 
-                    <h2 className="text-xl font-bold text-slate-900 mb-2">
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">
                         Under Construction
                     </h2>
                     <p className="text-slate-500 mb-8 text-sm">

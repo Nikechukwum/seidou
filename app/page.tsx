@@ -2,7 +2,7 @@
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import InfiniteScroll from "react-infinite-scroll-component";
-import { sanityClient } from "../sanity/lib/client";
+import { sanityClient } from "../lib/sanity/client";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { HomeProduct } from "@/types";
 import { PRODUCT_QUERY, SEARCH_FILTERS } from "@/utils/defaults";

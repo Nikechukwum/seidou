@@ -49,7 +49,7 @@ export default function MyDetailsPage() {
     if (error) setError(error.message)
     else {
         dispatch(PartialUpdateUser(updates as Partial<UserState>));
-        setSuccess('Details updated successfully!')
+        setSuccess('Details updated successfully')
     }
     window.scrollTo({top: 0, behavior: 'smooth'})
   }

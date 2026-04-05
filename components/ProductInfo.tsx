@@ -4,7 +4,7 @@ import useCart from "@/hooks/useCart";
 import { createClient } from "@/lib/supabase/client";
 import { AddToCart, ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
-import { sanityClient, urlFor } from "@/sanity/lib/client";
+import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { formatCurrency } from "@/utils/helpers";
 import { ArrowsPointingOutIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { ArrowRightIcon } from "@heroicons/react/24/outline";
@@ -137,7 +137,7 @@ export const ProductInfo = ({}: Props) => {
             </Modal>
 
             {/* Close btn */}
-            {isVisible && <button onClick={()=>{handleClose()}} className="fixed top-3 left-3 z-12 p-2 rounded-full bg-black/30 backdrop-blur-md">
+            {isVisible && <button onClick={()=>{handleClose()}} className="fixed top-3 left-3 z-12 p-2 rounded-full bg-gray-900/30 backdrop-blur-lg">
                 <X className="text-white"/>
             </button>}
 

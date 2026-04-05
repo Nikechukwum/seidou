@@ -6,7 +6,6 @@ const config = {
   dataset: "production",
   apiVersion: "2021-03-25",
   useCdn: true,
-  token: process.env.NEXT_PUBLIC_SANITY_AUTH_TOKEN,
 };
 
 
