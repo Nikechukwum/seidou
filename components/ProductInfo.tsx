@@ -12,10 +12,11 @@ import { ChevronDown, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Modal } from "./Modal";
+import { FullScreenLoader } from "./FullScreenLoader";
 
 type Props = {
     // productId: string | null
@@ -23,10 +24,11 @@ type Props = {
 export const ProductInfo = ({}: Props) => {
     const searchParams = useSearchParams()
     const router = useRouter()
+    const pathname = usePathname()
     const dispatch = useDispatch()
     const { checkSession } = useAuth()
     const { addToCart } = useCart()
-    const productId = searchParams.get('productId')
+    const productId = searchParams.get('id')
     const [productDetails, setProductDetails] = useState<any>(null)
     const [isVisible, setIsVisible] = useState(false)
     const [forcedLoader, setForcedLoader] = useState(false)
@@ -45,12 +47,12 @@ export const ProductInfo = ({}: Props) => {
     );
 
     const handleClose = () => {
-        if(fullImageView){
-            setFullImageView(false)
-            return
-        }
         setIsVisible(false);
-        router.push('/', {scroll: false})
+        if(pathname.startsWith('/explore')){
+            router.replace(pathname, {scroll: false})
+        } else {
+            router.push('/', {scroll: false})
+        }
         setProductDetails(null)
     }
 
@@ -137,9 +139,35 @@ export const ProductInfo = ({}: Props) => {
             </Modal>
 
             {/* Close btn */}
-            {isVisible && <button onClick={()=>{handleClose()}} className="fixed top-3 left-3 z-12 p-2 rounded-full bg-gray-900/30 backdrop-blur-lg">
+            {(isVisible && !fullImageView) && <button onClick={()=>{handleClose()}} className="fixed top-3 left-3 z-12 p-2 rounded-full bg-gray-900/40 backdrop-blur-xl">
                 <X className="text-white"/>
             </button>}
+
+            {/* Expanded Image View */}
+            {(fullImageView && isVisible) && 
+            <div onClick={()=>{setFullImageView(false)}} className="fixed z-80 top-0 left-0 w-screen max-w-md h-dvh bg-gray-300 flex justify-center items-center overflow-hidden touch-none">
+                <Image 
+                    placeholder="blur"
+                    blurDataURL="/placeholder.png"
+                    className="object-cover object-center opacity-50"
+                    fill
+                    src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                    alt="Product Image"
+                />
+                <div className="relative z-10 w-screen h-full backdrop-blur-lg">
+                    <Image 
+                        placeholder="blur"
+                        blurDataURL="/placeholder.png"
+                        className="object-contain shadow-lg"
+                        fill
+                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                        alt="Product Image"
+                        sizes="(max-width: 768px) 600px, 500px"
+                        quality={75}
+                    />
+                </div>
+            </div>
+            }
 
             <AnimatePresence>
                 {isVisible && 
@@ -148,29 +176,10 @@ export const ProductInfo = ({}: Props) => {
                         onClick={(e)=>{e.stopPropagation()}}  className="min-h-screen w-full bg-white relative">
 
                             {/* Loader */}
-                            <AnimatePresence>
-                                {(!productDetails || forcedLoader) &&
-                                    <motion.div exit={{opacity: 0, transition:{duration: 0.3}}} className="absolute top-0 left-0 w-full bg-white h-screen z-10 grid place-content-center">
-                                        <div className="animate-spin rounded-full h-16 w-16 border-11 border-b-transparent border-l-transparent border-zinc-500 mx-auto" />
-                                    </motion.div>
-                                }
-                            </AnimatePresence>
+                            <FullScreenLoader isActive={(!productDetails || forcedLoader)}/>
 
                             {productDetails && 
                             <>
-                                {/* Expanded Image View */}
-                                {fullImageView && 
-                                <div className="sticky z-20 top-0 left-0 w-screen h-dvh bg-white">
-                                    <Image 
-                                        placeholder="blur"
-                                        blurDataURL="/placeholder.png"
-                                        className="object-contain"
-                                        fill
-                                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
-                                        alt="Product Image"
-                                    />
-                                </div>}
-
                                 {/* Product Image Header */}
                                 <div className="w-full h-80 relative overflow-hidden">
                                     <Image
@@ -181,14 +190,11 @@ export const ProductInfo = ({}: Props) => {
                                         src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
                                         alt="Product Image"
                                         onClick={() => {
-                                            // setLoading(true);
+                                            setFullImageView(true)
                                         }}
-                                        sizes="(max-width: 768px) 600px, 680px"
+                                        sizes="(max-width: 768px) 500px, 680px"
+                                        quality={65}
                                     />
-                                     {/* Expand btn */}
-                                    <button onClick={()=>{setFullImageView(true)}} className="absolute bottom-3 right-3 z-12 p-2.5 rounded-full bg-black/30 backdrop-blur-md">
-                                        <ArrowsPointingOutIcon className="size-6.5 text-white"/>
-                                    </button>
                                 </div>
 
                                 {/* Product Info */}
@@ -268,7 +274,7 @@ export const ProductInfo = ({}: Props) => {
                                         <div className="flex overflow-x-scroll snap-x snap-proximity gap-5">
                                             {productDetails?.moreFromVendor?.map((item: any, i: number) => (
                                                 <Link
-                                                    href={`?productId=${item._id}`}
+                                                    href={`?id=${item._id}`}
                                                     scroll={false}
                                                     key={i}
                                                     onClick={()=>{setForcedLoader(true), setProductDetails(null), selfRef.current?.scrollTo(0,0)}}

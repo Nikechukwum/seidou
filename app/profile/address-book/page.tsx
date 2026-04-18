@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation'
 import { RootState } from '@/redux/store'
 import { useDispatch, useSelector } from 'react-redux'
 import { CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/20/solid'
-import { ArrowLeftIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon } from '@heroicons/react/24/outline'
 import { PartialUpdateUser, UpdateUser, UserState } from '@/redux/authSlice'
+import { Header } from '@/components/Header'
 
 export default function AddressBookPage() {
     const [loading, setLoading] = useState(false)
@@ -54,14 +55,7 @@ export default function AddressBookPage() {
 
   return (
     <div className="py-24">
-    {/* Header */}
-    <div className="fixed top-0 left-0 bg-white shrink-0 h-16 w-full grid place-content-center font-semibold text-xl border-b-2 border-b-[#f0f0f0]">
-        <button onClick={()=>{router.back()}} className="absolute text-black top-1/2 left-3 -translate-y-1/2 p-2">
-            <ArrowLeftIcon className='size-5' strokeWidth={3} /> 
-        </button>
-        Address Book
-    </div>
-
+    <Header pageTitle='Address Book'/>
     <div className='px-6'>
         {error && <p className='max-w-lg flex gap-x-1.5 items-center font-semibold my-4 text-sm text-red-600 bg-red-50 ring-1 ring-red-600 rounded-full px-3 py-2'>
         <ExclamationCircleIcon className='size-5.5 shrink-0'/> {error}

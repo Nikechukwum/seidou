@@ -1,4 +1,5 @@
 'use client'
+import { FullScreenLoader } from '@/components/FullScreenLoader'
 import useAuth from '@/hooks/useAuth'
 import { RootState } from '@/redux/store'
 import { useEffect } from 'react'
@@ -17,16 +18,9 @@ export default function ProfileLayout({
     checkSession()
   }, [])
 
-  if (isLoading) {
-    return (
-      <div className="flex h-dvh items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-11 border-b-transparent border-l-transparent border-zinc-500 mx-auto" />
-      </div>
-    )
-  }
-
   return (
     <>
+        <FullScreenLoader isActive={isLoading}/>
         {user && 
             <>
                 {children}

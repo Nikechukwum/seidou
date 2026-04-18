@@ -73,7 +73,7 @@ export const ProductContainer = ({productDetails}: Props) => {
                     alt="Product Image"
                     sizes="(max-width: 768px) 500px, 500px"
                     onClick={() => {
-                        router.push(`?productId=${productDetails._id}`, { scroll: false });
+                        router.push(`?id=${productDetails._id}`, { scroll: false });
                     }}
                 />
             </div>

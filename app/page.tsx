@@ -1,6 +1,6 @@
 'use client'
 import { Footer } from "@/components/Footer";
-import { Header } from "@/components/Header";
+import { HomeHeader } from "@/components/HomeHeader";
 import InfiniteScroll from "react-infinite-scroll-component";
 import { sanityClient } from "../lib/sanity/client";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -33,7 +33,7 @@ export default function Home() {
          `*[_type == "product" && _id > $current && 
          ${tagFilter}
          true
-         ] | order(_id) [0...3] {
+         ] | order(_id) [0...5] {
          defaultProductVariant,
          _id,
          title,
@@ -79,7 +79,7 @@ export default function Home() {
         `*[_type == "product" &&
             ${tagFilter}
             true
-            ] | order(_id) [0...3] {
+            ] | order(_id) [0...5] {
           defaultProductVariant,
           _id,
           title,
@@ -141,7 +141,7 @@ export default function Home() {
 
   return (
     <div className="min-h-dvh">
-      <Header activeFilter={activeFilter} setActiveFilter={setActiveFilter}/>
+      <HomeHeader activeFilter={activeFilter} setActiveFilter={setActiveFilter}/>
       <WelcomeModal
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
@@ -157,7 +157,7 @@ export default function Home() {
             <b>That's all for now</b>
           </p>
         }
-        scrollableTarget="parent"
+        scrollableTarget="main"
         className="flex flex-col items-center pt-2 pb-20"
       >
         {productData.map((product) => {
