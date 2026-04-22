@@ -29,11 +29,11 @@ const FOOTER_LINKS = [
          icon: 'home',
          href: '/',
       },
-      {
-         label: 'Auction',
-         icon: 'gavel',
-         href: '/auction',
-      },
+      // {
+      //    label: 'Auction',
+      //    icon: 'gavel',
+      //    href: '/auction',
+      // },
       {
          label: 'App Center',
          icon: 'apps',
