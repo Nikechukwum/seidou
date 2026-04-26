@@ -1,4 +1,4 @@
-const PRODUCT_QUERY = `*[_type == 'product'] | order(_id)[0...3]{
+const PRODUCT_QUERY = `*[_type == 'product'] | order(_id)[0...5]{
         defaultProductVariant,
         _id,
         title,

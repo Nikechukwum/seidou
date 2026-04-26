@@ -9,13 +9,13 @@ import { useDispatch, useSelector } from "react-redux";
 import { Badge } from "./Badge";
 
 type Props = {
-    activeFilter: keyof typeof SEARCH_FILTERS;
-    setActiveFilter: React.Dispatch<SetStateAction<keyof typeof SEARCH_FILTERS>>
+    filterAction: (filter: keyof typeof SEARCH_FILTERS) => void
 }
 
-export const HomeHeader = ({activeFilter, setActiveFilter}: Props) => {
+export const HomeHeader = ({filterAction}: Props) => {
     const router = useRouter();
     const [fullHeader, setFullHeader] = useState(true);
+    const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as keyof typeof SEARCH_FILTERS;
     const lastScrollValue = useRef<number>(0);
     const dispatch = useDispatch()
 
@@ -44,7 +44,7 @@ export const HomeHeader = ({activeFilter, setActiveFilter}: Props) => {
         block: "nearest",
         behavior: "smooth",
         });
-        setActiveFilter(filter);
+        filterAction(filter);
     }
 
     const mainRef = useRef<HTMLElement | null>(null);
@@ -64,6 +64,15 @@ export const HomeHeader = ({activeFilter, setActiveFilter}: Props) => {
             }
             lastScrollValue.current = newScrollValue;
         }
+
+        const filterButton: HTMLElement | null = document.querySelector(
+        `.${activeFilter}-tag`
+        );
+        filterButton?.scrollIntoView({
+        inline: "start",
+        block: "nearest",
+        behavior: "smooth",
+        });
 
         mainElement.addEventListener('scroll', checkScrollDirection);
         return () => {
