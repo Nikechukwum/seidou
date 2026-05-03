@@ -12,7 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
-  const [redirectPath, setRedirectPath] = useState<string>('/');
+  const [userNav, setuserNav] = useState<string>('/');
 
   async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
       e.preventDefault();
@@ -30,22 +30,24 @@ export default function LoginPage() {
       if (error) {
         setError(error.message)
       } else {
-        router.replace(redirectPath)
+        router.replace(userNav)
       }
       setLoading(false);
   }
 
   const handleBackClick = () => {
-    let backPath = redirectPath
+    const userNav = sessionStorage.getItem('userNav') || '/';
+    let backPath = userNav
     if(backPath.startsWith('/profile')){
       backPath = '/'
     }
+    sessionStorage.removeItem('userNav')
     router.push(backPath)
   }
 
   useEffect(() => {
-    const path = sessionStorage.getItem('redirectPath') || '/';
-    setRedirectPath(path);
+    const path = sessionStorage.getItem('userNav') || '/';
+    setuserNav(path);
   }, []);
 
   return (

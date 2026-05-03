@@ -8,21 +8,15 @@ import { formatCurrency } from '@/utils/helpers';
 import { Header } from '@/components/Header';
 import { FullScreenLoader } from '@/components/FullScreenLoader';
 import { ProductInfo } from '@/components/ProductInfo';
+import { CategoryProduct } from '@/types';
 
-interface Product {
-  _id: string;
-  title: string;
-  imageUrl: string;
-  price?: number;
-  categoryTitle: string
-}
 
 export default function CategoryProductsPage() {
   const params = useParams();
   const slug = params?.slug as string;
   const router = useRouter()
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<CategoryProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -33,12 +27,17 @@ export default function CategoryProductsPage() {
       }
 
       try {
-        const productsData = await sanityClient.fetch<Product[]>(
+        const productsData = await sanityClient.fetch<CategoryProduct[]>(
           `*[_type == "product" && category->slug.current == $slug]{
             _id,
             title,
-            "imageUrl": defaultProductVariant.images[0].asset->url,
-            "price": defaultProductVariant.price,
+            defaultProductVariant{
+                price,
+                "images": images[]{
+                    "url": asset->url,
+                    "lqip": asset->metadata.lqip
+                }
+            },
             "categoryTitle": category->title
           }`,
           { slug }
@@ -61,7 +60,10 @@ export default function CategoryProductsPage() {
       <FullScreenLoader isActive={isLoading}/>
       {products.length > 0 ? (
         <>
-          <Header pageTitle={products[0].categoryTitle || ''} />
+          <Header 
+          pageTitle={products[0].categoryTitle || ''} 
+          backNavigationType='manual'
+          />
           <Suspense>
             <ProductInfo />
           </Suspense>
@@ -77,12 +79,13 @@ export default function CategoryProductsPage() {
                 <div className="relative aspect-[1/1.4] overflow-hidden rounded-2xl">
                   <Image
                     placeholder="blur"
-                    blurDataURL="/placeholder.png"
+                    blurDataURL={product.defaultProductVariant?.images[0]?.lqip}
                     className="object-cover"
                     fill
-                    src={product.imageUrl || '/placeholder.png'}
+                    src={product.defaultProductVariant?.images[0]?.url || '/placeholder.png'}
                     alt={product.title}
                     sizes="(max-width: 768px) 200px, 500px"
+                    quality={65}
                   />
                 </div>
                 <div className='py-3 text-sm font-medium space-y-1'>
@@ -90,7 +93,7 @@ export default function CategoryProductsPage() {
                     {product.title}
                   </div>
                   <div>
-                    {formatCurrency(product.price || 0)}
+                    {formatCurrency(product.defaultProductVariant.price || 0)}
                   </div>
                 </div>
               </div>

@@ -1,9 +1,8 @@
 interface ProductVariant {
+  price?: number;
   images: {
-    asset: {
-      _ref: string;
-      _type: string;
-    };
+    url: string;
+    lqip: string
   }[];
 }
 interface Vendor {
@@ -27,6 +26,13 @@ type HomeProduct = {
     title: string;
     vendor: Vendor;
     _id: string;
-}[]
+}
 
-export type {HomeProduct, Slug, Vendor, ProductVariant}
+interface CategoryProduct {
+  _id: string;
+  title: string;
+  defaultProductVariant: ProductVariant;
+  categoryTitle: string
+}
+
+export type {HomeProduct, Slug, Vendor, ProductVariant, CategoryProduct}

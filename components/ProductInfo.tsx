@@ -70,7 +70,7 @@ export const ProductInfo = ({}: Props) => {
             id: productDetails._id,
             title: productDetails.title,
             price: productDetails.defaultProductVariant?.price,
-            image: urlFor(productDetails.defaultProductVariant.images[0]).url(),
+            image: productDetails.defaultProductVariant?.images[0]?.url,
             quantity: 1
         };
 
@@ -83,18 +83,30 @@ export const ProductInfo = ({}: Props) => {
         setIsVisible(productId !== null)
         if(productId){
             const productFetch = async () => {
-            const results = await sanityClient.fetch(`*[_type == 'product' && _id == $productId && !(_id in path('drafts.**'))] | order(_id)[0...3]{
-                defaultProductVariant,
+            const results = await sanityClient.fetch(`*[_type == 'product' && _id == $productId && !(_id in path('drafts.**'))][0]{
                 _id,
                 title,
+                defaultProductVariant{
+                    price,
+                    "images": images[]{
+                        "url": asset->url,
+                        "lqip": asset->metadata.lqip
+                    }
+                },
                 variants,
                 slug,
                 vendor->{
                 title,logo,_id},
-                'moreFromVendor':*[_type == 'product' && references(^.vendor->{_id}._id)&& ^._id != _id && !(_id in path('drafts.**'))]{
+                'moreFromVendor':*[_type == 'product' && references(^.vendor->{_id}._id)&& ^._id != _id && !(_id in path('drafts.**'))] | order(_id) [0...10] {
                     _id,
-                    defaultProductVariant,
                     title,
+                    defaultProductVariant{
+                        price,
+                        "images": images[]{
+                            "url": asset->url,
+                            "lqip": asset->metadata.lqip
+                        }
+                    }
                 },
                 'vendorProductCount':count(*[_type == 'product' && references(^.vendor->{_id}._id)&& ^._id != _id && !(_id in path('drafts.**'))]),
         
@@ -102,7 +114,7 @@ export const ProductInfo = ({}: Props) => {
                 `,
             { productId });
             setTimeout(() => {
-                setProductDetails(results[0])
+                setProductDetails(results)
                 setForcedLoader(false)
             }, 200);
            }
@@ -147,20 +159,18 @@ export const ProductInfo = ({}: Props) => {
             {(fullImageView && isVisible) && 
             <div onClick={()=>{setFullImageView(false)}} className="fixed z-80 top-0 left-0 w-screen max-w-md h-dvh bg-gray-300 flex justify-center items-center overflow-hidden touch-none">
                 <Image 
-                    placeholder="blur"
-                    blurDataURL="/placeholder.png"
                     className="object-cover object-center opacity-50"
                     fill
-                    src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
-                    alt="Product Image"
+                    src={productDetails.defaultProductVariant?.images[0]?.lqip}
+                    alt="Image Background"
                 />
-                <div className="relative z-10 w-screen h-full backdrop-blur-lg">
+                <div className="relative z-10 w-screen h-full">
                     <Image 
                         placeholder="blur"
-                        blurDataURL="/placeholder.png"
+                        blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
                         className="object-contain shadow-lg"
                         fill
-                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                        src={productDetails.defaultProductVariant?.images[0]?.url}
                         alt="Product Image"
                         sizes="(max-width: 768px) 600px, 500px"
                         quality={75}
@@ -184,10 +194,10 @@ export const ProductInfo = ({}: Props) => {
                                 <div className="w-full h-80 relative overflow-hidden">
                                     <Image
                                         placeholder="blur"
-                                        blurDataURL="/placeholder.png"
+                                        blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
                                         className="object-cover"
                                         fill
-                                        src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                                        src={productDetails.defaultProductVariant?.images[0]?.url}
                                         alt="Product Image"
                                         onClick={() => {
                                             setFullImageView(true)
@@ -283,10 +293,10 @@ export const ProductInfo = ({}: Props) => {
                                                     <div className="w-full h-56 relative overflow-hidden rounded-xl">
                                                         <Image
                                                             placeholder="blur"
-                                                            blurDataURL="/placeholder.png"
+                                                            blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
                                                             className="object-cover"
                                                             fill
-                                                            src={urlFor(item.defaultProductVariant.images[0]).url()}
+                                                            src={item.defaultProductVariant?.images[0]?.url}
                                                             alt="Product Image"
                                                             sizes="(max-width: 768px) 200px, 200px"
                                                             quality={65}

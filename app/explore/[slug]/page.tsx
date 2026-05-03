@@ -56,19 +56,25 @@ export default function CategoryPage() {
     fetchSubCategories();
   }, [slug, router]);
 
-  const handleRouting = (slug: string, hasChildren: boolean) => {
-    console.log(subCategories)
-    if(hasChildren){
-        router.push(`/explore/${slug}`)
-    } else {
-        router.push(`/explore/${slug}/products`);
-    }
-  }
+   const handleRouting = (slug: string, hasChildren: boolean) => {
+     const currentPath = `${window.location.pathname}${window.location.search}`
+     const userNav = JSON.parse(sessionStorage.getItem('userNav') || '[]')
+     userNav.push(currentPath)
+     sessionStorage.setItem('userNav', JSON.stringify(userNav))
+     if(hasChildren){
+         router.push(`/explore/${slug}`)
+     } else {
+         router.push(`/explore/${slug}/products`);
+     }
+   }
 
   return (
     <div className="py-20">
         <FullScreenLoader isActive={isLoading}/>
-        <Header pageTitle={category?.title || ''}/>
+        <Header 
+        pageTitle={category?.title || ''}
+        backNavigationType='manual'
+        />
         {subCategories?.map((subCategory) => {
             const { slug, hasChildren, title } = subCategory
             return(

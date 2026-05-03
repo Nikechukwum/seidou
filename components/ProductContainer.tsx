@@ -1,5 +1,5 @@
 import { urlFor } from "@/lib/sanity/client";
-import { ProductVariant, Slug, Vendor } from "@/types";
+import { HomeProduct, ProductVariant, Slug, Vendor } from "@/types";
 import { BookmarkIcon } from "@heroicons/react/24/outline";
 import { ChatBubbleOvalLeftIcon, HeartIcon, ShareIcon } from "@heroicons/react/24/outline";
 import Image from "next/image";
@@ -9,13 +9,7 @@ import { Modal } from "./Modal";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 
 type Props = {
-    productDetails: {
-        defaultProductVariant: ProductVariant;
-        slug: Slug;
-        title: string;
-        vendor: Vendor;
-        _id: string;
-  };
+    productDetails: HomeProduct
 }
 export const ProductContainer = ({productDetails}: Props) => {
     const [likes, setLikes] = useState({ likeCount: 5, likeState: false });
@@ -46,9 +40,9 @@ export const ProductContainer = ({productDetails}: Props) => {
             <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex items-center">
                     <Image
+                        className="vendorImage"
                         placeholder="blur"
                         blurDataURL="/placeholder.png"
-                        className="vendorImage"
                         width={50}
                         height={50}
                         src={urlFor(productDetails.vendor.logo).url()}
@@ -66,10 +60,10 @@ export const ProductContainer = ({productDetails}: Props) => {
             <div className="w-full h-80 relative overflow-hidden">
                 <Image
                     placeholder="blur"
-                    blurDataURL="/placeholder.png"
+                    blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
                     className="object-cover"
                     fill
-                    src={urlFor(productDetails.defaultProductVariant.images[0]).url()}
+                    src={productDetails.defaultProductVariant?.images[0]?.url}
                     alt="Product Image"
                     sizes="(max-width: 768px) 500px, 500px"
                     onClick={() => {

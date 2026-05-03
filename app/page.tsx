@@ -17,25 +17,32 @@ import { SmallLoader } from "@/components/SmallLoader";
 
 export default function Home() {
   const dispatch = useDispatch();
-  const feed = useSelector((state: RootState) => state.feed.feed);
-  const hasMore = useSelector((state: RootState) => state.feed.hasMore);
-  const lastIdFromStore = useSelector((state: RootState) => state.feed.lastId);
   const [feedShouldReset, setFeedShouldReset] = useState(false);
   const [feedLoading, setFeedLoading] = useState(false);
   const [userLikedProducts, setUserLikedProducts] = useState();
   const [userSavedProducts, setUserSavedProducts] = useState();
-  const lastId = useRef<string | null>(lastIdFromStore);
-  const initialLoad = useRef(true);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  const feed = useSelector((state: RootState) => state.feed.feed);
+  const hasMore = useSelector((state: RootState) => state.feed.hasMore);
+  const lastIdFromStore = useSelector((state: RootState) => state.feed.lastId);
   const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as keyof typeof SEARCH_FILTERS;
   const LOCAL_DISABLE_KEY = "seidou_welcome_disabled";
   const SCROLL_POSITION_KEY = "seidou_feed_scroll_position";
-  const [showWelcome, setShowWelcome] = useState(false);
+  
+  const lastId = useRef<string | null>(lastIdFromStore);
+  const currentFetchTotal = useRef(feed.length);
 
   // Sync ref when Redux lastId changes (e.g., after filter change)
   useEffect(() => {
     lastId.current = lastIdFromStore;
   }, [lastIdFromStore]);
 
+  /**
+   * Fetches the next page of products based on the current lastId and active filter.
+   * If shouldReset is true, it will ignore lastId and fetch the first page of results for the new filter.
+   * It constructs the query dynamically based on whether it's a reset and the active filter's tags.
+   */
   async function fetchNextPage(shouldReset: boolean = false) {
     if(shouldReset){
       setFeedLoading(true);
@@ -50,7 +57,12 @@ export default function Home() {
       ${tagFilterQuery}
       true
       ] | order(_id) [0...5] {
-      defaultProductVariant,
+      defaultProductVariant{
+        "images": images[]{
+            "url": asset->url,
+            "lqip": asset->metadata.lqip
+        }
+      },
       _id,
       title,
       slug,
@@ -77,6 +89,7 @@ export default function Home() {
       dispatch(setLastId(null));
       dispatch(setHasMore(false));
     }
+    currentFetchTotal.current += data.length;
     setFeedLoading(false);
   }
 
@@ -101,6 +114,8 @@ export default function Home() {
 
     setShowWelcome(true);
   }, []);
+
+
 
   // Restore scroll position on mount
   useEffect(() => {
@@ -160,7 +175,7 @@ export default function Home() {
         </div>
       ) : (
         <InfiniteScroll
-          dataLength={feed.length}
+          dataLength={currentFetchTotal.current}
           next={fetchNextPage}
           hasMore={hasMore}
           loader={<div className="animate-spin rounded-full h-4.5 w-4.5 border-2 border-b-transparent border-l-transparent border-black/90 my-1 mx-auto" />}

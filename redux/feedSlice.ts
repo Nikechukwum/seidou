@@ -2,7 +2,7 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { HomeProduct } from '@/types';
 
 interface FeedState {
-  feed: HomeProduct;
+  feed: HomeProduct[];
   hasMore: boolean;
   lastId: string | null;
   activeFilter: string;
@@ -19,11 +19,16 @@ const feedSlice = createSlice({
   name: 'feed',
   initialState,
   reducers: {
-    setFeed(state, action: PayloadAction<HomeProduct>) {
+    setFeed(state, action: PayloadAction<HomeProduct[]>) {
       state.feed = action.payload;
     },
-    appendToFeed(state, action: PayloadAction<HomeProduct>) {
-      state.feed = [...state.feed, ...action.payload];
+    appendToFeed(state, action: PayloadAction<HomeProduct[]>) {
+      const combined = [...state.feed, ...action.payload];
+      if (combined.length > 40) {
+        state.feed = combined.slice(-40);
+      } else {
+        state.feed = combined;
+      }
     },
     clearFeed(state) {
       state.feed = [];
@@ -35,7 +40,7 @@ const feedSlice = createSlice({
     setLastId(state, action: PayloadAction<string | null>) {
       state.lastId = action.payload;
     },
-    resetFeed(state, action: PayloadAction<HomeProduct>) {
+    resetFeed(state, action: PayloadAction<HomeProduct[]>) {
       state.feed = action.payload;
       state.hasMore = true;
       if (action.payload.length > 0) {

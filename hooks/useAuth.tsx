@@ -19,7 +19,7 @@ const useAuth = () => {
 
         if (!data.user && enforceSignIn) {
             const currentPath = `${window.location.pathname}${window.location.search}`
-            sessionStorage.setItem('redirectPath', currentPath)
+            sessionStorage.setItem('userNav', currentPath)
             router.replace("/signin");
             return;
         }
