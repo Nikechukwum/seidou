@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Modal } from "./Modal";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
+import { Button } from "./Button";
 
 type Props = {
     productDetails: HomeProduct
@@ -31,9 +32,7 @@ export const ProductContainer = ({productDetails}: Props) => {
                         We are working hard to bring this feature to life. It will be available in a future update.
                     </p>
 
-                    <button onClick={()=>{setModal(false)}} className="w-full text-sm bg-[#0D1310] text-white py-4 px-6 rounded-2xl font-semibold flex items-center justify-center transition-all shadow-lg active:scale-[0.98]">
-                        Got it
-                    </button>
+                    <Button text="Got it" classname="w-full py-3.5" onClick={()=>{setModal(false)}}/>
                 </div>
             </Modal>
 

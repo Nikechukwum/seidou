@@ -1,29 +1,43 @@
 import { AnimatePresence, motion } from "motion/react";
-import { Dispatch, ReactNode, SetStateAction } from "react";
+import { Dispatch, ReactNode, SetStateAction, useMemo } from "react";
 
 type Props = {
     isActive: boolean;
     setIsActive: Dispatch<SetStateAction<boolean>>;
     children: ReactNode;
 }
+
+const modalVariants = {
+    initial: { y: '10%', opacity: 0 },
+    animate: { y: 0, opacity: 1, transition: { duration: 0.3 } },
+    exit: { y: '10%', opacity: 0, transition: { duration: 0.3 } }
+}
+
+const overlayVariants = {
+    initial: { opacity: 0 },
+    animate: { opacity: 1, transition: { duration: 0.3 } },
+    exit: { opacity: 0, transition: { duration: 0.3 } }
+}
+
 export const Modal = ({isActive, setIsActive, children}: Props) => {
+    const variants = useMemo(() => ({ modal: modalVariants, overlay: overlayVariants }), []);
+    
     return ( 
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
             {isActive && 
-            <motion.div 
-            animate={{backgroundColor: '#00000050', transition:{duration: 0.3}}} 
-            exit={{backgroundColor: '#00000000', transition:{duration: 0.3}}}
-            onClick={()=>{setIsActive(false)}} 
-            className="fixed h-dvh top-0 left-0 w-full z-20 flex justify-center items-center touch-none">
+            <div className="fixed h-dvh top-0 left-0 w-full z-20 flex justify-center items-center touch-none">
                 <motion.div 
-                initial={{y: '10%', opacity: 0}} 
-                animate={{y: 0, opacity: 1, transition:{duration: 0.3}}} 
-                exit={{y: '10%', opacity: 0, transition:{duration: 0.3}}}
-                onClick={(e)=>{e.stopPropagation()}} 
-                className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[90%] max-w-md">
+                {...variants.modal}
+                className="bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[90%] max-w-md will-change-transform">
                     { children }
                 </motion.div>
-            </motion.div>}
+
+                {/* Overlay */}
+                <motion.div className="absolute top-0 left-0 -z-1 h-full w-full bg-black/20"
+                {...variants.overlay}
+                onClick={() => setIsActive(false)} 
+                />
+            </div>}
         </AnimatePresence>
     );
 }

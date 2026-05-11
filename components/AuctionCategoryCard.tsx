@@ -5,11 +5,10 @@ const AuctionCategoryCard = () => {
     const router = useRouter()
   return (
     /* Main card container with rounded corners and subtle shadow */
-    <div className="max-w-sm bg-white rounded-3xl p-7 shadow-sm border border-gray-100">
+    <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
       <div className="flex items-start gap-4 mb-6">
         {/* Profile/Avatar placeholder */}
         <div className="size-10 bg-slate-600 rounded-full shrink-0" />
-        
         <div>
           {/* Title and Description */}
           <h2 className="text-xl font-bold text-gray-900 leading-tight">

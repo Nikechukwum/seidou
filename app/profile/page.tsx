@@ -1,4 +1,5 @@
 'use client'
+import { IconListItem } from '@/components/IconListItem';
 import { createClient } from '@/lib/supabase/client';
 import { ClearUser } from '@/redux/authSlice';
 import { RootState } from '@/redux/store';
@@ -77,17 +78,15 @@ export default function ProfilePage() {
       </div>
 
       {/* Menu List */}
-      <div className="space-y-4">
+      <div className="flex flex-col gap-y-4 px-6">
         {profileItems.map((item, index)=>{
           return(
-            <Link key={index} href={item.route} className="flex items-center justify-between w-full px-6 py-1 transition-colors group">
-              <div className="flex items-center gap-4">
-                <div className="bg-[#f3f4f6] p-4 rounded-xl group-active:scale-95 transition-transform">
-                  <item.icon className="size-5.5 text-[#4b5563]"/>
-                </div>
-                <span className="font-medium">{item.label}</span>
-              </div>
-              <ChevronRightIcon className="size-5 text-[#b5b6b8]" />
+            <Link key={index} href={item.route}>
+              <IconListItem 
+              icon={<item.icon className="size-5.5 text-[#4b5563]"/>}
+              title={item.label}
+              chevron
+              />
             </Link>
           )
         })}

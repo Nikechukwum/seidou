@@ -8,7 +8,7 @@ import { sanityClient, urlFor } from "@/lib/sanity/client";
 import { formatCurrency } from "@/utils/helpers";
 import { ArrowsPointingOutIcon, CheckIcon } from "@heroicons/react/24/outline";
 import { ArrowRightIcon } from "@heroicons/react/24/outline";
-import { ChevronDown, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -288,7 +288,7 @@ export const ProductInfo = ({}: Props) => {
                                                     scroll={false}
                                                     key={i}
                                                     onClick={()=>{setForcedLoader(true), setProductDetails(null), selfRef.current?.scrollTo(0,0)}}
-                                                    className="shrink-0 w-48 snap-center"
+                                                    className="shrink-0 w-40 snap-center"
                                                 >
                                                     <div className="w-full h-56 relative overflow-hidden rounded-xl">
                                                         <Image
@@ -310,8 +310,8 @@ export const ProductInfo = ({}: Props) => {
                                                     </div>
                                                 </Link>
                                             ))}
-                                            <div className="shrink-0 snap-start w-full h-64 flex items-center">
-                                                That's all from this vendor <br />for now...
+                                            <div className="shrink-0 snap-center w-full h-64 flex gap-1.5 items-center font-medium">
+                                                <span>View more</span> <ArrowRightIcon className="size-4 text-gray-600 group-hover:text-gray-600 transition-colors" />
                                             </div>
                                         </div>
                                     </div>

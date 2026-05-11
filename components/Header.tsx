@@ -1,13 +1,15 @@
 'use client'
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { useRouter } from "next/navigation";
+import { ReactNode } from "react";
 
 type Props = {
     pageTitle: string;
-    backButton?: boolean;
+    noBackButton?: boolean;
     backNavigationType?: 'default'|'manual'|'forceToHome'
+    extraButton?: ReactNode
 }
-export const Header = ({pageTitle, backButton = true, backNavigationType = 'default'}: Props) => {
+export const Header = ({pageTitle, noBackButton, backNavigationType = 'default', extraButton}: Props) => {
     const router = useRouter()
 
     const handleBack = () => {
@@ -37,10 +39,15 @@ export const Header = ({pageTitle, backButton = true, backNavigationType = 'defa
     }
     return ( 
         <div className="fixed top-0 left-0 z-10 bg-white shrink-0 h-16 w-full grid place-content-center font-semibold text-xl border-b-2 border-b-gray-200">
-            {backButton && <button onClick={()=>{handleBack()}} className="absolute text-black top-1/2 left-3 -translate-y-1/2 p-2">
+            {!noBackButton && <button onClick={()=>{handleBack()}} className="absolute text-black top-1/2 left-3 -translate-y-1/2 p-2">
                 <ArrowLeftIcon className='size-5' strokeWidth={3} /> 
             </button>}
+
             {pageTitle}
+
+            {extraButton && <div className="absolute top-1/2 right-3 -translate-y-1/2 flex items-center">
+                {extraButton}
+            </div>}
         </div>
     );
 }
