@@ -20,14 +20,25 @@ const feedSlice = createSlice({
   initialState,
   reducers: {
     setFeed(state, action: PayloadAction<HomeProduct[]>) {
-      state.feed = action.payload;
+      const seen = new Set<string>();
+      state.feed = action.payload.filter(item => {
+        if (seen.has(item._id)) return false;
+        seen.add(item._id);
+        return true;
+      });
     },
     appendToFeed(state, action: PayloadAction<HomeProduct[]>) {
+      const seen = new Set<string>();
       const combined = [...state.feed, ...action.payload];
-      if (combined.length > 40) {
-        state.feed = combined.slice(-40);
+      const deduped = combined.filter(item => {
+        if (seen.has(item._id)) return false;
+        seen.add(item._id);
+        return true;
+      });
+      if (deduped.length > 40) {
+        state.feed = deduped.slice(-40);
       } else {
-        state.feed = combined;
+        state.feed = deduped;
       }
     },
     clearFeed(state) {
@@ -41,10 +52,15 @@ const feedSlice = createSlice({
       state.lastId = action.payload;
     },
     resetFeed(state, action: PayloadAction<HomeProduct[]>) {
-      state.feed = action.payload;
+      const seen = new Set<string>();
+      state.feed = action.payload.filter(item => {
+        if (seen.has(item._id)) return false;
+        seen.add(item._id);
+        return true;
+      });
       state.hasMore = true;
-      if (action.payload.length > 0) {
-        state.lastId = action.payload[action.payload.length - 1]._id;
+      if (state.feed.length > 0) {
+        state.lastId = state.feed[state.feed.length - 1]._id;
       } else {
         state.lastId = null;
       }

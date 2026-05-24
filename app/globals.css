@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --animate-reveal-flasher: revealFlasher 1.2s ease 2.2s 1;
+
+  @keyframes revealFlasher {
+    0%, 100% {  background-color: var(--flash-color); color: white; }
+    50% { background-color: transparent; color: black; }
+  }
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }

@@ -13,6 +13,18 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'placehold.co',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'img.gamepix.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 };

@@ -13,7 +13,7 @@ type Props = {
 
 const BigCard = ({title, description, buttonText, img, imgOverlay, onClick}: Props) => {
   return (
-      <div className="w-full overflow-hidden bg-white shadow-sm rounded-4xl">
+      <div className="w-full overflow-hidden bg-white shadow-sm rounded-4xl" onClick={onClick}>
         
         {/* Upper Section */}
         <div className="relative flex h-40 items-center justify-center bg-gray-500">
