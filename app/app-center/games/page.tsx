@@ -4,9 +4,16 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { PageLayout } from "@/components/PageLayout";
 import { Button } from "@/components/Button";
+import { Modal } from "@/components/Modal";
 import Image from "next/image";
 import Script from "next/script";
 import { FullScreenLoader } from "@/components/FullScreenLoader";
+import { useDispatch, useSelector } from "react-redux";
+import { RootState } from "@/redux/store";
+import { LoyaltyReward, PartialUpdateUser } from "@/redux/authSlice";
+import { showToast } from "@/redux/toastSlice";
+import { createClient } from "@/lib/supabase/client";
+import useAuth from "@/hooks/useAuth";
 
 type Game = {
   id: string;
@@ -15,10 +22,97 @@ type Game = {
   url: string;
 };
 
+const REWARD_AMOUNT = 30000;;
+
 const GamesPage = () => {
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [claimModalActive, setClaimModalActive] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const dispatch = useDispatch();
+  const supabase = createClient();
+  const { checkSession } = useAuth();
+  const { user } = useSelector((state: RootState) => state.auth);
+
+  // Load the signed-in user's profile (without forcing a redirect) so we
+  // can credit their bidding balance / rewards when they claim.
+  useEffect(() => {
+    checkSession(false);
+  }, []);
+
+  const goToGame = (url: string) => {
+    window.open(url, '_blank');
+  };
+
+  const handlePlay = (game: Game) => {
+    setSelectedGame(game);
+    setClaimModalActive(true);
+  };
+
+  // "Yes" — credit the bidding currency now, then route to the game
+  const handleClaimNow = async () => {
+    const game = selectedGame;
+    if (isProcessing) return;
+
+    if (!user?.id) {
+      dispatch(showToast({ type: "error", message: "Please sign in to claim your bidding currency." }));
+      setClaimModalActive(false);
+      if (game) goToGame(game.url);
+      return;
+    }
+
+    setIsProcessing(true);
+    const newBalance = (user.bidding_balance ?? 0) + REWARD_AMOUNT;
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ bidding_balance: newBalance })
+      .eq("id", user.id);
+    setIsProcessing(false);
+
+    if (updateError) {
+      dispatch(showToast({ type: "error", message: "Could not claim your reward. Please try again." }));
+    } else {
+      dispatch(PartialUpdateUser({ bidding_balance: newBalance }));
+      dispatch(showToast({ type: "success", message: `B ${REWARD_AMOUNT.toLocaleString()} added to your bidding balance.` }));
+    }
+
+    setClaimModalActive(false);
+    if (game) goToGame(game.url);
+  };
+
+  // "Not yet" — store a deferred reward in loyalty_rewards, then route to the game
+  const handleClaimLater = async () => {
+    const game = selectedGame;
+    if (isProcessing) return;
+
+    if (!user?.id) {
+      dispatch(showToast({ type: "error", message: "Please sign in to save your reward." }));
+      setClaimModalActive(false);
+      if (game) goToGame(game.url);
+      return;
+    }
+
+    setIsProcessing(true);
+    const newReward: LoyaltyReward = { id: Date.now(), amount: REWARD_AMOUNT.toString() };
+    const updatedRewards = [...(user.loyalty_rewards ?? []), newReward];
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ loyalty_rewards: updatedRewards })
+      .eq("id", user.id);
+    setIsProcessing(false);
+
+    if (updateError) {
+      dispatch(showToast({ type: "error", message: "Could not save your reward. Please try again." }));
+    } else {
+      dispatch(PartialUpdateUser({ loyalty_rewards: updatedRewards }));
+      dispatch(showToast({ type: "success", message: "Reward saved to your Loyalty Rewards." }));
+    }
+
+    setClaimModalActive(false);
+    if (game) goToGame(game.url);
+  };
 
   useEffect(() => {
     const fetchGames = async () => {
@@ -60,6 +154,28 @@ const GamesPage = () => {
   return (
     <PageLayout pageTitle="Games" className="bg-[#f5f5f5]">
       <FullScreenLoader isActive={loading} />
+
+      {/* Claim bidding currency modal */}
+      <Modal isActive={claimModalActive} setIsActive={setClaimModalActive}>
+        <h2 className="text-xl font-bold text-[#111827] mb-2">Claim your reward before you go...</h2>
+        <p className="text-gray-500 mb-8 text-sm">
+          You&apos;ve been awarded bidding currency. Claim it now or at a later time. Unclaimed rewards can be found in the Loyalty Rewards page.
+        </p>
+        <div className="flex flex-col gap-3">
+          <Button
+            text={isProcessing ? "Processing..." : "Yes, claim now"}
+            classname="w-full py-3"
+            onClick={isProcessing ? undefined : handleClaimNow}
+          />
+          <Button
+            text="Maybe later"
+            bordered
+            classname="w-full py-3"
+            onClick={isProcessing ? undefined : handleClaimLater}
+          />
+        </div>
+      </Modal>
+
       <div className="p-4 space-y-6 pb-20">
         {/* Native Banner Container */}
         <div className="bg-white rounded-xl p-4 shadow-sm">
@@ -133,7 +249,7 @@ const GamesPage = () => {
         </div> */}
 
         {/* Games Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-7">
           {games.map((game) => (
             <div
               key={game.id}
@@ -147,18 +263,12 @@ const GamesPage = () => {
                   className="object-cover"
                 />
               </div>
-              <div className="p-3 flex flex-col justify-between grow gap-y-2.5">
+              <div className="px-4 py-6 flex flex-col justify-between grow gap-y-4">
                 <h3 className="text-sm font-semibold line-clamp-2">
                   {game.title}
                 </h3>
-                <a
-                  href={game.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block"
-                >
-                  <Button text="Play" size="xs" classname="w-full" />
-                </a>
+                
+                <Button onClick={()=>{handlePlay(game)}} bordered text="Play" size="xs" classname="w-full" />
               </div>
             </div>
           ))}

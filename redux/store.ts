@@ -3,6 +3,7 @@ import cartSliceReducer from './cartSlice'
 import authSliceReducer from './authSlice'
 import feedSliceReducer from './feedSlice'
 import crashGameSliceReducer from './crashGameSlice'
+import toastSliceReducer from './toastSlice'
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +11,7 @@ export const store = configureStore({
     auth: authSliceReducer,
     feed: feedSliceReducer,
     crashGame: crashGameSliceReducer,
+    toast: toastSliceReducer,
   },
 })
 

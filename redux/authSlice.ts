@@ -1,6 +1,11 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 
+export interface LoyaltyReward {
+    id: number,
+    amount: string
+}
+
 export interface UserState {
     id: string,
     firstname: string,
@@ -11,7 +16,10 @@ export interface UserState {
     dob: string,
     address_line1: string,
     address_line2: string,
-    state: string
+    state: string,
+    cash_balance: number,
+    bidding_balance: number,
+    loyalty_rewards: LoyaltyReward[]
 }
 
 const initialState: {user: UserState | null} = {

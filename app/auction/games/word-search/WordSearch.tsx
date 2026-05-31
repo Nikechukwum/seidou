@@ -1,9 +1,16 @@
 'use client'
 
 import { useState, useCallback, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { PageLayout } from "@/components/PageLayout"
 import { Button } from "@/components/Button"
 import { Modal } from "@/components/Modal"
+import { useDispatch, useSelector } from "react-redux"
+import { RootState } from "@/redux/store"
+import { PartialUpdateUser } from "@/redux/authSlice"
+import { showToast } from "@/redux/toastSlice"
+import { createClient } from "@/lib/supabase/client"
+import useAuth from "@/hooks/useAuth"
 
 // Word themes from old implementation
 const WORDS_BY_THEME = {
@@ -71,6 +78,8 @@ const WORDS_BY_THEME = {
 
 const WORDS_TO_FIND_COUNT = 4
 const GAME_DURATION = 20
+// Bidding currency awarded for winning a game
+const WIN_REWARD = 10000
 
 type Cell = {
   letter: string
@@ -108,6 +117,20 @@ const WordSearch = () => {
   const [wordsToFind, setWordsToFind] = useState<string[]>([])
   const [showModal, setShowModal] = useState(false)
   const [gameResult, setGameResult] = useState<{ won: boolean; message: string }>({ won: false, message: "" })
+
+  // Game setup (attempts + cost per attempt, paid in bidding currency)
+  const [setupModalActive, setSetupModalActive] = useState(true)
+  const [attemptsInput, setAttemptsInput] = useState("")
+  const [costInput, setCostInput] = useState("")
+  const [totalAttempts, setTotalAttempts] = useState(0)
+  const [costPerAttempt, setCostPerAttempt] = useState(0)
+  const [attemptsLeft, setAttemptsLeft] = useState(0)
+
+  const dispatch = useDispatch()
+  const supabase = createClient()
+  const router = useRouter()
+  const { checkSession } = useAuth()
+  const { user } = useSelector((state: RootState) => state.auth)
 
   const gridRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
@@ -269,9 +292,95 @@ const WordSearch = () => {
     setRevealedCells(new Map())
   }, [])
 
+  // Require a signed-in user (redirects to /signin if not) so we can credit
+  // winnings / charge for losses. The game starts once the setup is submitted.
   useEffect(() => {
+    checkSession()
+  }, [])
+
+  // Award bidding currency for a win
+  const awardWin = async () => {
+    if (!user?.id) return
+    const newBalance = (user.bidding_balance ?? 0) + WIN_REWARD
+    const { error } = await supabase
+      .from("users")
+      .update({ bidding_balance: newBalance })
+      .eq("id", user.id)
+    if (error) {
+      dispatch(showToast({ type: "error", message: "Could not award your winnings. Please contact support." }))
+      return
+    }
+    dispatch(PartialUpdateUser({ bidding_balance: newBalance }))
+    dispatch(showToast({ type: "success", message: `You won! B ${WIN_REWARD.toLocaleString()} added to your bidding balance.` }))
+  }
+
+  // Charge the total (cost per attempt × attempts) once all attempts are lost
+  const chargeForLoss = async () => {
+    if (!user?.id) return
+    const total = totalAttempts * costPerAttempt
+    const newBalance = Math.max(0, (user.bidding_balance ?? 0) - total)
+    const { error } = await supabase
+      .from("users")
+      .update({ bidding_balance: newBalance })
+      .eq("id", user.id)
+    if (error) {
+      dispatch(showToast({ type: "error", message: "Could not process your payment. Please contact support." }))
+      return
+    }
+    dispatch(PartialUpdateUser({ bidding_balance: newBalance }))
+    dispatch(showToast({ type: "error", message: `Out of attempts. B ${total.toLocaleString()} deducted from your bidding balance.` }))
+  }
+
+  // Submit the setup modal: validate, reserve funds, then start the first attempt
+  const handleStartGame = () => {
+    const attempts = Number(attemptsInput)
+    const cost = Number(costInput)
+
+    if (!user?.id) {
+      dispatch(showToast({ type: "error", message: "Please sign in to play." }))
+      return
+    }
+    if (!Number.isInteger(attempts) || attempts < 1 || !cost || cost < 1) {
+      dispatch(showToast({ type: "error", message: "Enter a valid number of attempts and cost per attempt." }))
+      return
+    }
+
+    const total = attempts * cost
+    if ((user.bidding_balance ?? 0) < total) {
+      dispatch(showToast({ type: "error", message: `You need B ${total.toLocaleString()} to play. Top up your bidding balance.` }))
+      return
+    }
+
+    setTotalAttempts(attempts)
+    setCostPerAttempt(cost)
+    setAttemptsLeft(attempts)
+    setSetupModalActive(false)
     initializeGame()
-  }, [initializeGame])
+  }
+
+  // Start the next attempt without re-opening setup
+  const startNextAttempt = () => {
+    setShowModal(false)
+    initializeGame()
+  }
+
+  // Re-open the setup modal for a brand-new game
+  const openSetup = () => {
+    setShowModal(false)
+    setAttemptsInput("")
+    setCostInput("")
+    setSetupModalActive(true)
+  }
+
+  // Leave the game and go back to the auction games list. This clears the
+  // current attempts (not yet persisted — that will come later).
+  const handleLeave = () => {
+    setShowModal(false)
+    setAttemptsLeft(0)
+    setTotalAttempts(0)
+    setCostPerAttempt(0)
+    router.push('/auction/games')
+  }
 
   useEffect(() => {
     if (isGameActive && timeLeft > 0) {
@@ -286,7 +395,16 @@ const WordSearch = () => {
       setPivotCell(null)
       // Reveal all answers with different colors
       revealAllAnswersWithColors()
-      setGameResult({ won: false, message: "Time's Up!" })
+      // This attempt is lost — use one up
+      const remaining = attemptsLeft - 1
+      setAttemptsLeft(remaining)
+      if (remaining > 0) {
+        setGameResult({ won: false, message: "Time's Up!" })
+      } else {
+        // All attempts exhausted without a win — charge the total now
+        setGameResult({ won: false, message: "Out of Attempts" })
+        chargeForLoss()
+      }
       setTimeout(() => {
         setShowModal(true)
       }, 4500)
@@ -294,7 +412,7 @@ const WordSearch = () => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [isGameActive, timeLeft])
+  }, [isGameActive, timeLeft, attemptsLeft])
 
   // Check for win condition
   useEffect(() => {
@@ -302,6 +420,8 @@ const WordSearch = () => {
       setIsGameActive(false)
       setGameResult({ won: true, message: `Congratulations\nYou Win!` })
       setShowModal(true)
+      // Winning awards bidding currency; no charge is taken
+      awardWin()
     }
   }, [foundWords, isGameActive])
 
@@ -571,7 +691,7 @@ const WordSearch = () => {
           )} */}
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-medium text-gray-500">Words to find:</h3>
-            <span className="text-xs font-medium text-gray-500">Attempts left: {}</span>
+            <span className="text-xs font-medium text-gray-500">Attempts left: {attemptsLeft}</span>
           </div>
           <div className="flex flex-wrap gap-2">
             {wordsToFind.map((word) => {
@@ -654,21 +774,77 @@ const WordSearch = () => {
 
         <Modal isActive={showModal} setIsActive={setShowModal}>
           <div className="text-center space-y-4">
-            <h2 className="text-2xl font-bold">{gameResult.message}</h2>
+            <h2 className="text-2xl font-bold whitespace-pre-line">{gameResult.message}</h2>
             <p className="text-gray-600">
               You found {foundWords.length} out of {WORDS_TO_FIND_COUNT} words.
             </p>
-            {gameResult.won && (
-              <p className="text-green-600 font-semibold">Great job!</p>
+            {gameResult.won ? (
+              <p className="text-green-600 font-semibold">You won B {WIN_REWARD.toLocaleString()}!</p>
+            ) : attemptsLeft === 0 ? (
+              <p className="text-red-600 font-semibold">
+                B {(totalAttempts * costPerAttempt).toLocaleString()} was deducted from your balance.
+              </p>
+            ) : (
+              <p className="text-gray-500 font-medium">{attemptsLeft} attempt{attemptsLeft === 1 ? "" : "s"} left.</p>
+            )}
+            {!gameResult.won && attemptsLeft > 0 ? (
+              <Button
+                text={`Try Again (${attemptsLeft} left)`}
+                onClick={startNextAttempt}
+                classname="w-full"
+              />
+            ) : (
+              <Button
+                text="New Game"
+                onClick={openSetup}
+                classname="w-full"
+              />
             )}
             <Button
-              text="Play Again"
-              onClick={() => {
-                setShowModal(false)
-                initializeGame()
-              }}
+              text="Leave Word Search"
+              bordered
+              onClick={handleLeave}
               classname="w-full"
             />
+          </div>
+        </Modal>
+
+        {/* Setup modal — collects attempts and cost per attempt before play */}
+        <Modal isActive={setupModalActive} setIsActive={setSetupModalActive}>
+          <h2 className="text-xl font-bold text-[#111827] mb-2">Set up your game</h2>
+          <p className="text-gray-500 mb-6 text-sm">
+            Choose how many attempts you want and the cost per attempt. <br />
+            Win any attempt to earn B {WIN_REWARD.toLocaleString()} — you&apos;re only charged if you use up every attempt without winning.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium uppercase text-gray-400 mb-1">Number of attempts</label>
+              <input
+                type="number"
+                min={1}
+                value={attemptsInput}
+                onChange={(e) => setAttemptsInput(e.target.value)}
+                placeholder="e.g. 3"
+                className="w-full px-4 py-3 border border-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#111827]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium uppercase text-gray-400 mb-1">Cost per attempt (B)</label>
+              <input
+                type="number"
+                min={1}
+                value={costInput}
+                onChange={(e) => setCostInput(e.target.value)}
+                placeholder="e.g. 500"
+                className="w-full px-4 py-3 border border-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#111827]"
+              />
+            </div>
+            {Number(attemptsInput) > 0 && Number(costInput) > 0 && (
+              <p className="text-sm text-gray-600">
+                Total at stake: <span className="font-bold">B {(Number(attemptsInput) * Number(costInput)).toLocaleString()}</span>
+              </p>
+            )}
+            <Button text="Start Game" classname="w-full py-3" onClick={handleStartGame} />
           </div>
         </Modal>
       </div>

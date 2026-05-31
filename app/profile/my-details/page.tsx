@@ -4,16 +4,14 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { RootState } from '@/redux/store'
 import { useDispatch, useSelector } from 'react-redux'
-import { CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/20/solid'
 import { ArrowLeftIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
 import { PartialUpdateUser, UpdateUser, UserState } from '@/redux/authSlice'
+import { showToast } from '@/redux/toastSlice'
 
 export default function MyDetailsPage() {
     const [loading, setLoading] = useState(false)
     const supabase = createClient()
     const router = useRouter()
-    const [error, setError] = useState('')
-    const [success, setSuccess] = useState('')
     const dispatch = useDispatch()
 
     const { user } = useSelector(
@@ -31,8 +29,6 @@ export default function MyDetailsPage() {
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
-    setError('')
-    setSuccess('')
 
     const formData = new FormData(e.currentTarget)
     const updates = Object.fromEntries(formData)
@@ -46,12 +42,11 @@ export default function MyDetailsPage() {
       })
 
     setLoading(false)
-    if (error) setError(error.message)
+    if (error) dispatch(showToast({ type: 'error', message: error.message }))
     else {
         dispatch(PartialUpdateUser(updates as Partial<UserState>));
-        setSuccess('Details updated successfully')
+        dispatch(showToast({ type: 'success', message: 'Details updated successfully' }))
     }
-    window.scrollTo({top: 0, behavior: 'smooth'})
   }
 
   return (
@@ -65,13 +60,6 @@ export default function MyDetailsPage() {
     </div>
 
     <div className='px-6'>
-        {error && <p className='max-w-lg flex gap-x-1.5 items-center font-semibold my-4 text-sm text-red-600 bg-red-50 ring-1 ring-red-600 rounded-full px-3 py-2'>
-        <ExclamationCircleIcon className='size-5.5 shrink-0'/> {error}
-        </p>}
-        {success && <p className='max-w-lg flex gap-x-1.5 items-center font-semibold my-4 text-sm text-green-600 bg-green-50 ring-1 ring-green-600 rounded-full px-3 py-2'>
-            <CheckCircleIcon className='size-5.5 shrink-0'/> {success}
-        </p>}
-
         <form onSubmit={handleUpdate} className="space-y-6">
             {/* First Name */}
             <div>

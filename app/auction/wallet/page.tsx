@@ -2,13 +2,20 @@
 import { Button } from "@/components/Button";
 import { PageLayout } from "@/components/PageLayout";
 import { Modal } from "@/components/Modal";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
+import { useSelector } from "react-redux";
+import { RootState } from "@/redux/store";
+import useAuth from "@/hooks/useAuth";
 
 const AuctionWalletPage = () => {
     const [modal, setModal] = useState(false)
-    const [depositModalActive, setDepositModalActive] = useState(false);
-    const [withdrawModalActive, setWithdrawModalActive] = useState(false);
+    const { checkSession } = useAuth();
+    const { user } = useSelector((state: RootState) => state.auth);
+
+    useEffect(() => {
+        checkSession(false);
+    }, []);
 
     return (
         <PageLayout pageTitle="Auction Wallet" className="px-4">
@@ -34,7 +41,9 @@ const AuctionWalletPage = () => {
                 {/* Balance Section */}
                 <div className="flex flex-col items-center px-5 py-12">
                     <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-extrabold text-[#111827]">₦0</span>
+                        <span className="text-3xl font-extrabold text-[#111827]">
+                            B {(user?.bidding_balance ?? 0).toLocaleString()}
+                        </span>
                     </div>
                     <p className="text-slate-500 font-medium text-sm mt-1">
                         Available
@@ -47,34 +56,6 @@ const AuctionWalletPage = () => {
                     <Button text="History" bordered classname="w-full text-base!" onClick={() => setModal(true)} />
                 </div>
             </div>
-
-            {/* Deposit Modal */}
-            {/* <Modal isActive={depositModalActive} setIsActive={setDepositModalActive}>
-                <h2 className="text-xl font-bold text-[#111827] mb-4">Deposit Funds</h2>
-                <p className="text-slate-600 mb-6">Enter the amount you want to deposit into your auction wallet.</p>
-                <div className="space-y-4">
-                    <input
-                        type="number"
-                        placeholder="Amount (₦)"
-                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#111827]"
-                    />
-                    <Button text="Confirm Deposit" classname="w-full!" onClick={() => setDepositModalActive(false)} />
-                </div>
-            </Modal> */}
-
-            {/* Withdraw Modal */}
-            {/* <Modal isActive={withdrawModalActive} setIsActive={setWithdrawModalActive}>
-                <h2 className="text-xl font-bold text-[#111827] mb-4">Withdraw Funds</h2>
-                <p className="text-slate-600 mb-6">Enter the amount you want to withdraw from your auction wallet.</p>
-                <div className="space-y-4">
-                    <input
-                        type="number"
-                        placeholder="Amount (₦)"
-                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#111827]"
-                    />
-                    <Button text="Confirm Withdrawal" bordered classname="w-full!" onClick={() => setWithdrawModalActive(false)} />
-                </div>
-            </Modal> */}
         </PageLayout>
     );
 }
