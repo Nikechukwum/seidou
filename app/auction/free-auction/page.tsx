@@ -1,4 +1,5 @@
 'use client'
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { ListCard } from "@/components/ListCard";
 import { Modal } from "@/components/Modal";
@@ -8,6 +9,7 @@ import { useState } from "react";
 
 const FreeAuctionPage = () => {
     const [placeBidModal, setPlaceBidModal] = useState(false)
+    const router = useRouter()
     const auctionItems = [
         { id: 1, amount: "30,000", bids: 6 },
         { id: 2, amount: "30,000", bids: 4 },
@@ -46,7 +48,10 @@ const FreeAuctionPage = () => {
                             <InformationCircleIcon className="size-5.5 text-gray-500"/>
                         </div>
                         <div className="flex justify-between">
-                            <div className="bg-black text-white text-xs font-bold px-4 py-2 rounded-full w-fit">
+                            <div 
+                                className="bg-black text-white text-xs font-bold px-4 py-2 rounded-full w-fit cursor-pointer"
+                                onClick={() => router.push(`/auction/free-auction/${item.id}`)}
+                            >
                                 Bids {item.bids}
                             </div>
                             <button 

@@ -22,7 +22,9 @@ type Game = {
   url: string;
 };
 
-const REWARD_AMOUNT = 30000;;
+
+
+const REWARD_AMOUNT = 30000;
 
 const GamesPage = () => {
   const [games, setGames] = useState<Game[]>([]);
@@ -46,9 +48,30 @@ const GamesPage = () => {
     window.open(url, '_blank');
   };
 
-  const handlePlay = (game: Game) => {
-    setSelectedGame(game);
-    setClaimModalActive(true);
+  const handlePlay = async (game: Game) => {
+    if (!user?.id) {
+      goToGame(game.url);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/loyalty-rewards?userId=${user.id}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.canClaim) {
+          setSelectedGame(game);
+          setClaimModalActive(true);
+        } else {
+          goToGame(game.url);
+        }
+      } else {
+        goToGame(game.url);
+      }
+    } catch (err) {
+      console.error("Failed to check cooldown:", err);
+      goToGame(game.url);
+    }
   };
 
   // "Yes" — credit the bidding currency now, then route to the game
@@ -64,20 +87,32 @@ const GamesPage = () => {
     }
 
     setIsProcessing(true);
-    const newBalance = (user.bidding_balance ?? 0) + REWARD_AMOUNT;
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({ bidding_balance: newBalance })
-      .eq("id", user.id);
-    setIsProcessing(false);
+    try {
+      const response = await fetch("/api/loyalty-rewards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, gameId: game?.id }),
+      });
 
-    if (updateError) {
+      const data = await response.json();
+
+      if (!response.ok) {
+        dispatch(showToast({
+          type: "error",
+          message: data.error || "Could not claim your reward. Please try again."
+        }));
+        if (game) goToGame(game.url);
+        return;
+      }
+
+      dispatch(PartialUpdateUser({ bidding_balance: data.newBalance }));
+      dispatch(showToast({ type: "success", message: `B 30,000 added to your bidding balance.` }));
+    } catch (err) {
+      console.error("Failed to claim reward:", err);
       dispatch(showToast({ type: "error", message: "Could not claim your reward. Please try again." }));
-    } else {
-      dispatch(PartialUpdateUser({ bidding_balance: newBalance }));
-      dispatch(showToast({ type: "success", message: `B ${REWARD_AMOUNT.toLocaleString()} added to your bidding balance.` }));
     }
 
+    setIsProcessing(false);
     setClaimModalActive(false);
     if (game) goToGame(game.url);
   };

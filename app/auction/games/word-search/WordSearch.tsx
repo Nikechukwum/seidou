@@ -772,7 +772,7 @@ const WordSearch = () => {
           </div>
         </div>
 
-        <Modal isActive={showModal} setIsActive={setShowModal}>
+        <Modal isActive={showModal} setIsActive={setShowModal} persist>
           <div className="text-center space-y-4">
             <h2 className="text-2xl font-bold whitespace-pre-line">{gameResult.message}</h2>
             <p className="text-gray-600">

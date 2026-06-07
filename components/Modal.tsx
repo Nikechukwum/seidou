@@ -5,6 +5,7 @@ type Props = {
     isActive: boolean;
     setIsActive: Dispatch<SetStateAction<boolean>>;
     children: ReactNode;
+    persist?: boolean;
 }
 
 const modalVariants = {
@@ -19,7 +20,7 @@ const overlayVariants = {
     exit: { opacity: 0, transition: { duration: 0.3 } }
 }
 
-export const Modal = ({isActive, setIsActive, children}: Props) => {
+export const Modal = ({isActive, setIsActive, children, persist}: Props) => {
     const variants = useMemo(() => ({ modal: modalVariants, overlay: overlayVariants }), []);
     
     return ( 
@@ -35,7 +36,7 @@ export const Modal = ({isActive, setIsActive, children}: Props) => {
                 {/* Overlay */}
                 <motion.div className="absolute top-0 left-0 -z-1 h-full w-full bg-black/20"
                 {...variants.overlay}
-                onClick={() => setIsActive(false)} 
+                onClick={() => setIsActive(persist? true : false)} 
                 />
             </div>}
         </AnimatePresence>
