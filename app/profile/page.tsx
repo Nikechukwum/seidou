@@ -90,7 +90,7 @@ export default function ProfilePage() {
             </Link>
           )
         })}
-        <button onClick={()=>{handleLogout()}} className="flex items-center justify-between w-fit px-6 py-1 transition-colors group" >
+        <button onClick={()=>{handleLogout()}} className="flex items-center justify-between w-fit py-1 transition-colors group" >
           <div className="flex items-center gap-4 text-red-500">
             <div className="p-4 rounded-xl group-active:scale-95 transition-transform">
               <ArrowLeftStartOnRectangleIcon className="size-6 text-red-500 rotate-180"/>

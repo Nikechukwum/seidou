@@ -74,51 +74,8 @@ const GamesPage = () => {
     }
   };
 
-  // "Yes" — credit the bidding currency now, then route to the game
-  const handleClaimNow = async () => {
-    const game = selectedGame;
-    if (isProcessing) return;
-
-    if (!user?.id) {
-      dispatch(showToast({ type: "error", message: "Please sign in to claim your bidding currency." }));
-      setClaimModalActive(false);
-      if (game) goToGame(game.url);
-      return;
-    }
-
-    setIsProcessing(true);
-    try {
-      const response = await fetch("/api/loyalty-rewards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.id, gameId: game?.id }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        dispatch(showToast({
-          type: "error",
-          message: data.error || "Could not claim your reward. Please try again."
-        }));
-        if (game) goToGame(game.url);
-        return;
-      }
-
-      dispatch(PartialUpdateUser({ bidding_balance: data.newBalance }));
-      dispatch(showToast({ type: "success", message: `B 30,000 added to your bidding balance.` }));
-    } catch (err) {
-      console.error("Failed to claim reward:", err);
-      dispatch(showToast({ type: "error", message: "Could not claim your reward. Please try again." }));
-    }
-
-    setIsProcessing(false);
-    setClaimModalActive(false);
-    if (game) goToGame(game.url);
-  };
-
-  // "Not yet" — store a deferred reward in loyalty_rewards, then route to the game
-  const handleClaimLater = async () => {
+  // "Accept" — save reward to Loyalty Rewards for later claiming, then route to the game
+  const handleAccept = async () => {
     const game = selectedGame;
     if (isProcessing) return;
 
@@ -145,6 +102,13 @@ const GamesPage = () => {
       dispatch(showToast({ type: "success", message: "Reward saved to your Loyalty Rewards." }));
     }
 
+    setClaimModalActive(false);
+    if (game) goToGame(game.url);
+  };
+
+  // "Reject" — forfeit the reward and go straight to the game
+  const handleReject = () => {
+    const game = selectedGame;
     setClaimModalActive(false);
     if (game) goToGame(game.url);
   };
@@ -191,22 +155,23 @@ const GamesPage = () => {
       <FullScreenLoader isActive={loading} />
 
       {/* Claim bidding currency modal */}
-      <Modal isActive={claimModalActive} setIsActive={setClaimModalActive}>
-        <h2 className="text-xl font-bold text-[#111827] mb-2">Claim your reward before you go...</h2>
+      <Modal isActive={claimModalActive} setIsActive={setClaimModalActive} persist>
+        <h2 className="text-xl font-bold text-[#111827] mb-2">Accept your reward before you go...</h2>
         <p className="text-gray-500 mb-8 text-sm">
-          You&apos;ve been awarded bidding currency. Claim it now or at a later time. Unclaimed rewards can be found in the Loyalty Rewards page.
+          You have been awarded bidding currency. You can choose to accept or reject it.
+          All accepted rewards can later be claimed in the Loyalty Rewards page.
         </p>
         <div className="flex flex-col gap-3">
           <Button
-            text={isProcessing ? "Processing..." : "Yes, claim now"}
+            text={isProcessing ? "Saving..." : "Accept"}
             classname="w-full py-3"
-            onClick={isProcessing ? undefined : handleClaimNow}
+            onClick={isProcessing ? undefined : handleAccept}
           />
           <Button
-            text="Maybe later"
+            text="Reject"
             bordered
             classname="w-full py-3"
-            onClick={isProcessing ? undefined : handleClaimLater}
+            onClick={isProcessing ? undefined : handleReject}
           />
         </div>
       </Modal>
@@ -288,9 +253,9 @@ const GamesPage = () => {
           {games.map((game) => (
             <div
               key={game.id}
-              className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col"
+              className="bg-white rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col"
             >
-              <div className="relative h-32 bg-gray-500">
+              <div className="relative h-48 bg-gray-500">
                 <Image
                   src={game.banner_image}
                   alt={game.title}
@@ -298,12 +263,12 @@ const GamesPage = () => {
                   className="object-cover"
                 />
               </div>
-              <div className="px-4 py-6 flex flex-col justify-between grow gap-y-4">
+              <div className="px-4 py-7 flex flex-col justify-between grow gap-y-4">
                 <h3 className="text-sm font-semibold line-clamp-2">
                   {game.title}
                 </h3>
                 
-                <Button onClick={()=>{handlePlay(game)}} bordered text="Play" size="xs" classname="w-full" />
+                <Button onClick={()=>{handlePlay(game)}} bordered text="Play" size="sm" classname="w-full" />
               </div>
             </div>
           ))}
