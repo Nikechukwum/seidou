@@ -4,14 +4,9 @@ import { Button } from "@/components/Button";
 import { ListCard } from "@/components/ListCard";
 import { Modal } from "@/components/Modal";
 import { PageLayout } from "@/components/PageLayout";
-import { InformationCircleIcon } from "@heroicons/react/24/solid";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Calendar } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
-import { showToast } from "@/redux/toastSlice";
-import { PartialUpdateUser } from "@/redux/authSlice";
-import { RootState } from "@/redux/store";
 
 type Auction = {
     id: number;
@@ -29,17 +24,11 @@ const formatTime = (dateStr: string) =>
     new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 const FreeAuctionPage = () => {
-    const [placeBidModal, setPlaceBidModal] = useState(false)
     const [detailsModal, setDetailsModal] = useState(false)
     const [selectedAuction, setSelectedAuction] = useState<Auction | null>(null)
-    const [biddingAuction, setBiddingAuction] = useState<Auction | null>(null)
-    const [bidAmount, setBidAmount] = useState('')
-    const [bidding, setBidding] = useState(false)
     const [auctions, setAuctions] = useState<Auction[]>([])
     const [loading, setLoading] = useState(true)
     const router = useRouter()
-    const dispatch = useDispatch()
-    const user = useSelector((state: RootState) => state.auth.user)
 
     useEffect(() => {
         const fetchAuctions = async () => {
@@ -74,42 +63,6 @@ const FreeAuctionPage = () => {
         fetchAuctions()
     }, [])
 
-    const openPlaceBid = (auction: Auction) => {
-        setBiddingAuction(auction)
-        setPlaceBidModal(true)
-    }
-
-    const handlePlaceBid = async () => {
-        if (!bidAmount || !biddingAuction) return
-        setBidding(true)
-
-        const res = await fetch('/api/auction/bid', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ auctionId: biddingAuction.id, bidAmount: Number(bidAmount) }),
-        })
-
-        const data = await res.json()
-
-        if (!res.ok) {
-            dispatch(showToast({ type: 'error', message: data.error || 'Could not place your bid. Please try again.' }))
-        } else {
-            setAuctions(prev => prev.map(a =>
-                a.id === biddingAuction.id
-                    ? { ...a, bidCount: data.action === 'insert' ? a.bidCount + 1 : a.bidCount, hasPlacedBid: true }
-                    : a
-            ))
-            if (user) {
-                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - Number(bidAmount) }))
-            }
-            setBidAmount('')
-            setPlaceBidModal(false)
-            dispatch(showToast({ type: 'success', message: data.action === 'insert' ? 'Bid placed successfully!' : 'Bid increased successfully!' }))
-        }
-
-        setBidding(false)
-    }
-
     const openDetails = (auction: Auction) => {
         setSelectedAuction(auction)
         setDetailsModal(true)
@@ -117,25 +70,6 @@ const FreeAuctionPage = () => {
 
     return (
         <PageLayout pageTitle="Free Auction" className="px-4 bg-[#f5f5f5]">
-
-            <Modal isActive={placeBidModal} setIsActive={(v) => { setPlaceBidModal(v); if (!v) setBidAmount('') }}>
-                <h2 className="text-xl font-bold text-[#111827] mb-4">Place Bid</h2>
-                <p className="text-gray-500 mb-3">Enter the amount you want to bid.</p>
-                <div className="space-y-10">
-                    <input
-                        type="number"
-                        placeholder="Amount (₦)"
-                        value={bidAmount}
-                        onChange={(e) => setBidAmount(e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#111827]"
-                    />
-                    <Button
-                        text={bidding ? 'Submitting...' : 'Submit'}
-                        classname="w-full py-3"
-                        onClick={handlePlaceBid}
-                    />
-                </div>
-            </Modal>
 
             <Modal isActive={detailsModal} setIsActive={setDetailsModal}>
                 {selectedAuction && (
@@ -179,29 +113,24 @@ const FreeAuctionPage = () => {
                             id={index + 1}
                         >
                             <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-lg text-gray-900">
+                                <span className="font-bold text-[22px] text-gray-900">
                                     ₦ {Number(auction.chequeValue).toLocaleString()}
                                 </span>
-                                <InformationCircleIcon
-                                    className="size-5.5 text-gray-500 cursor-pointer"
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    text="Learn More"
+                                    classname="flex-1 py-1! px-0.5! text-xs whitespace-nowrap"
+                                    size="xs"
+                                    bordered
                                     onClick={() => openDetails(auction)}
                                 />
-                            </div>
-                            <div className="flex justify-between">
-                                <div
-                                    className="bg-black text-white text-xs font-bold px-6 py-2 rounded-full w-fit cursor-pointer"
+                                <Button
+                                    text="Table"
+                                    classname="flex-1 py-3! px-0.5! text-xs whitespace-nowrap"
+                                    size="xs"
                                     onClick={() => router.push(`/auction/free-auction/${auction.id}`)}
-                                >
-                                    Bids {auction.bidCount}
-                                </div>
-                                {!auction.hasPlacedBid && (
-                                    <button
-                                        className="bg-[#60A5FA] hover:bg-blue-500 text-white text-xs font-bold py-2 px-4 rounded-full transition-colors"
-                                        onClick={() => openPlaceBid(auction)}
-                                    >
-                                        Place bid
-                                    </button>
-                                )}
+                                />
                             </div>
                         </ListCard>
                     ))}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { PageLayout } from "@/components/PageLayout";
+import { GamesHeader } from "@/components/GamesHeader";
 import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import Image from "next/image";
@@ -21,8 +21,6 @@ type Game = {
   banner_image: string;
   url: string;
 };
-
-
 
 const REWARD_AMOUNT = 30000;
 
@@ -142,16 +140,18 @@ const GamesPage = () => {
 
   if (error) {
     return (
-      <PageLayout pageTitle="Games" className="bg-[#f5f5f5]">
-        <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="min-h-screen bg-[#f5f5f5]">
+        <GamesHeader />
+        <div className="pt-28 pb-20 flex items-center justify-center min-h-screen">
           <p className="text-red-500">{error}</p>
         </div>
-      </PageLayout>
+      </div>
     );
   }
 
   return (
-    <PageLayout pageTitle="Games" className="bg-[#f5f5f5]">
+    <div className="min-h-screen bg-[#f5f5f5]">
+      <GamesHeader />
       <FullScreenLoader isActive={loading} />
 
       {/* Claim bidding currency modal */}
@@ -176,48 +176,8 @@ const GamesPage = () => {
         </div>
       </Modal>
 
-      <div className="p-4 space-y-6 pb-20">
-        {/* Native Banner Container */}
-        <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-sm text-gray-500 mb-2">Sponsored</p>
-          <div id="container-f8a4b3e44415d671ad9711e479282e0d"></div>
-        </div>
-
-        {/* 300x250 Banner */}
-        {/* <div className="flex justify-center bg-white rounded-xl p-4 shadow-sm">
-          <Script
-            id="adsterra-options"
-            strategy="afterInteractive"
-            dangerouslySetInnerHTML={{
-              __html: `
-                window.atOptions = {
-                  key: '1f4eb91d082bac01274fed2e43bccfff',
-                  format: 'iframe',
-                  height: 250,
-                  width: 300,
-                  params: {}
-                };
-              `,
-            }}
-          />
-          <Script
-            src="https://pl28648090.effectivegatecpm.com/1f4eb91d082bac01274fed2e43bccfff/invoke.js"
-            strategy="afterInteractive"
-          />
-        </div> */}
-
-        {/* Smart Link Banner */}
-        {/* <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-sm text-gray-500 mb-3">Special Offer</p>
-          <a
-            href="https://www.effectivegatecpm.com/k4j37eawde?key=fa5dd231bad5cff7def4f4565b5f24b1"
-            target="_blank"
-            rel="noopener noreferrer nofollow"
-            className="block"
-          >
-            <Button text="Continue" classname="w-full" />
-          </a>
-        </div> */}
+      <div className="pt-28 pb-20 p-4 space-y-6">
+        
 
         {/* Social Bar Script */}
         <Script
@@ -225,31 +185,8 @@ const GamesPage = () => {
           strategy="afterInteractive"
         />
 
-        {/* Crash Game Card */}
-        {/* <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-          <div className="relative h-40 bg-gray-500">
-            <Image
-              src="https://placehold.co/600x400/1a1a1a/ffffff?text=Crash+Game"
-              alt="Crash Game"
-              fill
-              className="object-cover"
-            />
-          </div>
-          <div className="p-4 space-y-3">
-            <h3 className="text-lg font-bold">Crash Game</h3>
-            <a
-              href="/crash"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block"
-            >
-              <Button text="Play" classname="w-full" />
-            </a>
-          </div>
-        </div> */}
-
         {/* Games Grid */}
-        <div className="grid grid-cols-1 gap-7">
+        <div className="grid grid-cols-1 gap-7 pt-3">
           {games.map((game) => (
             <div
               key={game.id}
@@ -267,14 +204,13 @@ const GamesPage = () => {
                 <h3 className="text-sm font-semibold line-clamp-2">
                   {game.title}
                 </h3>
-                
-                <Button onClick={()=>{handlePlay(game)}} bordered text="Play" size="sm" classname="w-full" />
+                <Button onClick={() => { handlePlay(game) }} bordered text="Play" size="sm" classname="w-full" />
               </div>
             </div>
           ))}
         </div>
       </div>
-    </PageLayout>
+    </div>
   );
 };
 

@@ -106,14 +106,14 @@ export const HomeHeader = ({filterAction}: Props) => {
 
             {/* Filters */}
             <div className={`w-full flex items-center bg-white px-2`}>
-                <div className="no-scrollbar fade-right py-2.5 w-full h-full flex grow gap-x-3 overflow-x-scroll snap-x snap-mandatory">
+                <div className="no-scrollbar fade-right py-2.5 w-full h-full flex grow gap-x-2 overflow-x-scroll snap-x snap-mandatory">
                     {(
                     Object.keys(SEARCH_FILTERS) as Array<keyof typeof SEARCH_FILTERS>
                     ).map((filter, index) => {
                     return (
                         <button
                         key={index}
-                        className={`shrink-0 rounded-md px-3.5 py-1.5 text-sm first:ml-10 last:mr-28 
+                        className={`shrink-0 rounded-full px-4 py-1.5 text-sm first:ml-10 last:mr-28
                         snap-start scroll-ml-3 active:scale-[1.07] transition-transform ${filter}-tag ${
                             filter === activeFilter
                             ? "bg-[#202020] text-white"

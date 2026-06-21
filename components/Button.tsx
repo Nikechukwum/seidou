@@ -14,7 +14,7 @@ export const Button = ({text, classname, bordered, size = 'md', onClick}: Props)
     };
     return ( 
         <button onClick={onClick} className={`rounded-full ${sizeClasses[size]} text-sm font-bold
-        ${bordered? 'border border-gray-300 text-black bg-transparent active:bg-black active:text-white duration-100' : 'bg-black text-white active:bg-black/70 duration-100'}
+        ${bordered? 'border border-gray-200 text-black bg-transparent active:bg-black active:text-white duration-100' : 'bg-black text-white active:bg-black/70 duration-100'}
         ${classname}`}>
             {text}
         </button>

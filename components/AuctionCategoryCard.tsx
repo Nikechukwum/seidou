@@ -1,5 +1,6 @@
 'use client'
 import { useRouter } from "next/navigation";
+import { Button } from "./Button";
 
 const AuctionCategoryCard = () => {
     const router = useRouter()
@@ -22,18 +23,16 @@ const AuctionCategoryCard = () => {
 
       {/* Button Actions */}
       <div className="flex gap-3">
-        <button 
-          className="flex-1 py-2 px-6 border border-gray-300 rounded-full text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-          onClick={() => console.log('Learn more clicked')}
-        >
-          Learn more
-        </button>
-        <button 
-          className="flex-1 py-2 px-6 bg-black text-white rounded-full text-sm font-semibold hover:bg-gray-800 transition-colors"
+      <Button 
+        text="Learn More"
+        classname="flex-1"
+        bordered
+      />
+        <Button 
+          text="Open"
+          classname="flex-1"
           onClick={() => router.push('/auction/free-auction')}
-        >
-          Open
-        </button>
+        />
       </div>
     </div>
   );
