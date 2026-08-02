@@ -14,6 +14,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import { appendToFeed, clearFeed, resetFeed, setHasMore, setLastId, setActiveFilter } from "@/redux/feedSlice";
 import { SmallLoader } from "@/components/SmallLoader";
+import useAuth from "@/hooks/useAuth";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -29,9 +30,18 @@ export default function Home() {
   const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as keyof typeof SEARCH_FILTERS;
   const LOCAL_DISABLE_KEY = "seidou_welcome_disabled";
   const SCROLL_POSITION_KEY = "seidou_feed_scroll_position";
-  
+  const { isLoading, checkSession } = useAuth();
+
   const lastId = useRef<string | null>(lastIdFromStore);
   const currentFetchTotal = useRef(feed.length);
+  const checkedRef = useRef(false);
+
+  useEffect(() => {
+    if (!checkedRef.current) {
+      checkedRef.current = true;
+      checkSession();
+    }
+  }, [checkSession]);
 
   // Sync ref when Redux lastId changes (e.g., after filter change)
   useEffect(() => {

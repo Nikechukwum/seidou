@@ -4,7 +4,7 @@ import { ExclamationCircleIcon } from '@heroicons/react/20/solid';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const router = useRouter()
   const supabase = createClient()
-  const [userNav, setuserNav] = useState<string>('/');
 
   async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
       e.preventDefault();
@@ -30,7 +29,8 @@ export default function LoginPage() {
       if (error) {
         setError(error.message)
       } else {
-        router.replace(userNav)
+        sessionStorage.removeItem('userNav')
+        router.replace('/')
       }
       setLoading(false);
   }
@@ -44,11 +44,6 @@ export default function LoginPage() {
     sessionStorage.removeItem('userNav')
     router.push(backPath)
   }
-
-  useEffect(() => {
-    const path = sessionStorage.getItem('userNav') || '/';
-    setuserNav(path);
-  }, []);
 
   return (
     <div className="flex flex-col bg-white px-6 pb-20">
