@@ -743,7 +743,11 @@ const WordSearch = () => {
                   cellClass += "bg-blue-400 text-white"
                 } else if (revealedColorIndex !== null) {
                   // Revealed word with specific color (when time's up)
-                  cellClass += revealedColorClasses[revealedColorIndex] + ' transition-[background-color] duration-700 delay-[1.5s]'
+                  // The transition delay is written as an explicit arbitrary property
+                  // rather than Tailwind's shorthand delay utility: tw-animate-css
+                  // (imported for the Seidou Social UI) redefines that shorthand to
+                  // animation-delay, which would silently drop this reveal delay.
+                  cellClass += revealedColorClasses[revealedColorIndex] + ' transition-[background-color] duration-700 [transition-delay:1.5s]'
                 } else if (selected) {
                   cellClass += "bg-blue-400 text-white scale-110 rounded-md"
                 } else if (hint) {

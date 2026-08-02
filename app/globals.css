@@ -1,4 +1,9 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "../social/social.css";
+
+/* social/ is a new top-level folder; make it explicit for content detection */
+@source "../social";
 
 @theme {
   --animate-reveal-flasher: revealFlasher 1.2s ease 2.2s 1;
