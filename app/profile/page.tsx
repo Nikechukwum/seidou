@@ -32,7 +32,7 @@ export default function ProfilePage() {
       console.error('Error logging out:', error.message)
     } else {
       dispatch(ClearUser())
-      router.push('/')
+      router.push('/signin')
     }
   }
 

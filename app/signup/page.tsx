@@ -1,6 +1,6 @@
 'use client'
 import { createClient } from '@/lib/supabase/client';
-import { ExclamationCircleIcon, InformationCircleIcon } from '@heroicons/react/20/solid';
+import { ExclamationCircleIcon } from '@heroicons/react/20/solid';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -53,8 +53,8 @@ export default function SignUpPage() {
             };
         }
 
-        router.push('/')
-        // alert("Check your email to verify!");
+        sessionStorage.removeItem('userNav')
+        router.replace('/')
         setLoading(false);
     }
 
