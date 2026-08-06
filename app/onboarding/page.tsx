@@ -1,7 +1,7 @@
 'use client'
 import { sanityClient } from '@/lib/sanity/client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, Suspense } from 'react';
 import { useDispatch } from 'react-redux';
 import useAuth from '@/hooks/useAuth';
 import { FullScreenLoader } from '@/components/FullScreenLoader';
@@ -14,7 +14,7 @@ type Category = {
   imageUrl: string;
 };
 
-export default function OnboardingPage() {
+function OnboardingContent() {
   const router = useRouter()
   const searchParams = useSearchParams();
   const dispatch = useDispatch();
@@ -145,66 +145,66 @@ export default function OnboardingPage() {
     }
   }, [selectedCategories, categoriesLoading]);
 
- const toggleCategory = async (slug: string) => {
-  const isSelected = selectedCategories.includes(slug);
+  const toggleCategory = async (slug: string) => {
+    const isSelected = selectedCategories.includes(slug);
 
-  if (isSelected) {
-    setSelectedCategories(prev => prev.filter(s => s !== slug));
+    if (isSelected) {
+      setSelectedCategories(prev => prev.filter(s => s !== slug));
 
-    setSelectedTags(prev => {
-      const next = { ...prev };
-      delete next[slug];
-      return next;
-    });
+      setSelectedTags(prev => {
+        const next = { ...prev };
+        delete next[slug];
+        return next;
+      });
 
-    setCategoryTags(prev => {
-      const next = { ...prev };
-      delete next[slug];
-      return next;
-    });
+      setCategoryTags(prev => {
+        const next = { ...prev };
+        delete next[slug];
+        return next;
+      });
 
-    return;
-  }
+      return;
+    }
 
-  setSelectedCategories(prev => [...prev, slug]);
+    setSelectedCategories(prev => [...prev, slug]);
 
-  if (!categoryTags[slug]) {
-    setTagsLoading(true);
+    if (!categoryTags[slug]) {
+      setTagsLoading(true);
 
-    try {
-      const products = await sanityClient.fetch<{ tags?: string[] }[]>(
-        `*[
+      try {
+        const products = await sanityClient.fetch<{ tags?: string[] }[]>(
+          `*[
           _type == "product" &&
           category->slug.current == $slug
         ] | order(_id) {
           tags
         }`,
-        { slug }
-      );
+          { slug }
+        );
 
-      const allTags = products
-        .flatMap(product => product.tags || [])
-        .filter(tag => tag && typeof tag === 'string' && tag.trim().length > 0);
-      const uniqueTags = Array.from(new Set(allTags));
+        const allTags = products
+          .flatMap(product => product.tags || [])
+          .filter(tag => tag && typeof tag === 'string' && tag.trim().length > 0);
+        const uniqueTags = Array.from(new Set(allTags));
 
-      console.log(`[Onboarding] Fetched ${products.length} products with ${uniqueTags.length} unique tags for category: ${slug}`, uniqueTags);
+        console.log(`[Onboarding] Fetched ${products.length} products with ${uniqueTags.length} unique tags for category: ${slug}`, uniqueTags);
 
-      setCategoryTags(prev => ({
-        ...prev,
-        [slug]: uniqueTags,
-      }));
-    } catch (e) {
-      console.error("Error fetching tags for category:", slug, e);
+        setCategoryTags(prev => ({
+          ...prev,
+          [slug]: uniqueTags,
+        }));
+      } catch (e) {
+        console.error("Error fetching tags for category:", slug, e);
 
-      setCategoryTags(prev => ({
-        ...prev,
-        [slug]: [],
-      }));
-    } finally {
-      setTagsLoading(false);
+        setCategoryTags(prev => ({
+          ...prev,
+          [slug]: [],
+        }));
+      } finally {
+        setTagsLoading(false);
+      }
     }
-  }
-};
+  };
 
   const toggleTag = (categorySlug: string, tag: string) => {
     setSelectedTags(prev => {
@@ -229,10 +229,10 @@ export default function OnboardingPage() {
     ];
     localStorage.setItem('seidou_interests', JSON.stringify(interests));
     const { error } = await saveInterests(interests);
-    
+
     // Set the active filter to the first selected category
     dispatch(setActiveFilter(selectedCategories[0]));
-    
+
     router.replace('/');
   };
 
@@ -258,7 +258,7 @@ export default function OnboardingPage() {
           {hasExistingInterests ? "Update your interests" : "Let's select your interests."}
         </h1>
         <p className="mt-2 text-gray-500 font-medium">
-          {hasExistingInterests 
+          {hasExistingInterests
             ? "Change or update the categories and tags you care about."
             : "Select a category, then choose the tags you care about."
           }
@@ -353,7 +353,7 @@ export default function OnboardingPage() {
       <div className="grow" />
 
       {/* Continue Button */}
-      <div className="mt-10">
+      <div className="mt-10 mb-10">
         <button
           disabled={!canContinue || saving}
           onClick={handleContinue}
@@ -370,5 +370,13 @@ export default function OnboardingPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense fallback={<FullScreenLoader isActive={true} />}>
+      <OnboardingContent />
+    </Suspense>
   );
 }

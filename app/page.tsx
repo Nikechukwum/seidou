@@ -42,13 +42,15 @@ export default function Home() {
   const lastId = useRef<string | null>(lastIdFromStore);
   const currentFetchTotal = useRef(feed.length);
   const checkedRef = useRef(false);
+  const loadedFilterRef = useRef<string | null>(null);
+  const fetchingRef = useRef(false);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     if (!checkedRef.current) {
       checkedRef.current = true;
       const verify = async () => {
-        await checkSession();
+        await checkSession(false);
         setAuthReady(true);
       };
       verify();
@@ -89,57 +91,67 @@ export default function Home() {
    * If shouldReset is true, it will ignore lastId and fetch the first page of results for the new filter.
    * It constructs the query dynamically based on whether it's a reset and the active filter's tags.
    */
-  async function fetchNextPage(shouldReset: boolean = false) {
-    if(shouldReset){
+  const fetchNextPage = useCallback(async (shouldReset: boolean = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
+    if (shouldReset) {
       setFeedLoading(true);
     }
     const current = lastId.current;
-    const nextSetQuery = shouldReset ? '' : `_id > $current &&`
+    const nextSetQuery = shouldReset ? '' : `_id > $current &&`;
     
     const categoryFilterQuery = categoryFilter.categories.length
       ? activeFilter === "All"
         ? `category->slug.current in $selectedCategories &&`
         : `category->slug.current == $activeCategory &&`
       : "";
-    const data = await sanityClient.fetch(
-      `*[_type == "product" && ${nextSetQuery}
-      ${categoryFilterQuery}
-      true
-      ] | order(_id) [0...5] {
-      defaultProductVariant{
-        "images": images[]{
-            "url": asset->url,
-            "lqip": asset->metadata.lqip
+
+    try {
+      const data = await sanityClient.fetch(
+        `*[_type == "product" && ${nextSetQuery}
+        ${categoryFilterQuery}
+        true
+        ] | order(_id) [0...5] {
+        defaultProductVariant{
+          "images": images[]{
+              "url": asset->url,
+              "lqip": asset->metadata.lqip
+          }
+        },
+        _id,
+        title,
+        slug,
+        category,
+        vendor->{
+           title,
+           logo,
+           _id
+        },
+      }`,
+        {
+          current: current,
+          selectedCategories: categoryFilter.categories,
+          activeCategory: activeFilter === "All" ? null : activeFilter,
         }
-      },
-      _id,
-      title,
-      slug,
-      category,
-      vendor->{
-         title,
-         logo,
-         _id
-      },
-    }`,
-      {
-        current: current,
-        selectedCategories: categoryFilter.categories,
-        activeCategory: activeFilter === "All" ? null : activeFilter,
+      );
+      if (data.length > 0) {
+        lastId.current = data[data.length - 1]._id;
+        shouldReset ? dispatch(resetFeed(data)) : dispatch(appendToFeed(data));
+        dispatch(setLastId(lastId.current));
+      } else {
+        lastId.current = null;
+        dispatch(setLastId(null));
+        dispatch(setHasMore(false));
       }
-    );
-    if (data.length > 0) {
-      lastId.current = data[data.length - 1]._id;
-      shouldReset? dispatch(resetFeed(data)) : dispatch(appendToFeed(data));
-      dispatch(setLastId(lastId.current));
-    } else {
-      lastId.current = null;
-      dispatch(setLastId(null));
-      dispatch(setHasMore(false));
+      currentFetchTotal.current += data.length;
+    } catch (error) {
+      console.error("Error fetching feed:", error);
+    } finally {
+      fetchingRef.current = false;
+      setFeedLoading(false);
     }
-    currentFetchTotal.current += data.length;
-    setFeedLoading(false);
-  }
+  }, [activeFilter, categoryFilter, dispatch]);
 
    const handleFilterChange = useCallback((newFilter: string) => {
       setFeedShouldReset(true);
@@ -148,13 +160,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!authReady) return;
-    if(feed.length > 0 && !feedShouldReset) return
-    // Clear the feed immediately when switching filters
+    if (loadedFilterRef.current === activeFilter && !feedShouldReset && feed.length > 0) return;
+
+    loadedFilterRef.current = activeFilter;
+    setFeedShouldReset(false);
     dispatch(clearFeed());
     lastId.current = null;
     fetchNextPage(true);
-    setFeedShouldReset(false);
-  }, [feedShouldReset, activeFilter, authReady, dispatch]);
+  }, [feedShouldReset, activeFilter, authReady, feed.length, dispatch, fetchNextPage]);
 
   useEffect(() => {
     const permanentlyDisabled = localStorage.getItem(LOCAL_DISABLE_KEY) === "true";
