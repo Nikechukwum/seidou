@@ -19,7 +19,8 @@ export interface UserState {
     state: string,
     cash_balance: number,
     bidding_balance: number,
-    loyalty_rewards: LoyaltyReward[]
+    loyalty_rewards: LoyaltyReward[],
+    interests: string[],
 }
 
 const initialState: {user: UserState | null} = {

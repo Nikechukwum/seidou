@@ -1,7 +1,7 @@
 'use client'
 import { ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
-import { SEARCH_FILTERS } from "@/utils/defaults";
+import { SEARCH_FILTERS, FilterMap } from "@/utils/defaults";
 import { Handbag, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { SetStateAction, useEffect, useRef, useState } from "react";
@@ -9,15 +9,18 @@ import { useDispatch, useSelector } from "react-redux";
 import { Badge } from "./Badge";
 
 type Props = {
-    filterAction: (filter: keyof typeof SEARCH_FILTERS) => void
+    filterAction: (filter: string) => void
+    filters?: FilterMap
+    filterLabels?: Record<string, string>
 }
 
-export const HomeHeader = ({filterAction}: Props) => {
+export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
     const router = useRouter();
     const [fullHeader, setFullHeader] = useState(true);
-    const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as keyof typeof SEARCH_FILTERS;
+    const activeFilter = useSelector((state: RootState) => state.feed.activeFilter);
     const lastScrollValue = useRef<number>(0);
     const dispatch = useDispatch()
+    const FILTERS = filters || SEARCH_FILTERS;
 
     const cartItems = useSelector(
         (state: RootState) => state.cart.products
@@ -32,17 +35,17 @@ export const HomeHeader = ({filterAction}: Props) => {
         return total
     }
 
-    const handleTagSelection = (filter: keyof typeof SEARCH_FILTERS) => {
+    const handleTagSelection = (filter: string) => {
         const feed: HTMLElement | null = document.getElementById("main");
         feed?.scrollTo({ top: 0 });
 
         const filterButton: HTMLElement | null = document.querySelector(
-        `.${filter}-tag`
+          `.${filter}-tag`
         );
         filterButton?.scrollIntoView({
-        inline: "start",
-        block: "nearest",
-        behavior: "smooth",
+          inline: "start",
+          block: "nearest",
+          behavior: "smooth",
         });
         filterAction(filter);
     }
@@ -108,8 +111,9 @@ export const HomeHeader = ({filterAction}: Props) => {
             <div className={`w-full flex items-center bg-white px-2`}>
                 <div className="no-scrollbar fade-right py-2.5 w-full h-full flex grow gap-x-2 overflow-x-scroll snap-x snap-mandatory">
                     {(
-                    Object.keys(SEARCH_FILTERS) as Array<keyof typeof SEARCH_FILTERS>
+                    Object.keys(FILTERS)
                     ).map((filter, index) => {
+                    const displayLabel = filterLabels?.[filter] || filter;
                     return (
                         <button
                         key={index}
@@ -123,7 +127,7 @@ export const HomeHeader = ({filterAction}: Props) => {
                             handleTagSelection(filter);
                         }}
                         >
-                        {filter}
+                        {displayLabel}
                         </button>
                     );
                     })}

@@ -31,6 +31,11 @@ function CustomSearchContent() {
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const refineRef = useRef(refine);
+  useEffect(() => {
+    refineRef.current = refine;
+  }, [refine]);
+
   useEffect(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -41,7 +46,7 @@ function CustomSearchContent() {
     }
     
     debounceTimerRef.current = setTimeout(() => {
-      refine(inputValue);
+      refineRef.current(inputValue);
       setIsSearching(false);
     }, 1000);
 
@@ -50,7 +55,7 @@ function CustomSearchContent() {
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [inputValue, refine]);
+  }, [inputValue]);
 
   const handleBlur = (e: React.FocusEvent) => {
     // Only close if focus moved outside the container

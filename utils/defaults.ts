@@ -21,7 +21,81 @@ const SEARCH_FILTERS = {
         Shades: ["sunglasses"],
         Headwear: ["hat", "cap"],
         Foods: ["burger", "meal", "rice", "chicken", "ice cream"],
-    };
+};
+
+const INTEREST_TAGS: Record<string, string[]> = {
+        aviation: ["aviation", "airplane", "jet", "flight"],
+        art: ["art", "painting", "canvas", "sculpture"],
+        crypto: ["crypto", "bitcoin", "ethereum", "blockchain", "nft"],
+        baking: ["burger", "meal", "rice", "chicken", "ice cream", "bread", "cake", "pastry"],
+        botany: ["plant", "flower", "garden", "botany"],
+        cars: ["cars", "automotive", "auto"],
+        realestate: ["realestate", "interior", "furniture", "decor"],
+        tech: ["tech", "gadget", "smartphone", "laptop", "electronics"],
+        mens_fashion: ["shirt", "tee", "jeans", "shoes"],
+        womens_fashion: ["blouse", "skirt", "bag", "sunglasses", "hat", "cap"],
+        dogs: ["dog", "pet"],
+};
+
+type FilterMap = Record<string, string[]>;
+
+interface CategoryFilter {
+        categories: string[];
+        tags: Record<string, string[]>;
+        labels: Record<string, string>;
+}
+
+function parseInterests(interests: string[]): { categories: string[]; tags: Record<string, string[]> } {
+        const categories: string[] = [];
+        const tags: Record<string, string[]> = {};
+
+        interests.forEach(interest => {
+                if (interest.startsWith('tag:')) {
+                        const parts = interest.slice(4).split(':');
+                        if (parts.length >= 2) {
+                                const catSlug = parts[0];
+                                const tag = parts.slice(1).join(':');
+                                if (!tags[catSlug]) {
+                                        tags[catSlug] = [];
+                                }
+                                tags[catSlug].push(tag);
+                        }
+                } else {
+                        categories.push(interest);
+                }
+        });
+
+        return { categories, tags };
+}
+
+function buildInterestFilters(
+        interests: string[],
+        categoryTitles: Record<string, string> = {}
+): { filters: FilterMap; categoryFilter: CategoryFilter } {
+        if (!interests || interests.length === 0) {
+                return {
+                        filters: { All: [] },
+                        categoryFilter: { categories: [], tags: {}, labels: {} },
+                };
+        }
+
+        const { categories, tags } = parseInterests(interests);
+
+        const filters: FilterMap = { All: [] };
+
+        categories.forEach((catSlug) => {
+                filters[catSlug] = [];
+        });
+
+        const labels = Object.fromEntries(
+                categories.map((catSlug) => [catSlug, categoryTitles[catSlug] || catSlug])
+        );
+
+        return {
+                filters,
+                categoryFilter: { categories, tags, labels },
+        };
+}
 
 const FOOTER_LINKS = [
       {
@@ -61,4 +135,5 @@ const INTERESTS = [
 ];
 
 
-export {PRODUCT_QUERY, SEARCH_FILTERS, FOOTER_LINKS, INTERESTS}
+export {PRODUCT_QUERY, SEARCH_FILTERS, FOOTER_LINKS, INTERESTS, INTEREST_TAGS, buildInterestFilters}
+export type {FilterMap, CategoryFilter}
