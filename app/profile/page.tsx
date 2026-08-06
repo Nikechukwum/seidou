@@ -8,9 +8,10 @@ import {
   MapPinIcon, 
   WalletIcon, 
   QuestionMarkCircleIcon, 
-  Cog6ToothIcon, 
+  Cog6ToothIcon,
   ChevronRightIcon,
-  ArrowLeftStartOnRectangleIcon, 
+  ArrowLeftStartOnRectangleIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -41,6 +42,11 @@ export default function ProfilePage() {
       label: 'My Details',
       icon: UserIcon,
       route: '/profile/my-details',
+    },
+    {
+      label: 'Interests',
+      icon: AdjustmentsHorizontalIcon,
+      route: '/onboarding?from=profile',
     },
     {
       label: 'Address Book',

@@ -54,7 +54,7 @@ export default function SignUpPage() {
         }
 
         sessionStorage.removeItem('userNav')
-        router.replace('/')
+        router.replace('/onboarding?from=signup')
         setLoading(false);
     }
 

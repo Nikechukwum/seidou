@@ -30,7 +30,7 @@ export default function LoginPage() {
         setError(error.message)
       } else {
         sessionStorage.removeItem('userNav')
-        router.replace('/')
+        router.replace('/onboarding?from=signin')
       }
       setLoading(false);
   }

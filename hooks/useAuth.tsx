@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import { UpdateUser } from "@/redux/authSlice";
+import { UpdateUser, PartialUpdateUser } from "@/redux/authSlice";
 import { InitialiseCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { useRouter } from "next/navigation";
@@ -24,7 +24,7 @@ const useAuth = () => {
             return;
         }
         if(!user && data.user){
-            fetchUserProfile(data.user?.id)
+            await fetchUserProfile(data.user?.id)
         }
         setIsLoading(false);
         return data.user?.id
@@ -37,13 +37,44 @@ const useAuth = () => {
         .eq("id", id)
         .single();
 
+        let storedInterests: string[] = [];
+        try {
+          storedInterests = JSON.parse(localStorage.getItem('seidou_interests') || '[]');
+        } catch {}
+
         if (data) {
-            dispatch(UpdateUser(data))
+            const interests = data.interests && data.interests.length > 0
+                ? data.interests 
+                : storedInterests;
+            dispatch(UpdateUser({ 
+              ...data, 
+              interests 
+            }))
             dispatch(InitialiseCart(data.cart_items ?? []))
+            // Don't redirect here - let the signup/signin pages handle the redirect with the 'from' parameter
         };
+
+        return data;
     };
 
-    return {checkSession, isLoading}
+    const saveInterests = async (interests: string[]) => {
+        if (!user) return { error: new Error('No authenticated user') };
+
+        const { error } = await supabase
+            .from("users")
+            .update({ interests })
+            .eq("id", user.id);
+
+        dispatch(PartialUpdateUser({ interests }));
+
+        return { error };
+    };
+
+    const needsOnboarding = (userData: { interests?: string[] } | null) => {
+        return userData && (!userData.interests || userData.interests.length === 0);
+    };
+
+    return {checkSession, isLoading, user, saveInterests}
 };
 
 export default useAuth;
