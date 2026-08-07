@@ -2,9 +2,9 @@
 import { ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { SEARCH_FILTERS, FilterMap } from "@/utils/defaults";
-import { Handbag, Search } from "lucide-react";
+import { Handbag, Plus, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { SetStateAction, useEffect, useRef, useState } from "react";
+import { Fragment, SetStateAction, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Badge } from "./Badge";
 
@@ -114,9 +114,10 @@ export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
                     Object.keys(FILTERS)
                     ).map((filter, index) => {
                     const displayLabel = filterLabels?.[filter] || filter;
+                    const isAll = filter === "All";
                     return (
+                        <Fragment key={index}>
                         <button
-                        key={index}
                         className={`shrink-0 rounded-full px-4 py-1.5 text-sm first:ml-10 last:mr-28
                         snap-start scroll-ml-3 active:scale-[1.07] transition-transform ${filter}-tag ${
                             filter === activeFilter
@@ -129,6 +130,16 @@ export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
                         >
                         {displayLabel}
                         </button>
+                        {isAll && (
+                            <button
+                            aria-label="Update interests"
+                            onClick={() => router.push('/onboarding')}
+                            className="shrink-0 snap-start scroll-ml-3 rounded-full border px-3 py-1 text-sm flex items-center gap-1 bg-gray-100 hover:bg-gray-200 active:scale-[1.07] transition-transform"
+                            >
+                            <Plus className="w-4 h-4" strokeWidth={2.5} />
+                            </button>
+                        )}
+                        </Fragment>
                     );
                     })}
                 </div>

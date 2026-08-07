@@ -43,7 +43,22 @@ interface CategoryFilter {
         categories: string[];
         tags: Record<string, string[]>;
         labels: Record<string, string>;
+        expandedByCategory: Record<string, string[]>;
 }
+
+const INTEREST_LABELS: Record<string, string> = {
+        aviation: "Aviation",
+        art: "Art",
+        crypto: "Crypto",
+        baking: "Baking",
+        botany: "Botany",
+        cars: "Cars",
+        realestate: "Real Estate",
+        tech: "Technology",
+        mens_fashion: "Men's Fashion",
+        womens_fashion: "Women's Fashion",
+        dogs: "Dogs",
+};
 
 function parseInterests(interests: string[]): { categories: string[]; tags: Record<string, string[]> } {
         const categories: string[] = [];
@@ -68,14 +83,21 @@ function parseInterests(interests: string[]): { categories: string[]; tags: Reco
         return { categories, tags };
 }
 
+function expandCategorySlugs(slug: string, tree: Record<string, string[]>): string[] {
+        const children = tree[slug];
+        if (!children || children.length === 0) return [slug];
+        return children.flatMap((child) => expandCategorySlugs(child, tree));
+}
+
 function buildInterestFilters(
         interests: string[],
-        categoryTitles: Record<string, string> = {}
+        categoryTitles: Record<string, string> = {},
+        categoryTree: Record<string, string[]> = {}
 ): { filters: FilterMap; categoryFilter: CategoryFilter } {
         if (!interests || interests.length === 0) {
                 return {
                         filters: { All: [] },
-                        categoryFilter: { categories: [], tags: {}, labels: {} },
+                        categoryFilter: { categories: [], tags: {}, labels: {}, expandedByCategory: {} },
                 };
         }
 
@@ -88,12 +110,16 @@ function buildInterestFilters(
         });
 
         const labels = Object.fromEntries(
-                categories.map((catSlug) => [catSlug, categoryTitles[catSlug] || catSlug])
+                categories.map((catSlug) => [catSlug, categoryTitles[catSlug] || INTEREST_LABELS[catSlug] || catSlug])
+        );
+
+        const expandedByCategory = Object.fromEntries(
+                categories.map((catSlug) => [catSlug, expandCategorySlugs(catSlug, categoryTree)])
         );
 
         return {
                 filters,
-                categoryFilter: { categories, tags, labels },
+                categoryFilter: { categories, tags, labels, expandedByCategory },
         };
 }
 
