@@ -26,6 +26,7 @@ export default function Home() {
   const [userSavedProducts, setUserSavedProducts] = useState();
   const [showWelcome, setShowWelcome] = useState(false);
   const [categoryTitles, setCategoryTitles] = useState<Record<string, string>>({});
+  const [categoryTree, setCategoryTree] = useState<Record<string, string[]>>({});
 
   const feed = useSelector((state: RootState) => state.feed.feed);
   const hasMore = useSelector((state: RootState) => state.feed.hasMore);
@@ -35,8 +36,8 @@ export default function Home() {
   const SCROLL_POSITION_KEY = "seidou_feed_scroll_position";
   const { checkSession, user } = useAuth();
   const { filters: dynamicFilters, categoryFilter } = useMemo(
-    () => buildInterestFilters(user?.interests || [], categoryTitles),
-    [user?.interests, categoryTitles]
+    () => buildInterestFilters(user?.interests || [], categoryTitles, categoryTree),
+    [user?.interests, categoryTitles, categoryTree]
   );
 
   const lastId = useRef<string | null>(lastIdFromStore);
@@ -60,10 +61,13 @@ export default function Home() {
   useEffect(() => {
     const getCategoryTitles = async () => {
       try {
-        const results = await sanityClient.fetch<{ title: string; slug: string }[]>(
+        const results = await sanityClient.fetch<
+          { title: string; slug: string; children: { slug: string }[] }[]
+        >(
           `*[_type == 'category' && slug.current != null]{
             title,
-            "slug": slug.current
+            "slug": slug.current,
+            "children": children[]->{ "slug": slug.current }
           }`
         );
 
@@ -72,7 +76,13 @@ export default function Home() {
           return acc;
         }, {} as Record<string, string>);
 
+        const nextCategoryTree = results.reduce((acc, category) => {
+          acc[category.slug] = (category.children || []).map((child) => child.slug);
+          return acc;
+        }, {} as Record<string, string[]>);
+
         setCategoryTitles(nextCategoryTitles);
+        setCategoryTree(nextCategoryTree);
       } catch (error) {
         console.error('Error fetching category titles:', error);
       }
@@ -101,11 +111,15 @@ export default function Home() {
     const current = lastId.current;
     const nextSetQuery = shouldReset ? '' : `_id > $current &&`;
     
-    const categoryFilterQuery = categoryFilter.categories.length
-      ? activeFilter === "All"
+    const expandedCategories =
+      activeFilter === "All"
+        ? Object.values(categoryFilter.expandedByCategory).flat()
+        : categoryFilter.expandedByCategory[activeFilter] || [];
+
+    const categoryFilterQuery =
+      categoryFilter.categories.length && expandedCategories.length
         ? `category->slug.current in $selectedCategories &&`
-        : `category->slug.current == $activeCategory &&`
-      : "";
+        : "";
 
     try {
       const data = await sanityClient.fetch(
@@ -131,8 +145,7 @@ export default function Home() {
       }`,
         {
           current: current,
-          selectedCategories: categoryFilter.categories,
-          activeCategory: activeFilter === "All" ? null : activeFilter,
+          selectedCategories: expandedCategories,
         }
       );
       if (data.length > 0) {

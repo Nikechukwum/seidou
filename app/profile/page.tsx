@@ -43,11 +43,11 @@ export default function ProfilePage() {
       icon: UserIcon,
       route: '/profile/my-details',
     },
-    {
-      label: 'Interests',
-      icon: AdjustmentsHorizontalIcon,
-      route: '/onboarding?from=profile',
-    },
+    // {
+    //   label: 'Interests',
+    //   icon: AdjustmentsHorizontalIcon,
+    //   route: '/onboarding?from=profile',
+    // },
     {
       label: 'Address Book',
       icon: MapPinIcon,
