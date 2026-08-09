@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "algolia-bulk-sync": "node scripts/bulk-sanity-algolia-upload.mjs"
+    "algolia-bulk-sync": "node scripts/bulk-sanity-algolia-upload.mjs",
+    "social:seed-categories": "tsx social/scripts/seed-categories.ts"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
