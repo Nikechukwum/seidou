@@ -14,8 +14,8 @@ with Seidou's stack was stripped and replaced.
 | Stage | What | Status |
 |---|---|---|
 | M0 | Dependencies, session middleware, Tailwind v4 tokens | ✅ Done |
-| M1 | Database schema + migration | 🟡 Authored, migration not yet run |
-| M2 | tRPC API layer + Supabase auth context | ⬜ Not started |
+| M1 | Database schema + migration | ✅ Done — applied to production |
+| M2 | tRPC API layer + Supabase auth context | 🟡 In progress |
 | M3 | Video feed | ⬜ Not started |
 | M4 | Watch page + Mux playback | ⬜ Not started |
 | M5 | Upload + creator studio + Mux webhook | ⬜ Not started |
@@ -61,9 +61,17 @@ Ordered by what is worth doing next.
    finishes uploading.
 4. **Anonymous view tracking.** `video_views` is keyed on
    `(user_id, video_id)`, so signed-out views are not counted at all.
-5. **Dark mode.** Ported components carry `dark:` classes that are currently
+5. **Guaranteeing the profile row exists.** `public.users` rows are created
+   from the browser at signup. If that insert fails, the account exists with
+   no profile row, and social features reject it permanently with no repair
+   path. A `SECURITY DEFINER` trigger on `auth.users AFTER INSERT` would make
+   the database guarantee it, and would also cover OAuth signups. Deferred
+   until there is a staging environment to test signup flows against —
+   note it requires removing the client-side insert, which would otherwise
+   fail on a duplicate primary key.
+6. **Dark mode.** Ported components carry `dark:` classes that are currently
    disabled on purpose — see "Styling" below.
-6. **Desktop layout.** Seidou is a `max-w-md` mobile shell; the creator studio
+7. **Desktop layout.** Seidou is a `max-w-md` mobile shell; the creator studio
    is the surface most likely to want more room.
 
 ---
