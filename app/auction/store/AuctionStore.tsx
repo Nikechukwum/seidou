@@ -1,76 +1,67 @@
 'use client'
 import BigCard from "@/components/BigCard";
 import { PageLayout } from "@/components/PageLayout";
-import { useEffect } from "react";
-import { usePaystackPayment } from "react-paystack";
+import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import { PartialUpdateUser } from "@/redux/authSlice";
 import { showToast } from "@/redux/toastSlice";
-import { createClient } from "@/lib/supabase/client";
 import useAuth from "@/hooks/useAuth";
 
-// Price of the bidpack (in Naira) and the bidding currency it grants
+// Price of the bidpack (in Naira, from the main wallet) and the bidding credits it grants
 const BIDPACK_PRICE = 10;
 const BIDPACK_REWARD = 10000;
 
 const AuctionStore = () => {
     const dispatch = useDispatch();
-    const supabase = createClient();
     const { checkSession } = useAuth();
     const { user } = useSelector((state: RootState) => state.auth);
+    const [purchasing, setPurchasing] = useState(false);
 
     useEffect(() => {
         checkSession(false);
     }, []);
 
-    // Paystack config — key sourced from the original codebase (see .env.local)
-    const config = {
-        reference: new Date().getTime().toString(),
-        email: user?.email ?? "",
-        amount: BIDPACK_PRICE * 100, // Paystack expects the amount in kobo
-        publicKey: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY!,
-    };
-
-    const initializePayment = usePaystackPayment(config);
-
-    // Credit the bidpack's bidding currency once payment succeeds
-    const creditBidpack = async () => {
-        if (!user?.id) return;
-
-        const newBalance = (user.bidding_balance ?? 0) + BIDPACK_REWARD;
-        const { error } = await supabase
-            .from("users")
-            .update({ bidding_balance: newBalance })
-            .eq("id", user.id);
-
-        if (error) {
-            dispatch(showToast({ type: "error", message: "Payment received but the wallet update failed. Please contact support." }));
-            return;
-        }
-
-        dispatch(PartialUpdateUser({ bidding_balance: newBalance }));
-        dispatch(showToast({ type: "success", message: `B ${BIDPACK_REWARD.toLocaleString()} added to your bidding balance.` }));
-    };
-
-    const handleBuyBidpack = () => {
-        if (!user?.email) {
+    const handleBuyBidpack = async () => {
+        if (!user?.id) {
             dispatch(showToast({ type: "error", message: "Please sign in to buy a bidpack." }));
             return;
         }
+        if (purchasing) return;
 
-        initializePayment({
-            onSuccess: () => creditBidpack(),
-            onClose: () => dispatch(showToast({ type: "error", message: "Payment cancelled." })),
-        });
+        setPurchasing(true);
+        try {
+            const res = await fetch('/api/landwars/purchase-bidpack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ naira_amount: BIDPACK_PRICE, credit_amount: BIDPACK_REWARD }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                dispatch(showToast({ type: "error", message: data.error || "Could not complete the purchase." }));
+                return;
+            }
+
+            dispatch(PartialUpdateUser({
+                cash_balance: Number(data.wallet_balance),
+                bidding_balance: Number(data.landwars_balance),
+            }));
+            dispatch(showToast({ type: "success", message: `Purchase successful! ${BIDPACK_REWARD.toLocaleString()} Bidding Credits added.` }));
+        } catch {
+            dispatch(showToast({ type: "error", message: "Something went wrong. Please try again." }));
+        } finally {
+            setPurchasing(false);
+        }
     };
 
     return (
-        <PageLayout pageTitle="Auction Store" className="px-6 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Land Wars Store" className="px-6 bg-[#f5f5f5]">
             <BigCard
-                title="Bidpack"
+                title="$ 10k Bidpack"
                 description="Get more bids and increase your chances of winning."
-                buttonText={`Pay ₦${BIDPACK_PRICE}`}
+                buttonText={purchasing ? "Processing..." : `Pay ₦${BIDPACK_PRICE}`}
                 onClick={handleBuyBidpack}
                 imgOverlay={
                     <div className="flex items-center gap-3">

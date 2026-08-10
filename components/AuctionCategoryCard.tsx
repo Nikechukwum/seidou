@@ -13,7 +13,7 @@ const AuctionCategoryCard = () => {
         <div>
           {/* Title and Description */}
           <h2 className="text-xl font-bold text-gray-900 leading-tight">
-            Free Auction
+            Free Mode
           </h2>
           <p className="text-gray-500 text-sm mt-1">
             Join now to bid on items for free.
