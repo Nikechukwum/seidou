@@ -1,0 +1,62 @@
+import Image from "next/image";
+import { cva, type VariantProps } from "class-variance-authority";
+
+import { cn } from "@/social/lib/utils";
+
+/**
+ * Rewritten on next/image rather than the Radix Avatar the upstream project
+ * used — one fewer dependency, and it routes through Next's image optimizer
+ * so remotePatterns applies.
+ *
+ * The initials fallback matters more here than upstream: Seidou accounts are
+ * created by the commerce signup, which has never collected an avatar, so
+ * avatar_url is empty for every existing user.
+ */
+const avatarVariants = cva(
+  "relative shrink-0 overflow-hidden rounded-full bg-muted flex items-center justify-center select-none",
+  {
+    variants: {
+      size: {
+        default: "h-9 w-9 text-sm",
+        xs: "h-4 w-4 text-[8px]",
+        sm: "h-6 w-6 text-[10px]",
+        lg: "h-10 w-10 text-sm",
+        xl: "h-[160px] w-[160px] text-5xl",
+      },
+    },
+    defaultVariants: {
+      size: "default",
+    },
+  }
+);
+
+interface UserAvatarProps extends VariantProps<typeof avatarVariants> {
+  imageUrl?: string | null;
+  name: string;
+  className?: string;
+  onClick?: () => void;
+}
+
+export const UserAvatar = ({
+  imageUrl,
+  name,
+  size,
+  className,
+  onClick,
+}: UserAvatarProps) => {
+  const initial = name?.trim()?.charAt(0)?.toUpperCase() || "?";
+
+  return (
+    <div
+      className={cn(avatarVariants({ size, className }))}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
+      {imageUrl ? (
+        <Image src={imageUrl} alt={name} fill className="object-cover" />
+      ) : (
+        <span className="font-semibold text-muted-foreground">{initial}</span>
+      )}
+    </div>
+  );
+};

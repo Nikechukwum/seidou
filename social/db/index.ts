@@ -35,7 +35,16 @@ const client =
     // connections, so server-side prepared statements would collide with
     // "prepared statement already exists" errors.
     prepare: false,
-    max: 1,
+
+    // Must be >1. A single page issues several prefetches concurrently, and
+    // with max:1 they contend for one connection — the queued ones sit until
+    // Postgres kills them with "canceling statement due to statement timeout".
+    // The transaction pooler does the real multiplexing, so this only needs to
+    // cover in-flight queries per server instance.
+    max: 10,
+
+    // Don't hold connections open against the pooler's own limits.
+    idle_timeout: 20,
   });
 
 if (process.env.NODE_ENV !== "production") {

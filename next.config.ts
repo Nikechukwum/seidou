@@ -25,6 +25,15 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Seidou Social: Mux serves video thumbnails and animated previews
+      // straight from the playback id, so they are referenced by URL rather
+      // than copied into our own storage.
+      {
+        protocol: 'https',
+        hostname: 'image.mux.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 };
