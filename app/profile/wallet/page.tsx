@@ -9,7 +9,7 @@ import { PartialUpdateUser } from "@/redux/authSlice";
 import { showToast } from "@/redux/toastSlice";
 import { initializePaystack, generateDepositReference } from "@/lib/paystack";
 
-const MIN_DEPOSIT = 100;
+const MIN_DEPOSIT = 1000;
 
 const Wallet = () => {
   const dispatch = useDispatch();
