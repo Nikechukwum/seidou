@@ -69,12 +69,12 @@ const FreeAuctionPage = () => {
     }
 
     return (
-        <PageLayout pageTitle="Free Auction" className="px-4 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Free Mode" className="px-4 bg-[#f5f5f5]">
 
             <Modal isActive={detailsModal} setIsActive={setDetailsModal}>
                 {selectedAuction && (
                     <>
-                        <h2 className="text-xl font-bold text-gray-900 pb-6">Auction Details</h2>
+                        <h2 className="text-xl font-bold text-gray-900 pb-6">Land Wars Details</h2>
                         <div className="flex flex-col divide-y divide-gray-100">
                             {([
                                 { label: 'Start Date', dateStr: selectedAuction.startTime },

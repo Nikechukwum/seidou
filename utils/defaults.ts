@@ -130,7 +130,7 @@ const FOOTER_LINKS = [
          href: '/',
       },
       {
-         label: 'Auction',
+         label: 'Land Wars',
          icon: 'gavel',
          href: '/auction',
       },

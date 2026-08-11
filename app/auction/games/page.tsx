@@ -7,7 +7,7 @@ const AuctionGames = () => {
     const router = useRouter();
     
     return ( 
-        <PageLayout pageTitle="Auction Games" className="px-6 space-y-8 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Land Wars Games" className="px-6 space-y-8 bg-[#f5f5f5]">
             <BigCard 
                 title="Word Search"
                 description="Solve puzzles and multiply your rescources."

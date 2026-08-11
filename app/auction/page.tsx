@@ -16,25 +16,25 @@ const AuctionPage = () => {
     const [drawer, setDrawer] = useState(false)
     const drawerItems = [
         {
-            title: 'Auction Store',
+            title: 'Land Wars Store',
             description: 'Explore available assets',
             icon: <ShoppingBagIcon className="size-6 text-[#2563eb]"/>,
             iconBg: 'bg-[#f0f7ff]',
             route: 'auction/store'
         },
         {
-            title: 'Auction Games',
+            title: 'Land Wars Games',
             description: 'Earn bidding currency faster',
             icon: <GamepadIcon size={26}/>,
             iconBg: 'bg-[#f5f3ff]',
             route: 'auction/games'
         },
         {
-            title: 'Auction Wallet',
+            title: 'Land Wars Wallet',
             description: 'View balance and history',
             icon: <WalletIcon className="size-6 text-[#ea580c]" />,
             iconBg: 'bg-[#fff7ed]',
-            route: 'auction/wallet'
+            route: '/land-wars/wallet'
         },
         {
             title: 'Loyalty Rewards',
@@ -46,7 +46,7 @@ const AuctionPage = () => {
     ]
     return (
         <PageLayout 
-        pageTitle="Auction" 
+        pageTitle="Land Wars" 
         className="px-4 bg-[#f5f5f5]" 
         noBackButton
         extraButton={
