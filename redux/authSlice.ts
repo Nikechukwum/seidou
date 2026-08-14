@@ -10,6 +10,7 @@ export interface UserState {
     id: string,
     firstname: string,
     lastname: string,
+    username: string,
     email: string,
     gender: 'male'|'female'|'',
     phone: string,
