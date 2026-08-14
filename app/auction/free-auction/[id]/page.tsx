@@ -1,17 +1,18 @@
 'use client'
 import { Button } from "@/components/Button";
-import { ListCard } from "@/components/ListCard";
 import { Modal } from "@/components/Modal";
 import { PageLayout } from "@/components/PageLayout";
-import { useState, useEffect } from "react";
+import { BuyBiddingCurrencyModal } from "@/components/BuyBiddingCurrencyModal";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useDispatch, useSelector } from "react-redux";
 import { showToast } from "@/redux/toastSlice";
 import { PartialUpdateUser } from "@/redux/authSlice";
 import { RootState } from "@/redux/store";
-import { PlusIcon } from "@heroicons/react/24/outline";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
+import { PlusIcon, Wallet } from "lucide-react";
+import useAuth from "@/hooks/useAuth";
 
 type Bid = {
     id: number;
@@ -19,13 +20,25 @@ type Bid = {
     userId: string;
     bidAmount: number;
     createdAt: string;
+    username?: string | null;
 }
 
+const TABS = [
+    { key: 'buy', label: 'Buy Bidding Currency' },
+    { key: 'fruits', label: 'Ability Fruits' },
+    { key: 'increase', label: 'Increase Bid' },
+] as const
+
+type TabKey = typeof TABS[number]['key']
+
 const LeaderboardPage = () => {
+    const [activeTab, setActiveTab] = useState<TabKey>('buy')
     const [placeBidModal, setPlaceBidModal] = useState(false)
+    const [buyModal, setBuyModal] = useState(false)
     const [underConstructionModal, setUnderConstructionModal] = useState(false)
     const [bidAmount, setBidAmount] = useState('')
     const [bidding, setBidding] = useState(false)
+    const [quickBidding, setQuickBidding] = useState(false)
     const [bids, setBids] = useState<Bid[]>([])
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
@@ -33,6 +46,7 @@ const LeaderboardPage = () => {
     const auctionId = params.id as string
     const dispatch = useDispatch()
     const user = useSelector((state: RootState) => state.auth.user)
+    const { checkSession } = useAuth()
 
     const fetchBids = async () => {
         const supabase = createClient()
@@ -41,8 +55,34 @@ const LeaderboardPage = () => {
             .select('*')
             .eq('auctionId', auctionId)
             .order('bidAmount', { ascending: false })
-        if (data) setBids(data)
+        if (data) {
+            const userIds = [...new Set(data.map((b) => b.userId))]
+            const usernameMap = new Map<string, string | null>()
+            if (userIds.length > 0) {
+                const { data: rpcUsernames, error: rpcError } = await supabase.rpc('get_public_usernames', { user_ids: userIds })
+                if (!rpcError && rpcUsernames) {
+                    ;(rpcUsernames as { user_id: string; username: string }[]).forEach((u) => {
+                        usernameMap.set(u.user_id, u.username)
+                    })
+                } else if (rpcError) {
+                    const { data: direct } = await supabase.from('users').select('id, username').in('id', userIds)
+                    ;(direct ?? []).forEach((p) => {
+                        usernameMap.set(p.id, p.username)
+                    })
+                }
+            }
+            setBids(data.map((b) => ({ ...b, username: usernameMap.get(b.userId) ?? null })))
+        }
     }
+
+    const sortedBids = useMemo(() => {
+        const yourId = currentUserId ?? user?.id ?? null
+        return [...bids].sort((a, b) => {
+            if (yourId && a.userId === yourId && b.userId !== yourId) return -1
+            if (yourId && b.userId === yourId && a.userId !== yourId) return 1
+            return Number(b.bidAmount) - Number(a.bidAmount)
+        })
+    }, [bids, currentUserId, user?.id])
 
     useEffect(() => {
         const init = async () => {
@@ -52,6 +92,7 @@ const LeaderboardPage = () => {
                 supabase.auth.getUser(),
             ])
             setCurrentUserId(authData.user?.id ?? null)
+            await checkSession(false)
             setLoading(false)
         }
         init()
@@ -84,15 +125,46 @@ const LeaderboardPage = () => {
         setBidding(false)
     }
 
+    const handleQuickBid = async (increment: number) => {
+        if (quickBidding) return
+        setQuickBidding(true)
+
+        try {
+            const res = await fetch('/api/landwars/increase-bid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auctionId, increment }),
+            })
+
+            const data = await res.json()
+
+            if (!res.ok) {
+                dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
+            } else {
+                await fetchBids()
+                if (user) {
+                    dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
+                }
+                dispatch(showToast({ type: 'success', message: `Bid increased by ${increment.toLocaleString()}` }))
+            }
+        } catch {
+            dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+        }
+
+        setQuickBidding(false)
+    }
+
+    const handleTabClick = (tab: TabKey) => {
+        setActiveTab(tab)
+        if (tab === 'buy') setBuyModal(true)
+        if (tab === 'fruits') setUnderConstructionModal(true)
+        if (tab === 'increase') setPlaceBidModal(true)
+    }
+
     return (
         <PageLayout
             pageTitle="Table"
             className="px-4 bg-[#f5f5f5]"
-            extraButton={
-                <button onClick={() => setPlaceBidModal(true)} className="p-1 text-gray-700">
-                    <PlusIcon className="size-6" strokeWidth={2.5} />
-                </button>
-            }
         >
             <Modal isActive={underConstructionModal} setIsActive={setUnderConstructionModal}>
                 <div className="flex flex-col items-center text-center">
@@ -128,6 +200,40 @@ const LeaderboardPage = () => {
                 </div>
             </Modal>
 
+            <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
+
+            {/* Land Wars Wallet Balance */}
+            <div className="mb-4 bg-white rounded-3xl border border-gray-100 shadow-sm px-5 py-4 flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        Land Wars Wallet Balance
+                    </p>
+                    <p className="text-2xl font-extrabold text-[#111827] mt-1">
+                        B {(user?.bidding_balance ?? 0).toLocaleString()}
+                    </p>
+                </div>
+                <div className="flex items-center justify-center size-12 rounded-2xl bg-gray-100">
+                    <Wallet className="size-6 text-[#4b5563]" />
+                </div>
+            </div>
+
+            {/* Category Filters */}
+            <div className="flex flex-wrap gap-2 mb-5">
+                {TABS.map((tab) => (
+                    <button
+                        key={tab.key}
+                        onClick={() => handleTabClick(tab.key)}
+                        className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                            activeTab === tab.key
+                                ? 'bg-black text-white'
+                                : 'bg-gray-100 text-gray-600'
+                        }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             {loading ? (
                 <p className="text-center text-gray-500 mt-8">Loading...</p>
             ) : bids.length === 0 ? (
@@ -137,38 +243,53 @@ const LeaderboardPage = () => {
                 </div>
             ) : (
                 <div className="flex flex-col gap-4.5">
-                    {bids.map((bid, index) => (
-                        <ListCard
-                            key={bid.id}
-                            id={index + 1}
-                        >
-                            <div className="flex items-center justify-between gap-5 w-full">
-                                <span className="shrink-0 font-bold text-lg text-gray-900 grow">
-                                    ₦ {Number(bid.bidAmount).toLocaleString()}
-                                </span>
-                                <span className="font-semibold text-sm text-gray-500 truncate">
-                                    {bid.userId === currentUserId ? 'You' : bid.userId}
-                                </span>
-                            </div>
-                                {bid.userId === currentUserId && (
-                                <div className="flex gap-2">
-                                    <Button
-                                        text="Increase bid"
-                                        classname="flex-1 py-1! px-0.5! text-xs whitespace-nowrap"
-                                        size="xs"
-                                        bordered
-                                        onClick={() => setPlaceBidModal(true)}
-                                    />
-                                    <Button
-                                        text="Ability cards"
-                                        classname="flex-1 py-3! px-0.5! text-xs whitespace-nowrap"
-                                        size="xs"
-                                        onClick={() => setUnderConstructionModal(true)}
-                                    />
+                    {bids.map((bid, index) => {
+                        const isYou = bid.userId === currentUserId || bid.userId === user?.id
+                        return (
+                            
+                            <div
+                                key={bid.id}
+                                className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100"
+                            >
+                                
+                                <div className="flex items-start gap-4 mb-6">
+                                    <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
+                                        {index + 1}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
+                                            B {Number(bid.bidAmount).toLocaleString()}
+                                        </h2>
+                                        <p className="text-gray-500 text-sm mt-1 truncate">
+                                            {isYou
+                                                ? (bid.username || user?.username || 'You')
+                                                : (bid.username || 'Unknown')}
+                                        </p>
+                                    </div>
                                 </div>
-                            )}
-                        </ListCard>
-                    ))}
+                                {isYou && (
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => handleQuickBid(50000)}
+                                            disabled={quickBidding}
+                                            className="flex-1 flex items-center justify-center gap-1 rounded-full border border-gray-200 bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60"
+                                        >
+                                            <PlusIcon className="size-4" strokeWidth={2.5} />
+                                            50,000
+                                        </button>
+                                        <button
+                                            onClick={() => handleQuickBid(100000)}
+                                            disabled={quickBidding}
+                                            className="flex-1 flex items-center justify-center gap-1 rounded-full border border-gray-200 bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60"
+                                        >
+                                            <PlusIcon className="size-4" strokeWidth={2.5} />
+                                            100,000
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    })}
                 </div>
             )}
         </PageLayout>

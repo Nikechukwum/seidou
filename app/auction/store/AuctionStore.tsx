@@ -59,18 +59,10 @@ const AuctionStore = () => {
     return (
         <PageLayout pageTitle="Land Wars Store" className="px-6 bg-[#f5f5f5]">
             <BigCard
-                title="$ 10k Bidpack"
+                title="Bidpack"
                 description="Get more bids and increase your chances of winning."
                 buttonText={purchasing ? "Processing..." : `Pay ₦${BIDPACK_PRICE}`}
                 onClick={handleBuyBidpack}
-                imgOverlay={
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20">
-                            <span className="text-xl font-bold text-white">$</span>
-                        </div>
-                        <span className="text-4xl font-bold tracking-tight text-white">10k</span>
-                    </div>
-                }
             />
         </PageLayout>
     );

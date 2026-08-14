@@ -2,7 +2,7 @@
 import { ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { SEARCH_FILTERS, FilterMap } from "@/utils/defaults";
-import { Handbag, Plus, Search } from "lucide-react";
+import { ChevronDown, Gift, Handbag, Plus, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, SetStateAction, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -17,10 +17,22 @@ type Props = {
 export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
     const router = useRouter();
     const [fullHeader, setFullHeader] = useState(true);
-    const activeFilter = useSelector((state: RootState) => state.feed.activeFilter);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
     const lastScrollValue = useRef<number>(0);
     const dispatch = useDispatch()
     const FILTERS = filters || SEARCH_FILTERS;
+    const activeFilter = useSelector((state: RootState) => state.feed.activeFilter);
+
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setDropdownOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     const cartItems = useSelector(
         (state: RootState) => state.cart.products
@@ -86,7 +98,32 @@ export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
     return ( 
         <header className={`duration-300 bg-white fixed max-w-md top-0 z-5 w-full border-b border-b-[#E6E6E6] ${!fullHeader ? "-translate-y-12.5" : ""}`}>
             <div className="h-12.5 flex items-center justify-between px-5 pt-5">
-                <h1 className="font-semibold text-2xl">Seidou</h1>
+                <div className="relative" ref={dropdownRef}>
+                    <button
+                        onClick={() => setDropdownOpen((o) => !o)}
+                        className="flex items-center gap-1 active:opacity-70"
+                        aria-label="Open menu"
+                    >
+                        <h1 className="font-semibold text-2xl">Seidou</h1>
+                        <ChevronDown className={`size-5 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {dropdownOpen && (
+                        <div className="absolute top-full left-0 mt-2 w-60 bg-white rounded-2xl border border-gray-100 shadow-lg p-1.5 z-50">
+                            <button
+                                onClick={() => {
+                                    setDropdownOpen(false)
+                                    router.push('/profile/loyalty-rewards')
+                                }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                            >
+                                <div className="flex items-center justify-center size-10 rounded-xl bg-gray-100 shrink-0">
+                                    <Gift className="size-5 text-[#4b5563]" />
+                                </div>
+                                <span className="font-medium text-sm">Loyalty Rewards</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
                 <div className="flex gap-x-2.5 items-center">
                     <button
                     onClick={() => { router.push('/explore') }}

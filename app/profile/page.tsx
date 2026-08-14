@@ -5,7 +5,6 @@ import { ClearUser } from '@/redux/authSlice';
 import { RootState } from '@/redux/store';
 import { 
   UserIcon, 
-  MapPinIcon, 
   WalletIcon, 
   QuestionMarkCircleIcon, 
   Cog6ToothIcon,
@@ -48,11 +47,6 @@ export default function ProfilePage() {
     //   icon: AdjustmentsHorizontalIcon,
     //   route: '/onboarding?from=profile',
     // },
-    {
-      label: 'Address Book',
-      icon: MapPinIcon,
-      route: '/profile/address-book',
-    },
     {
       label: 'Wallet',
       icon: WalletIcon,

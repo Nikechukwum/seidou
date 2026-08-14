@@ -50,7 +50,7 @@ const useAuth = () => {
             router.replace("/signin");
             return;
         }
-        if (!user && data.user) {
+        if ((!user || !user.username) && data.user) {
             await fetchUserProfile(data.user.id);
         }
         setIsLoading(false);
