@@ -165,6 +165,33 @@ const LeaderboardPage = () => {
         <PageLayout
             pageTitle="Table"
             className="px-4 bg-[#f5f5f5]"
+            extraButton={
+                <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-base text-[#111827]">
+                        B {(user?.bidding_balance ?? 0).toLocaleString()}
+                    </span>
+                    <div className="flex items-center justify-center size-8 rounded-full bg-gray-100">
+                        <Wallet className="size-4 text-[#4b5563]" />
+                    </div>
+                </div>
+            }
+            subHeader={
+                <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
+                    {TABS.map((tab) => (
+                        <button
+                            key={tab.key}
+                            onClick={() => handleTabClick(tab.key)}
+                            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+                                activeTab === tab.key
+                                    ? 'bg-black text-white'
+                                    : 'bg-gray-100 text-gray-600'
+                            }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+            }
         >
             <Modal isActive={underConstructionModal} setIsActive={setUnderConstructionModal}>
                 <div className="flex flex-col items-center text-center">
@@ -201,38 +228,6 @@ const LeaderboardPage = () => {
             </Modal>
 
             <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
-
-            {/* Land Wars Wallet Balance */}
-            <div className="mb-4 bg-white rounded-3xl border border-gray-100 shadow-sm px-5 py-4 flex items-center justify-between">
-                <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        Land Wars Wallet Balance
-                    </p>
-                    <p className="text-2xl font-extrabold text-[#111827] mt-1">
-                        B {(user?.bidding_balance ?? 0).toLocaleString()}
-                    </p>
-                </div>
-                <div className="flex items-center justify-center size-12 rounded-2xl bg-gray-100">
-                    <Wallet className="size-6 text-[#4b5563]" />
-                </div>
-            </div>
-
-            {/* Category Filters */}
-            <div className="flex flex-wrap gap-2 mb-5">
-                {TABS.map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => handleTabClick(tab.key)}
-                        className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                            activeTab === tab.key
-                                ? 'bg-black text-white'
-                                : 'bg-gray-100 text-gray-600'
-                        }`}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
 
             {loading ? (
                 <p className="text-center text-gray-500 mt-8">Loading...</p>
