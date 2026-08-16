@@ -15,10 +15,10 @@ with Seidou's stack was stripped and replaced.
 |---|---|---|
 | M0 | Dependencies, session middleware, Tailwind v4 tokens | ✅ Done |
 | M1 | Database schema + migration | ✅ Done — applied to production |
-| M2 | tRPC API layer + Supabase auth context | 🟡 In progress |
-| M3 | Video feed | ⬜ Not started |
-| M4 | Watch page + Mux playback | ⬜ Not started |
-| M5 | Upload + creator studio + Mux webhook | ⬜ Not started |
+| M2 | tRPC API layer + Supabase auth context | ✅ Done |
+| M3 | Video feed | ✅ Done |
+| M4 | Watch page + Mux playback | ✅ Done |
+| M5 | Upload + creator studio + Mux webhook | 🟡 Next — needs Mux credentials |
 | M6 | Comments, reactions, views, subscriptions | ⬜ Not started |
 | M7 | Search, channel pages, trending/subscribed feeds | ⬜ Not started |
 | M8 | Thumbnail + banner uploads (Supabase Storage) | ⬜ Not started |

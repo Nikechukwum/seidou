@@ -12,12 +12,13 @@ interface CategoriesSectionProps {
 }
 
 export const CategoriesSection = ({ categoryId }: CategoriesSectionProps) => {
+  // ErrorBoundary outside Suspense — see the note in video-section.tsx.
   return (
-    <Suspense fallback={<FilterCarousel isLoading data={[]} onSelect={() => {}} />}>
-      <ErrorBoundary fallback={<FilterCarousel data={[]} onSelect={() => {}} />}>
+    <ErrorBoundary fallback={<FilterCarousel data={[]} onSelect={() => {}} />}>
+      <Suspense fallback={<FilterCarousel isLoading data={[]} onSelect={() => {}} />}>
         <CategoriesSectionSuspense categoryId={categoryId} />
-      </ErrorBoundary>
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 };
 

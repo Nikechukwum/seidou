@@ -17,20 +17,23 @@ interface HomeVideosSectionProps {
 
 export const HomeVideosSection = ({ categoryId }: HomeVideosSectionProps) => {
   return (
+    // ErrorBoundary outside Suspense so it can catch errors thrown by the
+    // suspending component — see the note in video-section.tsx.
+    //
     // `key` on the Suspense boundary, not the inner component: changing
     // category must remount and re-suspend, otherwise the old list stays on
     // screen while the new query resolves.
-    <Suspense key={categoryId} fallback={<HomeVideosSectionSkeleton />}>
-      <ErrorBoundary
-        fallback={
-          <p className="px-4 py-8 text-sm text-muted-foreground">
-            Something went wrong loading videos.
-          </p>
-        }
-      >
+    <ErrorBoundary
+      fallback={
+        <p className="px-4 py-8 text-sm text-muted-foreground">
+          Something went wrong loading videos.
+        </p>
+      }
+    >
+      <Suspense key={categoryId} fallback={<HomeVideosSectionSkeleton />}>
         <HomeVideosSectionSuspense categoryId={categoryId} />
-      </ErrorBoundary>
-    </Suspense>
+      </Suspense>
+    </ErrorBoundary>
   );
 };
 

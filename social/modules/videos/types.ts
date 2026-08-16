@@ -9,3 +9,6 @@ import type { AppRouter } from "@/social/trpc/routers/_app";
  */
 export type VideoGetManyOutput =
   inferRouterOutputs<AppRouter>["videos"]["getMany"];
+
+export type VideoGetOneOutput =
+  inferRouterOutputs<AppRouter>["videos"]["getOne"];
