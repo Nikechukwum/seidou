@@ -11,8 +11,9 @@ import { Button } from "./Button";
 
 type Props = {
     productDetails: HomeProduct
+    priority?: boolean
 }
-export const ProductContainer = ({productDetails}: Props) => {
+export const ProductContainer = ({productDetails, priority}: Props) => {
     const [likes, setLikes] = useState({ likeCount: 5, likeState: false });
     const [modal, setModal] = useState(false)
     const router = useRouter();
@@ -58,6 +59,7 @@ export const ProductContainer = ({productDetails}: Props) => {
             </div>
             <div className="w-full h-80 relative overflow-hidden">
                 <Image
+                    priority={priority}
                     placeholder="blur"
                     blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
                     className="object-cover"

@@ -172,7 +172,6 @@ export default function Home() {
     }, [dispatch]);
 
   useEffect(() => {
-    if (!authReady) return;
     if (loadedFilterRef.current === activeFilter && !feedShouldReset && feed.length > 0) return;
 
     loadedFilterRef.current = activeFilter;
@@ -180,7 +179,7 @@ export default function Home() {
     dispatch(clearFeed());
     lastId.current = null;
     fetchNextPage(true);
-  }, [feedShouldReset, activeFilter, authReady, feed.length, dispatch, fetchNextPage]);
+  }, [feedShouldReset, activeFilter, feed.length, dispatch, fetchNextPage]);
 
   useEffect(() => {
     const permanentlyDisabled = localStorage.getItem(LOCAL_DISABLE_KEY) === "true";
@@ -240,8 +239,15 @@ export default function Home() {
 
   if (!authReady) {
     return (
-      <div className="h-screen flex items-center justify-center bg-white">
-        <SmallLoader color="border-black/90"/>
+      <div className="min-h-dvh">
+        <HomeHeader
+          filterAction={handleFilterChange}
+          filters={dynamicFilters}
+          filterLabels={categoryFilter.labels}
+        />
+        <div className="h-screen flex items-center justify-center">
+          <SmallLoader color="border-black/90"/>
+        </div>
       </div>
     );
   }
@@ -283,12 +289,13 @@ export default function Home() {
           scrollableTarget="main"
           className="flex flex-col items-center pt-2 pb-20"
         >
-          {feed.map((product) => {
+          {feed.map((product, index) => {
             if (product.vendor && product.vendor.logo)
               return (
                 <ProductContainer
                   productDetails={product}
                   key={product._id}
+                  priority={index === 0}
                 />
               );
           })}

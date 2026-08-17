@@ -5,7 +5,7 @@ import { DrawerModal } from "@/components/DrawerModal";
 import { IconListItem } from "@/components/IconListItem";
 import { PageLayout } from "@/components/PageLayout";
 import { Bars3Icon } from "@heroicons/react/24/solid";
-import { Gamepad2, Gift, ShoppingBag, Wallet } from "lucide-react";
+import { Gamepad2, ShoppingBag, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -29,12 +29,6 @@ const AuctionPage = () => {
             description: 'View balance and history',
             icon: <Wallet className="size-5.5 text-[#4b5563]" />,
             route: '/land-wars/wallet'
-        },
-        {
-            title: 'Loyalty Rewards',
-            description: 'Spend earned Loyalty points',
-            icon: <Gift className="size-5.5 text-[#4b5563]"/>,
-            route: 'auction/loyalty-rewards'
         }
     ]
     return (
@@ -51,12 +45,11 @@ const AuctionPage = () => {
                 <div className="space-y-4">
                     {drawerItems.map((item, idx)=>{
                         return(
-                            <Link key={idx} href={item.route} className="inline-block">
+                            <Link key={idx} href={item.route} className="block rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors -mx-2 px-2">
                                 <IconListItem
                                 title={item.title}
                                 icon={item.icon}
                                 description={item.description}
-                                chevron
                                 />
                             </Link>
                         )
