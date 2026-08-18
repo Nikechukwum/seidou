@@ -3,7 +3,7 @@ import { Button } from "@/components/Button";
 import { Modal } from "@/components/Modal";
 import { PageLayout } from "@/components/PageLayout";
 import { BuyBiddingCurrencyModal } from "@/components/BuyBiddingCurrencyModal";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useDispatch, useSelector } from "react-redux";
@@ -47,8 +47,9 @@ const LeaderboardPage = () => {
     const dispatch = useDispatch()
     const user = useSelector((state: RootState) => state.auth.user)
     const { checkSession } = useAuth()
+    const usernameCacheRef = useRef<Map<string, string | null>>(new Map())
 
-    const fetchBids = async () => {
+    const fetchBids = useCallback(async () => {
         const supabase = createClient()
         const { data } = await supabase
             .from('Bids')
@@ -57,23 +58,23 @@ const LeaderboardPage = () => {
             .order('bidAmount', { ascending: false })
         if (data) {
             const userIds = [...new Set(data.map((b) => b.userId))]
-            const usernameMap = new Map<string, string | null>()
-            if (userIds.length > 0) {
-                const { data: rpcUsernames, error: rpcError } = await supabase.rpc('get_public_usernames', { user_ids: userIds })
+            const uncached = userIds.filter((id) => !usernameCacheRef.current.has(id))
+            if (uncached.length > 0) {
+                const { data: rpcUsernames, error: rpcError } = await supabase.rpc('get_public_usernames', { user_ids: uncached })
                 if (!rpcError && rpcUsernames) {
                     ;(rpcUsernames as { user_id: string; username: string }[]).forEach((u) => {
-                        usernameMap.set(u.user_id, u.username)
+                        usernameCacheRef.current.set(u.user_id, u.username)
                     })
                 } else if (rpcError) {
-                    const { data: direct } = await supabase.from('users').select('id, username').in('id', userIds)
+                    const { data: direct } = await supabase.from('users').select('id, username').in('id', uncached)
                     ;(direct ?? []).forEach((p) => {
-                        usernameMap.set(p.id, p.username)
+                        usernameCacheRef.current.set(p.id, p.username)
                     })
                 }
             }
-            setBids(data.map((b) => ({ ...b, username: usernameMap.get(b.userId) ?? null })))
+            setBids(data.map((b) => ({ ...b, username: usernameCacheRef.current.get(b.userId) ?? null })))
         }
-    }
+    }, [auctionId])
 
     const sortedBids = useMemo(() => {
         const yourId = currentUserId ?? user?.id ?? null
@@ -96,27 +97,58 @@ const LeaderboardPage = () => {
             setLoading(false)
         }
         init()
-    }, [auctionId])
+    }, [auctionId, fetchBids, checkSession])
+
+    // --- Supabase Realtime: auto-update leaderboard when any bid changes ---
+    useEffect(() => {
+        const supabase = createClient()
+
+        const channel = supabase
+            .channel(`bids:${auctionId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'Bids',
+                    filter: `auctionId=eq.${auctionId}`,
+                },
+                () => {
+                    fetchBids()
+                }
+            )
+            .subscribe()
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [auctionId, fetchBids])
 
     const handlePlaceBid = async () => {
         if (!bidAmount) return
         setBidding(true)
 
+        const numericBid = Number(bidAmount)
+
+        if (user) {
+            dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - numericBid }))
+        }
+
         const res = await fetch('/api/auction/bid', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ auctionId, bidAmount: Number(bidAmount) }),
+            body: JSON.stringify({ auctionId, bidAmount: numericBid }),
         })
 
         const data = await res.json()
 
         if (!res.ok) {
+            if (user) {
+                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + numericBid }))
+            }
             dispatch(showToast({ type: 'error', message: data.error || 'Could not place your bid. Please try again.' }))
         } else {
-            await fetchBids()
-            if (user) {
-                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - Number(bidAmount) }))
-            }
+            dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
             setBidAmount('')
             setPlaceBidModal(false)
             dispatch(showToast({ type: 'success', message: data.action === 'insert' ? 'Bid placed successfully!' : 'Bid updated successfully!' }))
@@ -129,6 +161,10 @@ const LeaderboardPage = () => {
         if (quickBidding) return
         setQuickBidding(true)
 
+        if (user) {
+            dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - increment }))
+        }
+
         try {
             const res = await fetch('/api/landwars/increase-bid', {
                 method: 'POST',
@@ -139,15 +175,18 @@ const LeaderboardPage = () => {
             const data = await res.json()
 
             if (!res.ok) {
+                if (user) {
+                    dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + increment }))
+                }
                 dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
             } else {
-                await fetchBids()
-                if (user) {
-                    dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
-                }
+                dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
                 dispatch(showToast({ type: 'success', message: `Bid increased by ${increment.toLocaleString()}` }))
             }
         } catch {
+            if (user) {
+                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + increment }))
+            }
             dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
         }
 
