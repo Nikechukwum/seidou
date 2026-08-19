@@ -187,8 +187,20 @@ const LeaderboardPage = () => {
 
         setQuickBidding(true)
 
+        // Optimistic: wallet balance
         if (user) {
             dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - increment }))
+        }
+
+        // Optimistic: bid card amount
+        let previousBids: Bid[] | null = null
+        if (user) {
+            previousBids = bids
+            setBids(bids.map((b) =>
+                b.userId === user.id
+                    ? { ...b, bidAmount: Number(b.bidAmount) + increment }
+                    : b
+            ))
         }
 
         try {
@@ -202,6 +214,7 @@ const LeaderboardPage = () => {
 
             if (!res.ok) {
                 await fetchProfileBalance()
+                if (previousBids) setBids(previousBids)
                 dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
             } else {
                 dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
@@ -209,6 +222,7 @@ const LeaderboardPage = () => {
             }
         } catch {
             await fetchProfileBalance()
+            if (previousBids) setBids(previousBids)
             dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
         }
 
