@@ -13,6 +13,7 @@ import { RootState } from "@/redux/store";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 import { PlusIcon, Wallet } from "lucide-react";
 import useAuth from "@/hooks/useAuth";
+import VoiceBidButton from "@/components/VoiceBidButton";
 
 type Bid = {
     id: number;
@@ -303,6 +304,12 @@ const LeaderboardPage = () => {
             </Modal>
 
             <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
+
+            <VoiceBidButton
+                onBid={(amount) => handleQuickBid(amount)}
+                onBuy={() => setBuyModal(true)}
+                disabled={quickBidding || bidding}
+            />
 
             {loading ? (
                 <p className="text-center text-gray-500 mt-8">Loading...</p>
