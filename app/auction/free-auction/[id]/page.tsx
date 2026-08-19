@@ -85,6 +85,9 @@ const LeaderboardPage = () => {
         })
     }, [bids, currentUserId, user?.id])
 
+    const checkSessionRef = useRef(checkSession)
+    checkSessionRef.current = checkSession
+
     useEffect(() => {
         const init = async () => {
             const supabase = createClient()
@@ -93,11 +96,11 @@ const LeaderboardPage = () => {
                 supabase.auth.getUser(),
             ])
             setCurrentUserId(authData.user?.id ?? null)
-            await checkSession(false)
+            await checkSessionRef.current(false)
             setLoading(false)
         }
         init()
-    }, [auctionId, fetchBids, checkSession])
+    }, [auctionId, fetchBids])
 
     // --- Supabase Realtime: auto-update leaderboard when any bid changes ---
     useEffect(() => {
@@ -124,11 +127,30 @@ const LeaderboardPage = () => {
         }
     }, [auctionId, fetchBids])
 
+    const fetchProfileBalance = useCallback(async () => {
+        const supabase = createClient()
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        if (!authUser) return
+        const { data } = await supabase
+            .from('users')
+            .select('bidding_balance')
+            .eq('id', authUser.id)
+            .single()
+        if (data) {
+            dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
+        }
+    }, [dispatch])
+
     const handlePlaceBid = async () => {
         if (!bidAmount) return
-        setBidding(true)
-
         const numericBid = Number(bidAmount)
+
+        if (user && user.bidding_balance < numericBid) {
+            dispatch(showToast({ type: 'error', message: 'Insufficient Bidding Credits.' }))
+            return
+        }
+
+        setBidding(true)
 
         if (user) {
             dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - numericBid }))
@@ -143,9 +165,7 @@ const LeaderboardPage = () => {
         const data = await res.json()
 
         if (!res.ok) {
-            if (user) {
-                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + numericBid }))
-            }
+            await fetchProfileBalance()
             dispatch(showToast({ type: 'error', message: data.error || 'Could not place your bid. Please try again.' }))
         } else {
             dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
@@ -159,6 +179,12 @@ const LeaderboardPage = () => {
 
     const handleQuickBid = async (increment: number) => {
         if (quickBidding) return
+
+        if (user && user.bidding_balance < increment) {
+            dispatch(showToast({ type: 'error', message: 'Insufficient Bidding Credits.' }))
+            return
+        }
+
         setQuickBidding(true)
 
         if (user) {
@@ -175,18 +201,14 @@ const LeaderboardPage = () => {
             const data = await res.json()
 
             if (!res.ok) {
-                if (user) {
-                    dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + increment }))
-                }
+                await fetchProfileBalance()
                 dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
             } else {
                 dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
                 dispatch(showToast({ type: 'success', message: `Bid increased by ${increment.toLocaleString()}` }))
             }
         } catch {
-            if (user) {
-                dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance + increment }))
-            }
+            await fetchProfileBalance()
             dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
         }
 
