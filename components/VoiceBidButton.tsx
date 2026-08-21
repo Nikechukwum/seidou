@@ -4,13 +4,11 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Mic } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useDispatch } from 'react-redux'
-import { showToast } from '@/redux/toastSlice'
 
 type VoiceAction = 'BID' | 'BUY'
 
 interface VoiceBidButtonProps {
-    onBid: (amount: number) => void
+    onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
     disabled?: boolean
 }
@@ -57,7 +55,6 @@ function wordsToNumber(text: string): number | null {
 function parseTranscript(transcript: string): { action: VoiceAction; amount: number } | null {
     const cleaned = transcript.toLowerCase().replace(/[₦$,]/g, '').replace(/\s+/g, ' ').trim()
 
-    // Try digit-based patterns first: "bid 50000", "50k", "50000"
     const kMatch = cleaned.match(/(\d+)\s*k\b/)
     if (kMatch) {
         const amount = parseInt(kMatch[1], 10) * 1000
@@ -74,7 +71,6 @@ function parseTranscript(transcript: string): { action: VoiceAction; amount: num
         }
     }
 
-    // Try word-to-number: "fifty thousand", "hundred k"
     const wordAmount = wordsToNumber(cleaned)
     if (wordAmount !== null) {
         const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
@@ -92,6 +88,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
     const [elapsed, setElapsed] = useState(0)
     const [volume, setVolume] = useState(0)
+    const [errorText, setErrorText] = useState<string | null>(null)
 
     const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
     const isCancelledRef = useRef(false)
@@ -104,11 +101,18 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const startTimeRef = useRef(0)
     const transcriptRef = useRef('')
     const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const dispatch = useDispatch()
+    const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const showError = useCallback((msg: string) => {
+        setErrorText(msg)
+        if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+        errorTimerRef.current = setTimeout(() => setErrorText(null), 2000)
+    }, [])
 
     const cleanup = useCallback(() => {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+        if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
         if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
         if (recognitionRef.current) {
             try { recognitionRef.current.stop() } catch {}
@@ -138,14 +142,12 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
 
         if (!SpeechRecognition) {
-            dispatch(showToast({ type: 'error', message: 'Voice input is not supported in this browser.' }))
+            showError('Voice not supported')
             return
         }
 
-        // Haptic
         vibrate(50)
 
-        // Get mic stream for waveform
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
             streamRef.current = stream
@@ -168,11 +170,10 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             }
             tick()
         } catch {
-            dispatch(showToast({ type: 'error', message: 'Microphone access denied.' }))
+            showError('Mic denied')
             return
         }
 
-        // Start Web Speech in background
         const recognition = new SpeechRecognition()
         recognition.continuous = true
         recognition.interimResults = true
@@ -195,7 +196,6 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         recognitionRef.current = recognition
         recognition.start()
 
-        // Timer
         startTimeRef.current = Date.now()
         setElapsed(0)
         timerRef.current = setInterval(() => {
@@ -206,19 +206,17 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         isCancelledRef.current = false
         transcriptRef.current = ''
 
-        // Auto-stop after max duration
         maxTimerRef.current = setTimeout(() => {
             handlePointerUp()
         }, MAX_RECORDING_MS)
-    }, [disabled, dispatch])
+    }, [disabled, showError])
 
-    const handlePointerUp = useCallback(() => {
+    const handlePointerUp = useCallback(async () => {
         if (phase !== 'recording') return
 
         const cancelled = isCancelledRef.current
         const transcript = transcriptRef.current
 
-        // Clean up resources
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
         if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
@@ -240,14 +238,14 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
 
         if (cancelled) {
             setPhase('idle')
-            dispatch(showToast({ type: 'error', message: 'Recording cancelled.' }))
+            setElapsed(0)
             return
         }
 
         if (!transcript) {
             setPhase('idle')
             setElapsed(0)
-            dispatch(showToast({ type: 'error', message: 'No speech detected. Try again.' }))
+            showError('No speech')
             return
         }
 
@@ -256,7 +254,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (!parsed) {
             setPhase('idle')
             setElapsed(0)
-            dispatch(showToast({ type: 'error', message: `Couldn't understand: "${transcript}"` }))
+            showError('Try again')
             return
         }
 
@@ -269,7 +267,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         } else {
             onBid(parsed.amount)
         }
-    }, [phase, dispatch, onBid, onBuy])
+    }, [phase, onBid, onBuy, showError])
 
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (disabled || phase === 'recording') return
@@ -303,21 +301,19 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
 
     const button = (
         <>
-            {/* Overlay during recording */}
             <AnimatePresence>
                 {(phase === 'recording' || phase === 'cancelled') && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-40 bg-black/40"
+                        className="fixed inset-0 z-40 bg-black/30"
                         onPointerUp={handlePointerUpEvent}
                         onPointerMove={handlePointerMove}
                     />
                 )}
             </AnimatePresence>
 
-            {/* Waveform + timer bar at bottom */}
             <AnimatePresence>
                 {phase === 'recording' && (
                     <motion.div
@@ -326,7 +322,6 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                         exit={{ opacity: 0, y: 40 }}
                         className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
                     >
-                        {/* Waveform bars */}
                         <div className="flex items-end gap-1 h-10">
                             {Array.from({ length: 12 }).map((_, i) => {
                                 const offset = i * 0.15
@@ -335,74 +330,71 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                                 return (
                                     <div
                                         key={i}
-                                        className="w-1 rounded-full bg-red-500 transition-all duration-75"
+                                        className="w-1 rounded-full bg-white/80 transition-all duration-75"
                                         style={{ height: `${height}px` }}
                                     />
                                 )
                             })}
                         </div>
-
-                        {/* Timer */}
-                        <div className="bg-black/80 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
+                        <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
                             {timerText}
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Slide to cancel text */}
             <AnimatePresence>
                 {phase === 'recording' && (
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 10 }}
-                        className="fixed bottom-44 left-1/2 -translate-x-1/2 z-50 text-white/70 text-xs font-medium"
+                        className="fixed bottom-44 left-1/2 -translate-x-1/2 z-50 text-white/50 text-xs font-medium"
                     >
                         Slide left to cancel
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Cancelled label */}
             <AnimatePresence>
                 {phase === 'cancelled' && (
                     <motion.div
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
-                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-red-500 text-white text-sm font-bold px-5 py-2.5 rounded-full shadow-lg"
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-black/70 text-white/70 text-sm font-medium px-5 py-2.5 rounded-full"
                     >
                         Release to cancel
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* The mic button */}
+            {/* Inline error — small pill near the mic button */}
+            <AnimatePresence>
+                {errorText && (
+                    <motion.div
+                        key={errorText}
+                        initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                        transition={{ duration: 0.25 }}
+                        className="fixed bottom-22 right-4 z-50 bg-red-500/90 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-md pointer-events-none"
+                    >
+                        {errorText}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <button
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUpEvent}
                 onPointerMove={handlePointerMove}
                 onPointerCancel={() => { if (phase === 'recording') { isCancelledRef.current = true; handlePointerUp() } }}
                 disabled={disabled}
-                className={`fixed bottom-6 right-6 z-50 size-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-150 select-none touch-none ${
-                    phase === 'recording'
-                        ? 'bg-red-500 text-white shadow-red-500/40 scale-110'
-                        : phase === 'cancelled'
-                        ? 'bg-red-400 text-white shadow-red-400/30'
-                        : 'bg-black text-white hover:bg-neutral-800'
-                } ${disabled ? 'opacity-40' : 'active:scale-95'}`}
+                className="fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95"
                 aria-label="Hold to speak a bid"
             >
-                {phase === 'recording' ? (
-                    <div className="relative">
-                        <Mic className="size-6" />
-                        {/* Pulsing ring */}
-                        <span className="absolute inset-0 rounded-full border-2 border-white/40 animate-ping" />
-                    </div>
-                ) : (
-                    <Mic className="size-6" />
-                )}
+                <Mic className="size-6" />
             </button>
         </>
     )
