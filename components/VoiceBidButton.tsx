@@ -87,21 +87,19 @@ function vibrate(ms: number) {
 export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButtonProps) {
     const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
     const [elapsed, setElapsed] = useState(0)
-    const [volume, setVolume] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
 
+    // All mutable state tracked via refs to avoid stale closures
+    const phaseRef = useRef<'idle' | 'recording' | 'cancelled'>('idle')
     const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
     const isCancelledRef = useRef(false)
     const recognitionRef = useRef<any>(null)
-    const audioCtxRef = useRef<AudioContext | null>(null)
-    const analyserRef = useRef<AnalyserNode | null>(null)
-    const streamRef = useRef<MediaStream | null>(null)
-    const animFrameRef = useRef<number>(0)
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const startTimeRef = useRef(0)
     const transcriptRef = useRef('')
     const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const releasedDuringStartupRef = useRef(false)
 
     const showError = useCallback((msg: string) => {
         setErrorText(msg)
@@ -113,27 +111,54 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
         if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
-        if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
         if (recognitionRef.current) {
             try { recognitionRef.current.stop() } catch {}
             recognitionRef.current = null
         }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop())
-            streamRef.current = null
-        }
-        if (audioCtxRef.current) {
-            try { audioCtxRef.current.close() } catch {}
-            audioCtxRef.current = null
-        }
-        analyserRef.current = null
-        setVolume(0)
         setElapsed(0)
     }, [])
 
     useEffect(() => {
         return () => cleanup()
     }, [cleanup])
+
+    const finishRecording = useCallback((cancelled: boolean) => {
+        // Stop recognition first so it doesn't fire more events
+        if (recognitionRef.current) {
+            try { recognitionRef.current.stop() } catch {}
+            recognitionRef.current = null
+        }
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+
+        phaseRef.current = 'idle'
+        setPhase('idle')
+        setElapsed(0)
+
+        if (cancelled) return
+
+        const transcript = transcriptRef.current
+
+        if (!transcript) {
+            showError('No speech')
+            return
+        }
+
+        const parsed = parseTranscript(transcript)
+
+        if (!parsed) {
+            showError('Try again')
+            return
+        }
+
+        vibrate(30)
+
+        if (parsed.action === 'BUY' && onBuy) {
+            onBuy(parsed.amount)
+        } else {
+            onBid(parsed.amount)
+        }
+    }, [onBid, onBuy, showError])
 
     const startRecording = useCallback(async () => {
         if (disabled) return
@@ -147,32 +172,19 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         }
 
         vibrate(50)
+        isCancelledRef.current = false
+        releasedDuringStartupRef.current = false
+        transcriptRef.current = ''
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-            streamRef.current = stream
+        // Set phase immediately so UI responds
+        phaseRef.current = 'recording'
+        setPhase('recording')
 
-            const audioCtx = new AudioContext()
-            audioCtxRef.current = audioCtx
-            const source = audioCtx.createMediaStreamSource(stream)
-            const analyser = audioCtx.createAnalyser()
-            analyser.fftSize = 256
-            source.connect(analyser)
-            analyserRef.current = analyser
-
-            const dataArray = new Uint8Array(analyser.frequencyBinCount)
-            const tick = () => {
-                analyser.getByteFrequencyData(dataArray)
-                let sum = 0
-                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
-                setVolume(sum / dataArray.length / 255)
-                animFrameRef.current = requestAnimationFrame(tick)
-            }
-            tick()
-        } catch {
-            showError('Mic denied')
-            return
-        }
+        startTimeRef.current = Date.now()
+        setElapsed(0)
+        timerRef.current = setInterval(() => {
+            setElapsed(Date.now() - startTimeRef.current)
+        }, 100)
 
         const recognition = new SpeechRecognition()
         recognition.continuous = true
@@ -182,118 +194,94 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
 
         recognition.onresult = (event: any) => {
             let final = ''
+            let lastInterim = ''
             for (let i = 0; i < event.results.length; i++) {
                 if (event.results[i].isFinal) {
                     final += event.results[i][0].transcript + ' '
+                } else {
+                    lastInterim = event.results[i][0].transcript
                 }
             }
-            if (final.trim()) transcriptRef.current = final.trim()
+            if (final.trim()) {
+                transcriptRef.current = final.trim()
+            } else if (lastInterim.trim()) {
+                transcriptRef.current = lastInterim.trim()
+            }
         }
 
-        recognition.onerror = () => {}
-        recognition.onend = () => {}
+        recognition.onerror = (e: any) => {
+            if (e.error === 'no-speech' || e.error === 'aborted') return
+            console.warn('[voice] recognition error:', e.error)
+        }
+
+        recognition.onend = () => {
+            // If recognition ends naturally (e.g. silence timeout), finish up
+            if (phaseRef.current === 'recording') {
+                finishRecording(false)
+            }
+        }
 
         recognitionRef.current = recognition
-        recognition.start()
 
-        startTimeRef.current = Date.now()
-        setElapsed(0)
-        timerRef.current = setInterval(() => {
-            setElapsed(Date.now() - startTimeRef.current)
-        }, 100)
+        try {
+            recognition.start()
+        } catch {
+            showError('Voice failed')
+            phaseRef.current = 'idle'
+            setPhase('idle')
+            setElapsed(0)
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+            return
+        }
 
-        setPhase('recording')
-        isCancelledRef.current = false
-        transcriptRef.current = ''
-
+        // Auto-stop after max duration
         maxTimerRef.current = setTimeout(() => {
-            handlePointerUp()
+            finishRecording(false)
         }, MAX_RECORDING_MS)
-    }, [disabled, showError])
 
-    const handlePointerUp = useCallback(async () => {
-        if (phase !== 'recording') return
-
-        const cancelled = isCancelledRef.current
-        const transcript = transcriptRef.current
-
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-        if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
-
-        if (recognitionRef.current) {
-            try { recognitionRef.current.stop() } catch {}
-            recognitionRef.current = null
+        // If user released during startup, finish now
+        if (releasedDuringStartupRef.current) {
+            finishRecording(false)
         }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop())
-            streamRef.current = null
-        }
-        if (audioCtxRef.current) {
-            try { audioCtxRef.current.close() } catch {}
-            audioCtxRef.current = null
-        }
-        analyserRef.current = null
-        setVolume(0)
-
-        if (cancelled) {
-            setPhase('idle')
-            setElapsed(0)
-            return
-        }
-
-        if (!transcript) {
-            setPhase('idle')
-            setElapsed(0)
-            showError('No speech')
-            return
-        }
-
-        const parsed = parseTranscript(transcript)
-
-        if (!parsed) {
-            setPhase('idle')
-            setElapsed(0)
-            showError('Try again')
-            return
-        }
-
-        setPhase('idle')
-        setElapsed(0)
-        vibrate(30)
-
-        if (parsed.action === 'BUY' && onBuy) {
-            onBuy(parsed.amount)
-        } else {
-            onBid(parsed.amount)
-        }
-    }, [phase, onBid, onBuy, showError])
+    }, [disabled, showError, finishRecording])
 
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
-        if (disabled || phase === 'recording') return
+        if (disabled || phaseRef.current === 'recording') return
         e.preventDefault()
         ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
         pointerStartRef.current = { x: e.clientX, y: e.clientY }
         startRecording()
-    }, [disabled, phase, startRecording])
+    }, [disabled, startRecording])
 
     const handlePointerMove = useCallback((e: React.PointerEvent) => {
-        if (phase !== 'recording' || !pointerStartRef.current) return
+        if (phaseRef.current !== 'recording' || !pointerStartRef.current) return
         const dx = e.clientX - pointerStartRef.current.x
         const dy = e.clientY - pointerStartRef.current.y
         const distance = Math.sqrt(dx * dx + dy * dy)
 
         if (dx < -CANCEL_THRESHOLD_PX || distance > CANCEL_THRESHOLD_PX) {
             isCancelledRef.current = true
+            phaseRef.current = 'cancelled'
             setPhase('cancelled')
         }
-    }, [phase])
+    }, [])
+
+    const handlePointerUp = useCallback(() => {
+        // If recognition hasn't started yet, flag it and finishRecording will pick it up
+        if (phaseRef.current === 'idle') {
+            releasedDuringStartupRef.current = true
+            return
+        }
+        if (phaseRef.current !== 'recording' && phaseRef.current !== 'cancelled') return
+
+        pointerStartRef.current = null
+        const cancelled = isCancelledRef.current
+        finishRecording(cancelled)
+    }, [finishRecording])
 
     const handlePointerUpEvent = useCallback((e: React.PointerEvent) => {
-        if (phase !== 'recording' && phase !== 'cancelled') return
-        pointerStartRef.current = null
         handlePointerUp()
-    }, [phase, handlePointerUp])
+    }, [handlePointerUp])
 
     const elapsedSec = Math.floor(elapsed / 1000)
     const elapsedMs = Math.floor((elapsed % 1000) / 100)
@@ -322,20 +310,6 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                         exit={{ opacity: 0, y: 40 }}
                         className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
                     >
-                        <div className="flex items-end gap-1 h-10">
-                            {Array.from({ length: 12 }).map((_, i) => {
-                                const offset = i * 0.15
-                                const barVol = Math.min(1, volume * (1 + Math.sin(Date.now() * 0.005 + offset) * 0.4))
-                                const height = 6 + barVol * 34
-                                return (
-                                    <div
-                                        key={i}
-                                        className="w-1 rounded-full bg-white/80 transition-all duration-75"
-                                        style={{ height: `${height}px` }}
-                                    />
-                                )
-                            })}
-                        </div>
                         <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
                             {timerText}
                         </div>
@@ -369,7 +343,6 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                 )}
             </AnimatePresence>
 
-            {/* Inline error — small pill near the mic button */}
             <AnimatePresence>
                 {errorText && (
                     <motion.div
@@ -389,7 +362,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUpEvent}
                 onPointerMove={handlePointerMove}
-                onPointerCancel={() => { if (phase === 'recording') { isCancelledRef.current = true; handlePointerUp() } }}
+                onPointerCancel={() => { if (phaseRef.current === 'recording') { isCancelledRef.current = true; finishRecording(true) } }}
                 disabled={disabled}
                 className="fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95"
                 aria-label="Hold to speak a bid"
