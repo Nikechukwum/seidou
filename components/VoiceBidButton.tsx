@@ -2,267 +2,402 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Mic, MicOff, Loader2 } from 'lucide-react'
+import { Mic } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useDispatch } from 'react-redux'
-import { showToast } from '@/redux/toastSlice'
 
-type VoiceAction = 'BID' | 'BUY'| 'I WANT TO BID'
-
-interface ParsedCommand {
-    action: VoiceAction
-    amount: number
-    raw: string
-}
+type VoiceAction = 'BID' | 'BUY'
 
 interface VoiceBidButtonProps {
-    onBid: (amount: number) => void
+    onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
     disabled?: boolean
 }
 
-function parseVoiceCommand(transcript: string): ParsedCommand | null {
-    const cleaned = transcript
-        .toLowerCase()
-        .replace(/[₦$]/g, '')
-        .replace(/,/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
+const CANCEL_THRESHOLD_PX = 80
+const MAX_RECORDING_MS = 10000
 
-    // Match "bid 50000", "bid fifty thousand", "increase by 50000", "add 50000"
-    const bidPatterns = [
-        /(?:bid|increase\s+(?:by\s+)?)\s+(\d[\d]*)/i,
-        /(?:add|raise|place)\s+(?:a\s+)?(?:bid\s+(?:of\s+)?)?(\d[\d]*)/i,
-        /(\d[\d]*)\s*(?:bid|credits?|b)/i,
-    ]
+const WORD_NUMBERS: Record<string, number> = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+    sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+    thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
+    eighty: 80, ninety: 90, hundred: 100, thousand: 1000,
+    million: 1000000, billion: 1000000000,
+}
 
-    for (const pattern of bidPatterns) {
-        const match = cleaned.match(pattern)
-        if (match) {
-            const amount = parseInt(match[1], 10)
-            if (amount > 0 && isFinite(amount)) {
-                return { action: 'BID', amount, raw: transcript }
+function wordsToNumber(text: string): number | null {
+    const words = text.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean)
+    let total = 0
+    let current = 0
+    let found = false
+
+    for (const word of words) {
+        const val = WORD_NUMBERS[word]
+        if (val !== undefined) {
+            found = true
+            if (val >= 1000) {
+                current = current === 0 ? 1 : current
+                total += current * val
+                current = 0
+            } else if (val >= 100) {
+                current = current === 0 ? 1 : current
+                current *= val
+            } else {
+                current += val
             }
         }
     }
+    total += current
+    return found && total > 0 ? total : null
+}
 
-    // Match "buy 100000", "purchase 100000", "buy 100k"
-    const buyPatterns = [
-        /(?:buy|purchase)\s+(\d[\d]*)/i,
-        /(?:buy|purchase)\s+(\d+)\s*k/i,
-    ]
+function parseTranscript(transcript: string): { action: VoiceAction; amount: number } | null {
+    const cleaned = transcript.toLowerCase().replace(/[₦$,]/g, '').replace(/\s+/g, ' ').trim()
 
-    for (const pattern of buyPatterns) {
-        const match = cleaned.match(pattern)
-        if (match) {
-            let amount = parseInt(match[1], 10)
-            if (cleaned.match(/\d+\s*k/i) && !cleaned.match(/(?:buy|purchase)\s+\d{4,}/i)) {
-                amount *= 1000
-            }
-            if (amount > 0 && isFinite(amount)) {
-                return { action: 'BUY', amount, raw: transcript }
-            }
+    const kMatch = cleaned.match(/(\d+)\s*k\b/)
+    if (kMatch) {
+        const amount = parseInt(kMatch[1], 10) * 1000
+        const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
+        return { action, amount }
+    }
+
+    const digitMatch = cleaned.match(/(\d[\d,]*)/)
+    if (digitMatch) {
+        const amount = parseInt(digitMatch[1].replace(/,/g, ''), 10)
+        if (amount > 0) {
+            const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
+            return { action, amount }
         }
     }
 
-    // Fallback: if the transcript contains a number, default to BID
-    const fallbackMatch = cleaned.match(/(\d[\d]*)/)
-    if (fallbackMatch) {
-        const amount = parseInt(fallbackMatch[1], 10)
-        if (amount > 0 && isFinite(amount)) {
-            return { action: 'BID', amount, raw: transcript }
-        }
+    const wordAmount = wordsToNumber(cleaned)
+    if (wordAmount !== null) {
+        const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
+        return { action, amount: wordAmount }
     }
 
     return null
 }
 
-export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButtonProps) {
-    const [isListening, setIsListening] = useState(false)
-    const [isProcessing, setIsProcessing] = useState(false)
-    const [showConfirm, setShowConfirm] = useState(false)
-    const [parsedCommand, setParsedCommand] = useState<ParsedCommand | null>(null)
-    const recognitionRef = useRef<any>(null)
-    const dispatch = useDispatch()
+function vibrate(ms: number) {
+    try { navigator.vibrate?.(ms) } catch {}
+}
 
-    const stopListening = useCallback(() => {
+export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButtonProps) {
+    const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
+    const [elapsed, setElapsed] = useState(0)
+    const [volume, setVolume] = useState(0)
+    const [errorText, setErrorText] = useState<string | null>(null)
+
+    const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
+    const isCancelledRef = useRef(false)
+    const recognitionRef = useRef<any>(null)
+    const audioCtxRef = useRef<AudioContext | null>(null)
+    const analyserRef = useRef<AnalyserNode | null>(null)
+    const streamRef = useRef<MediaStream | null>(null)
+    const animFrameRef = useRef<number>(0)
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    const startTimeRef = useRef(0)
+    const transcriptRef = useRef('')
+    const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    const showError = useCallback((msg: string) => {
+        setErrorText(msg)
+        if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
+        errorTimerRef.current = setTimeout(() => setErrorText(null), 2000)
+    }, [])
+
+    const cleanup = useCallback(() => {
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+        if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
+        if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
         if (recognitionRef.current) {
             try { recognitionRef.current.stop() } catch {}
             recognitionRef.current = null
         }
-        setIsListening(false)
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop())
+            streamRef.current = null
+        }
+        if (audioCtxRef.current) {
+            try { audioCtxRef.current.close() } catch {}
+            audioCtxRef.current = null
+        }
+        analyserRef.current = null
+        setVolume(0)
+        setElapsed(0)
     }, [])
 
     useEffect(() => {
-        return () => stopListening()
-    }, [stopListening])
+        return () => cleanup()
+    }, [cleanup])
 
-    const handleVoiceResult = useCallback((transcript: string) => {
-        setIsProcessing(true)
-        const command = parseVoiceCommand(transcript)
-        setIsProcessing(false)
-
-        if (!command) {
-            dispatch(showToast({ type: 'error', message: `Couldn't understand: "${transcript}"` }))
-            return
-        }
-
-        setParsedCommand(command)
-        setShowConfirm(true)
-    }, [dispatch])
-
-    const startListening = useCallback(() => {
-        if (disabled || isProcessing) return
+    const startRecording = useCallback(async () => {
+        if (disabled) return
 
         const SpeechRecognition =
             (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
 
         if (!SpeechRecognition) {
-            dispatch(showToast({ type: 'error', message: 'Voice input is not supported in this browser.' }))
+            showError('Voice not supported')
             return
         }
 
-        if (isListening) {
-            stopListening()
+        vibrate(50)
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            streamRef.current = stream
+
+            const audioCtx = new AudioContext()
+            audioCtxRef.current = audioCtx
+            const source = audioCtx.createMediaStreamSource(stream)
+            const analyser = audioCtx.createAnalyser()
+            analyser.fftSize = 256
+            source.connect(analyser)
+            analyserRef.current = analyser
+
+            const dataArray = new Uint8Array(analyser.frequencyBinCount)
+            const tick = () => {
+                analyser.getByteFrequencyData(dataArray)
+                let sum = 0
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i]
+                setVolume(sum / dataArray.length / 255)
+                animFrameRef.current = requestAnimationFrame(tick)
+            }
+            tick()
+        } catch {
+            showError('Mic denied')
             return
         }
 
         const recognition = new SpeechRecognition()
-        recognition.continuous = false
-        recognition.interimResults = false
+        recognition.continuous = true
+        recognition.interimResults = true
         recognition.lang = 'en-US'
         recognition.maxAlternatives = 1
 
-        recognition.onstart = () => setIsListening(true)
-        recognition.onend = () => {
-            setIsListening(false)
-            recognitionRef.current = null
-        }
-        recognition.onerror = (e: any) => {
-            if (e.error !== 'aborted' && e.error !== 'no-speech') {
-                dispatch(showToast({ type: 'error', message: 'Voice recognition failed. Try again.' }))
-            }
-            setIsListening(false)
-            recognitionRef.current = null
-        }
         recognition.onresult = (event: any) => {
-            const transcript = event.results[0][0].transcript
-            handleVoiceResult(transcript)
+            let final = ''
+            for (let i = 0; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    final += event.results[i][0].transcript + ' '
+                }
+            }
+            if (final.trim()) transcriptRef.current = final.trim()
         }
+
+        recognition.onerror = () => {}
+        recognition.onend = () => {}
 
         recognitionRef.current = recognition
         recognition.start()
-    }, [disabled, isProcessing, isListening, stopListening, dispatch, handleVoiceResult])
 
-    const handleConfirm = () => {
-        if (!parsedCommand) return
-        setShowConfirm(false)
+        startTimeRef.current = Date.now()
+        setElapsed(0)
+        timerRef.current = setInterval(() => {
+            setElapsed(Date.now() - startTimeRef.current)
+        }, 100)
 
-        if (parsedCommand.action === 'BID') {
-            onBid(parsedCommand.amount)
-        } else if (parsedCommand.action === 'BUY' && onBuy) {
-            onBuy(parsedCommand.amount)
+        setPhase('recording')
+        isCancelledRef.current = false
+        transcriptRef.current = ''
+
+        maxTimerRef.current = setTimeout(() => {
+            handlePointerUp()
+        }, MAX_RECORDING_MS)
+    }, [disabled, showError])
+
+    const handlePointerUp = useCallback(async () => {
+        if (phase !== 'recording') return
+
+        const cancelled = isCancelledRef.current
+        const transcript = transcriptRef.current
+
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+        if (animFrameRef.current) { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = 0 }
+
+        if (recognitionRef.current) {
+            try { recognitionRef.current.stop() } catch {}
+            recognitionRef.current = null
+        }
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop())
+            streamRef.current = null
+        }
+        if (audioCtxRef.current) {
+            try { audioCtxRef.current.close() } catch {}
+            audioCtxRef.current = null
+        }
+        analyserRef.current = null
+        setVolume(0)
+
+        if (cancelled) {
+            setPhase('idle')
+            setElapsed(0)
+            return
         }
 
-        setParsedCommand(null)
-    }
+        if (!transcript) {
+            setPhase('idle')
+            setElapsed(0)
+            showError('No speech')
+            return
+        }
 
-    const handleDismiss = () => {
-        setShowConfirm(false)
-        setParsedCommand(null)
-    }
+        const parsed = parseTranscript(transcript)
 
-    const formatAmount = (n: number) => n.toLocaleString()
+        if (!parsed) {
+            setPhase('idle')
+            setElapsed(0)
+            showError('Try again')
+            return
+        }
 
-    return createPortal(
+        setPhase('idle')
+        setElapsed(0)
+        vibrate(30)
+
+        if (parsed.action === 'BUY' && onBuy) {
+            onBuy(parsed.amount)
+        } else {
+            onBid(parsed.amount)
+        }
+    }, [phase, onBid, onBuy, showError])
+
+    const handlePointerDown = useCallback((e: React.PointerEvent) => {
+        if (disabled || phase === 'recording') return
+        e.preventDefault()
+        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+        pointerStartRef.current = { x: e.clientX, y: e.clientY }
+        startRecording()
+    }, [disabled, phase, startRecording])
+
+    const handlePointerMove = useCallback((e: React.PointerEvent) => {
+        if (phase !== 'recording' || !pointerStartRef.current) return
+        const dx = e.clientX - pointerStartRef.current.x
+        const dy = e.clientY - pointerStartRef.current.y
+        const distance = Math.sqrt(dx * dx + dy * dy)
+
+        if (dx < -CANCEL_THRESHOLD_PX || distance > CANCEL_THRESHOLD_PX) {
+            isCancelledRef.current = true
+            setPhase('cancelled')
+        }
+    }, [phase])
+
+    const handlePointerUpEvent = useCallback((e: React.PointerEvent) => {
+        if (phase !== 'recording' && phase !== 'cancelled') return
+        pointerStartRef.current = null
+        handlePointerUp()
+    }, [phase, handlePointerUp])
+
+    const elapsedSec = Math.floor(elapsed / 1000)
+    const elapsedMs = Math.floor((elapsed % 1000) / 100)
+    const timerText = `${elapsedSec}.${elapsedMs}s`
+
+    const button = (
         <>
-            {/* Floating Mic Button */}
-            <button
-                onClick={startListening}
-                disabled={disabled}
-                className={`fixed bottom-6 right-6 z-30 p-4 rounded-full shadow-lg transition-all duration-200 active:scale-95 disabled:opacity-50 ${
-                    isListening
-                        ? 'bg-red-500 text-white shadow-red-500/30'
-                        : 'bg-black text-white hover:bg-neutral-800'
-                }`}
-                aria-label="Voice Bid"
-            >
-                {isProcessing ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
-                ) : isListening ? (
-                    <div className="relative">
-                        <MicOff className="w-6 h-6" />
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-ping" />
-                    </div>
-                ) : (
-                    <Mic className="w-6 h-6" />
-                )}
-            </button>
-
-            {/* Listening indicator */}
             <AnimatePresence>
-                {isListening && (
+                {(phase === 'recording' || phase === 'cancelled') && (
                     <motion.div
-                        initial={{ opacity: 0, y: 10 }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-40 bg-black/30"
+                        onPointerUp={handlePointerUpEvent}
+                        onPointerMove={handlePointerMove}
+                    />
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {phase === 'recording' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="fixed bottom-24 right-6 z-30 bg-black text-white text-xs font-medium px-4 py-2 rounded-full shadow-lg"
+                        exit={{ opacity: 0, y: 40 }}
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
                     >
-                        Listening...
+                        <div className="flex items-end gap-1 h-10">
+                            {Array.from({ length: 12 }).map((_, i) => {
+                                const offset = i * 0.15
+                                const barVol = Math.min(1, volume * (1 + Math.sin(Date.now() * 0.005 + offset) * 0.4))
+                                const height = 6 + barVol * 34
+                                return (
+                                    <div
+                                        key={i}
+                                        className="w-1 rounded-full bg-white/80 transition-all duration-75"
+                                        style={{ height: `${height}px` }}
+                                    />
+                                )
+                            })}
+                        </div>
+                        <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
+                            {timerText}
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Confirmation Modal */}
             <AnimatePresence>
-                {showConfirm && parsedCommand && (
-                    <div className="fixed inset-0 z-50 flex justify-center items-center">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="absolute inset-0 bg-black/20"
-                            onClick={handleDismiss}
-                        />
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="relative bg-white border border-slate-200 p-7 rounded-3xl shadow-lg w-[85%] max-w-sm"
-                        >
-                            <p className="text-sm text-gray-500 mb-1">You said:</p>
-                            <p className="text-base text-gray-800 italic mb-4 truncate">
-                                &ldquo;{parsedCommand.raw}&rdquo;
-                            </p>
-
-                            <div className="bg-gray-50 rounded-2xl p-4 mb-6">
-                                <p className="text-sm text-gray-500 mb-1">
-                                    {parsedCommand.action === 'BID' ? 'Place Bid' : 'Buy Credits'}
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    B {formatAmount(parsedCommand.amount)}
-                                </p>
-                            </div>
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={handleDismiss}
-                                    className="flex-1 rounded-full border border-gray-200 bg-transparent py-3 text-sm font-bold text-gray-600 active:bg-gray-100 duration-100"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleConfirm}
-                                    className="flex-1 rounded-full bg-black text-white py-3 text-sm font-bold active:bg-neutral-800 duration-100"
-                                >
-                                    Confirm
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
+                {phase === 'recording' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="fixed bottom-44 left-1/2 -translate-x-1/2 z-50 text-white/50 text-xs font-medium"
+                    >
+                        Slide left to cancel
+                    </motion.div>
                 )}
             </AnimatePresence>
-        </>,
-        document.body
+
+            <AnimatePresence>
+                {phase === 'cancelled' && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-black/70 text-white/70 text-sm font-medium px-5 py-2.5 rounded-full"
+                    >
+                        Release to cancel
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Inline error — small pill near the mic button */}
+            <AnimatePresence>
+                {errorText && (
+                    <motion.div
+                        key={errorText}
+                        initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                        transition={{ duration: 0.25 }}
+                        className="fixed bottom-22 right-4 z-50 bg-red-500/90 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-md pointer-events-none"
+                    >
+                        {errorText}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <button
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUpEvent}
+                onPointerMove={handlePointerMove}
+                onPointerCancel={() => { if (phase === 'recording') { isCancelledRef.current = true; handlePointerUp() } }}
+                disabled={disabled}
+                className="fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95"
+                aria-label="Hold to speak a bid"
+            >
+                <Mic className="size-6" />
+            </button>
+        </>
     )
+
+    return createPortal(button, document.body)
 }

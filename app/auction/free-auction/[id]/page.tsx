@@ -14,6 +14,7 @@ import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 import { PlusIcon, Wallet } from "lucide-react";
 import useAuth from "@/hooks/useAuth";
 import VoiceBidButton from "@/components/VoiceBidButton";
+import FloatingDelta from "@/components/FloatingDelta";
 
 type Bid = {
     id: number;
@@ -43,12 +44,27 @@ const LeaderboardPage = () => {
     const [bids, setBids] = useState<Bid[]>([])
     const [currentUserId, setCurrentUserId] = useState<string | null>(null)
     const [loading, setLoading] = useState(true)
+    const [deltaTriggers, setDeltaTriggers] = useState<Record<string, { trigger: number; amount: number }>>({})
+    const [scalePop, setScalePop] = useState<Record<string, boolean>>({})
+    const [glowPop, setGlowPop] = useState<Record<string, boolean>>({})
+    const [pressedIncrement, setPressedIncrement] = useState<number | null>(null)
     const params = useParams()
     const auctionId = params.id as string
     const dispatch = useDispatch()
     const user = useSelector((state: RootState) => state.auth.user)
     const { checkSession } = useAuth()
     const usernameCacheRef = useRef<Map<string, string | null>>(new Map())
+
+    const fireDelta = useCallback((userId: string, amount: number) => {
+        setDeltaTriggers(prev => ({
+            ...prev,
+            [userId]: { trigger: (prev[userId]?.trigger ?? 0) + 1, amount },
+        }))
+        setScalePop(prev => ({ ...prev, [userId]: true }))
+        setGlowPop(prev => ({ ...prev, [userId]: true }))
+        setTimeout(() => setScalePop(prev => ({ ...prev, [userId]: false })), 200)
+        setTimeout(() => setGlowPop(prev => ({ ...prev, [userId]: false })), 300)
+    }, [])
 
     const fetchBids = useCallback(async () => {
         const supabase = createClient()
@@ -186,6 +202,7 @@ const LeaderboardPage = () => {
             return
         }
 
+        setPressedIncrement(increment)
         setQuickBidding(true)
 
         // Optimistic: wallet balance
@@ -194,6 +211,53 @@ const LeaderboardPage = () => {
         }
 
         // Optimistic: bid card amount
+        let previousBids: Bid[] | null = null
+        if (user) {
+            previousBids = bids
+            setBids(bids.map((b) =>
+                b.userId === user.id
+                    ? { ...b, bidAmount: Number(b.bidAmount) + increment }
+                    : b
+            ))
+            fireDelta(user.id, increment)
+        }
+
+        try {
+            const res = await fetch('/api/landwars/increase-bid', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auctionId, increment }),
+            })
+
+            const data = await res.json()
+
+            if (!res.ok) {
+                await fetchProfileBalance()
+                if (previousBids) setBids(previousBids)
+                dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
+            } else {
+                dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
+            }
+        } catch {
+            await fetchProfileBalance()
+            if (previousBids) setBids(previousBids)
+            dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+        }
+
+        setQuickBidding(false)
+        setPressedIncrement(null)
+    }
+
+    const handleVoiceBid = useCallback(async (increment: number): Promise<boolean> => {
+        if (quickBidding) return false
+        if (user && user.bidding_balance < increment) return false
+
+        setQuickBidding(true)
+
+        if (user) {
+            dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - increment }))
+        }
+
         let previousBids: Bid[] | null = null
         if (user) {
             previousBids = bids
@@ -216,19 +280,21 @@ const LeaderboardPage = () => {
             if (!res.ok) {
                 await fetchProfileBalance()
                 if (previousBids) setBids(previousBids)
-                dispatch(showToast({ type: 'error', message: data.error || 'Could not increase your bid.' }))
-            } else {
-                dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
-                dispatch(showToast({ type: 'success', message: `Bid increased by ${increment.toLocaleString()}` }))
+                setQuickBidding(false)
+                return false
             }
+
+            dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
+            if (user) fireDelta(user.id, increment)
+            setQuickBidding(false)
+            return true
         } catch {
             await fetchProfileBalance()
             if (previousBids) setBids(previousBids)
-            dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            setQuickBidding(false)
+            return false
         }
-
-        setQuickBidding(false)
-    }
+    }, [quickBidding, user, bids, auctionId, dispatch, fetchProfileBalance, fireDelta])
 
     const handleTabClick = (tab: TabKey) => {
         setActiveTab(tab)
@@ -306,7 +372,7 @@ const LeaderboardPage = () => {
             <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
 
             <VoiceBidButton
-                onBid={(amount) => handleQuickBid(amount)}
+                onBid={handleVoiceBid}
                 onBuy={() => setBuyModal(true)}
                 disabled={quickBidding || bidding}
             />
@@ -334,9 +400,26 @@ const LeaderboardPage = () => {
                                         {index + 1}
                                     </div>
                                     <div className="min-w-0">
-                                        <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
-                                            B {Number(bid.bidAmount).toLocaleString()}
-                                        </h2>
+                                        <div className="relative inline-block max-w-full align-top">
+                                            <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
+                                                <span
+                                                    className="inline-block transition-all duration-200 rounded-md"
+                                                    style={{
+                                                        transform: scalePop[bid.userId] ? 'scale(1.08)' : 'scale(1)',
+                                                        boxShadow: glowPop[bid.userId] ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
+                                                    }}
+                                                >
+                                                    B {Number(bid.bidAmount).toLocaleString()}
+                                                </span>
+                                            </h2>
+                                            {deltaTriggers[bid.userId] && (
+                                                <FloatingDelta
+                                                    amount={deltaTriggers[bid.userId].amount}
+                                                    type="increase"
+                                                    trigger={deltaTriggers[bid.userId].trigger}
+                                                />
+                                            )}
+                                        </div>
                                         <p className="text-gray-500 text-sm mt-1 truncate">
                                             {isYou
                                                 ? (bid.username || user?.username || 'You')
@@ -349,7 +432,9 @@ const LeaderboardPage = () => {
                                         <button
                                             onClick={() => handleQuickBid(50000)}
                                             disabled={quickBidding}
-                                            className="flex-1 flex items-center justify-center gap-1 rounded-full border border-gray-200 bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60"
+                                            className={`flex-1 flex items-center justify-center gap-1 rounded-full border bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60 ${
+                                                pressedIncrement === 50000 ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
+                                            }`}
                                         >
                                             <PlusIcon className="size-4" strokeWidth={2.5} />
                                             50,000
@@ -357,7 +442,9 @@ const LeaderboardPage = () => {
                                         <button
                                             onClick={() => handleQuickBid(100000)}
                                             disabled={quickBidding}
-                                            className="flex-1 flex items-center justify-center gap-1 rounded-full border border-gray-200 bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60"
+                                            className={`flex-1 flex items-center justify-center gap-1 rounded-full border bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60 ${
+                                                pressedIncrement === 100000 ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
+                                            }`}
                                         >
                                             <PlusIcon className="size-4" strokeWidth={2.5} />
                                             100,000
