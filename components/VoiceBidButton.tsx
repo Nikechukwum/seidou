@@ -122,12 +122,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         return () => cleanup()
     }, [cleanup])
 
-    const finishRecording = useCallback((cancelled: boolean) => {
-        // Stop recognition first so it doesn't fire more events
-        if (recognitionRef.current) {
-            try { recognitionRef.current.stop() } catch {}
-            recognitionRef.current = null
-        }
+    const processResult = useCallback((cancelled: boolean) => {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
 
@@ -159,6 +154,36 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             onBid(parsed.amount)
         }
     }, [onBid, onBuy, showError])
+
+    const finishRecording = useCallback((cancelled: boolean) => {
+        if (cancelled) {
+            // Cancelled: stop everything immediately
+            if (recognitionRef.current) {
+                try { recognitionRef.current.stop() } catch {}
+                recognitionRef.current = null
+            }
+            processResult(true)
+            return
+        }
+
+        // Not cancelled: keep recognition alive briefly to catch pending transcript
+        // The onresult handler keeps writing to transcriptRef.current
+        // After 800ms, process whatever we have
+        phaseRef.current = 'idle'
+        setPhase('idle')
+        setElapsed(0)
+
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+
+        setTimeout(() => {
+            if (recognitionRef.current) {
+                try { recognitionRef.current.stop() } catch {}
+                recognitionRef.current = null
+            }
+            processResult(false)
+        }, 800)
+    }, [processResult])
 
     const startRecording = useCallback(async () => {
         if (disabled) return
@@ -215,9 +240,14 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         }
 
         recognition.onend = () => {
-            // If recognition ends naturally (e.g. silence timeout), finish up
+            // If recognition ends naturally (silence timeout), process immediately
             if (phaseRef.current === 'recording') {
-                finishRecording(false)
+                if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+                if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+                phaseRef.current = 'idle'
+                setPhase('idle')
+                setElapsed(0)
+                processResult(false)
             }
         }
 
