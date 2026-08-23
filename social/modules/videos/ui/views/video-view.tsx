@@ -1,6 +1,7 @@
 import { PageLayout } from "@/components/PageLayout";
 
 import { VideoSection } from "../sections/video-section";
+import { CommentsSection } from "../sections/comments-section";
 import { SuggestionsSection } from "../sections/suggestions-section";
 
 interface VideoViewProps {
@@ -12,7 +13,6 @@ interface VideoViewProps {
  * max-w-md shell there is no room for a suggestions rail, so it stacks below
  * the player instead.
  *
- * Comments land with M6.
  */
 export const VideoView = ({ videoId }: VideoViewProps) => {
   return (
@@ -20,6 +20,7 @@ export const VideoView = ({ videoId }: VideoViewProps) => {
       <div className="flex flex-col gap-8">
         <VideoSection videoId={videoId} />
         <SuggestionsSection videoId={videoId} />
+        <CommentsSection videoId={videoId} />
       </div>
     </PageLayout>
   );

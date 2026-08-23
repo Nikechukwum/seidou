@@ -4,6 +4,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { Skeleton } from "@/social/components/ui/skeleton";
 
 import { VideoOwner } from "./video-owner";
+import { VideoReactions } from "./video-reactions";
 import { VideoDescription } from "./video-description";
 import { VideoGetOneOutput } from "../../types";
 
@@ -56,7 +57,14 @@ export const VideoTopRow = ({ video }: VideoTopRowProps) => {
 
       <VideoOwner user={video.user} videoId={video.id} />
 
-      {/* Reactions (like/dislike) and the share/menu row land with M6. */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <VideoReactions
+          videoId={video.id}
+          likes={video.likeCount}
+          dislikes={video.dislikeCount}
+          viewerReaction={video.viewerReaction}
+        />
+      </div>
 
       <VideoDescription
         compactViews={compactViews}

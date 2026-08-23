@@ -19,8 +19,8 @@ with Seidou's stack was stripped and replaced.
 | M3 | Video feed | ✅ Done |
 | M4 | Watch page + Mux playback | ✅ Done |
 | M5 | Upload + creator studio + Mux webhook | ✅ Done — upload verified end-to-end |
-| M6 | Comments, reactions, views, subscriptions | ⬜ Not started |
-| M7 | Search, channel pages, trending/subscribed feeds | ⬜ Not started |
+| M6 | Comments, reactions, views, subscriptions | ✅ Done |
+| M7 | Search, channel pages, trending/subscribed feeds | 🟡 Next |
 | M8 | Thumbnail + banner uploads (Supabase Storage) | ⬜ Not started |
 | M9 | Polish | ⬜ Not started |
 
