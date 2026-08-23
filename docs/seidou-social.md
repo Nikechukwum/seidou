@@ -20,8 +20,8 @@ with Seidou's stack was stripped and replaced.
 | M4 | Watch page + Mux playback | ✅ Done |
 | M5 | Upload + creator studio + Mux webhook | ✅ Done — upload verified end-to-end |
 | M6 | Comments, reactions, views, subscriptions | ✅ Done |
-| M7 | Search, channel pages, trending/subscribed feeds | 🟡 Next |
-| M8 | Thumbnail + banner uploads (Supabase Storage) | ⬜ Not started |
+| M7 | Search, channel pages, trending/subscribed feeds | ✅ Done |
+| M8 | Thumbnail + banner uploads (Supabase Storage) | 🟡 Next |
 | M9 | Polish | ⬜ Not started |
 
 Work happens on the `seidou-social` branch.
