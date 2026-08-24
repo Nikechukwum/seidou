@@ -15,6 +15,20 @@ interface VoiceBidButtonProps {
 
 const CANCEL_THRESHOLD_PX = 80
 const MAX_RECORDING_MS = 10000
+const RELEASE_GRACE_MS = 1500
+const RESTART_DELAY_MS = 250
+
+// Android Chrome ignores `continuous` and ends recognition after every
+// utterance / silence gap, with slow startup and result delivery.
+const isAndroid = () =>
+    typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+
+const FATAL_ERROR_MESSAGES: Record<string, string> = {
+    'not-allowed': 'Allow mic access',
+    'service-not-allowed': 'Voice service blocked',
+    'audio-capture': 'No microphone found',
+    'network': 'Network error',
+}
 
 const WORD_NUMBERS: Record<string, number> = {
     zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
@@ -88,6 +102,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
     const [elapsed, setElapsed] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
+    const [micReady, setMicReady] = useState(false)
 
     // All mutable state tracked via refs to avoid stale closures
     const phaseRef = useRef<'idle' | 'recording' | 'cancelled'>('idle')
@@ -100,6 +115,15 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const releasedDuringStartupRef = useRef(false)
+    const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const recognitionActiveRef = useRef(false)
+    const fatalErrorRef = useRef<string | null>(null)
+    const processedRef = useRef(false)
+    const finishingRef = useRef(false)
+    const prevTranscriptRef = useRef('')
+    const sessionFinalRef = useRef('')
+    const graceExtendedRef = useRef(false)
 
     const showError = useCallback((msg: string) => {
         setErrorText(msg)
@@ -111,10 +135,15 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
         if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
         if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
+        if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
+        if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
         if (recognitionRef.current) {
-            try { recognitionRef.current.stop() } catch {}
+            const rec = recognitionRef.current
             recognitionRef.current = null
+            try { rec.stop() } catch {}
         }
+        recognitionActiveRef.current = false
+        finishingRef.current = false
         setElapsed(0)
     }, [])
 
@@ -135,7 +164,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         const transcript = transcriptRef.current
 
         if (!transcript) {
-            showError('No speech')
+            showError(fatalErrorRef.current ?? 'No speech')
             return
         }
 
@@ -155,38 +184,75 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         }
     }, [onBid, onBuy, showError])
 
+    const finalize = useCallback((force = false) => {
+        // Mic never actually started (slow Android init / permission prompt):
+        // extend the wait once instead of instantly reporting "No speech"
+        if (!force && !processedRef.current && finishingRef.current &&
+            !recognitionActiveRef.current && !transcriptRef.current &&
+            !graceExtendedRef.current) {
+            graceExtendedRef.current = true
+            graceTimerRef.current = setTimeout(() => {
+                graceTimerRef.current = null
+                finalize()
+            }, RELEASE_GRACE_MS)
+            return
+        }
+        if (processedRef.current) return
+        processedRef.current = true
+        finishingRef.current = false
+        if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
+        if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
+        if (recognitionRef.current) {
+            const rec = recognitionRef.current
+            recognitionRef.current = null
+            try { rec.stop() } catch {}
+        }
+        recognitionActiveRef.current = false
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        processResult(false)
+    }, [processResult])
+
     const finishRecording = useCallback((cancelled: boolean) => {
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+
         if (cancelled) {
-            // Cancelled: stop everything immediately
+            processedRef.current = true
+            finishingRef.current = false
+            if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
+            if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
             if (recognitionRef.current) {
-                try { recognitionRef.current.stop() } catch {}
+                const rec = recognitionRef.current
                 recognitionRef.current = null
+                try { rec.stop() } catch {}
             }
-            processResult(true)
+            recognitionActiveRef.current = false
+            phaseRef.current = 'idle'
+            setPhase('idle')
+            setElapsed(0)
             return
         }
 
-        // Not cancelled: keep recognition alive briefly to catch pending transcript
-        // The onresult handler keeps writing to transcriptRef.current
-        // After 800ms, process whatever we have
+        // Released: keep the recognizer alive briefly so Android can flush its
+        // pending/final results before we stop it and read the transcript.
+        finishingRef.current = true
         phaseRef.current = 'idle'
         setPhase('idle')
         setElapsed(0)
 
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-
-        setTimeout(() => {
-            if (recognitionRef.current) {
-                try { recognitionRef.current.stop() } catch {}
-                recognitionRef.current = null
-            }
-            processResult(false)
-        }, 800)
-    }, [processResult])
+        graceTimerRef.current = setTimeout(() => {
+            graceTimerRef.current = null
+            finalize()
+        }, RELEASE_GRACE_MS)
+    }, [finalize])
 
     const startRecording = useCallback(async () => {
         if (disabled) return
+
+        // Flush any previous session still in its grace window
+        if (finishingRef.current || graceTimerRef.current || restartTimerRef.current) {
+            finalize(true)
+        }
 
         const SpeechRecognition =
             (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -200,6 +266,13 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         isCancelledRef.current = false
         releasedDuringStartupRef.current = false
         transcriptRef.current = ''
+        prevTranscriptRef.current = ''
+        sessionFinalRef.current = ''
+        fatalErrorRef.current = null
+        processedRef.current = false
+        finishingRef.current = false
+        graceExtendedRef.current = false
+        recognitionActiveRef.current = false
 
         // Set phase immediately so UI responds
         phaseRef.current = 'recording'
@@ -212,43 +285,104 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         }, 100)
 
         const recognition = new SpeechRecognition()
-        recognition.continuous = true
+        // Android Chrome misbehaves with continuous mode: it stops after each
+        // utterance anyway and can deliver no results at all. Use single-shot
+        // mode there and restart manually from onend.
+        recognition.continuous = !isAndroid()
         recognition.interimResults = true
         recognition.lang = 'en-US'
         recognition.maxAlternatives = 1
 
+        recognition.onstart = () => {
+            recognitionActiveRef.current = true
+            setMicReady(true)
+        }
+
         recognition.onresult = (event: any) => {
-            let final = ''
+            let sessionFinal = ''
             let lastInterim = ''
             for (let i = 0; i < event.results.length; i++) {
                 if (event.results[i].isFinal) {
-                    final += event.results[i][0].transcript + ' '
+                    sessionFinal += event.results[i][0].transcript + ' '
                 } else {
                     lastInterim = event.results[i][0].transcript
                 }
             }
-            if (final.trim()) {
-                transcriptRef.current = final.trim()
+            sessionFinal = sessionFinal.trim()
+            sessionFinalRef.current = sessionFinal
+
+            const base = prevTranscriptRef.current ? prevTranscriptRef.current + ' ' : ''
+            if (sessionFinal) {
+                transcriptRef.current = (base + sessionFinal).trim()
             } else if (lastInterim.trim()) {
-                transcriptRef.current = lastInterim.trim()
+                transcriptRef.current = (base + lastInterim.trim()).trim()
+            }
+
+            // While waiting out the release window, a final result means we're done
+            if (finishingRef.current && sessionFinal && graceTimerRef.current) {
+                clearTimeout(graceTimerRef.current)
+                graceTimerRef.current = setTimeout(() => {
+                    graceTimerRef.current = null
+                    finalize()
+                }, 250)
             }
         }
 
         recognition.onerror = (e: any) => {
             if (e.error === 'no-speech' || e.error === 'aborted') return
+            const msg = FATAL_ERROR_MESSAGES[e.error]
+            if (msg) fatalErrorRef.current = msg
             console.warn('[voice] recognition error:', e.error)
         }
 
         recognition.onend = () => {
-            // If recognition ends naturally (silence timeout), process immediately
-            if (phaseRef.current === 'recording') {
+            recognitionActiveRef.current = false
+
+            // Ended during the post-release window: results are flushed, wrap up
+            if (finishingRef.current) {
+                if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
+                graceTimerRef.current = setTimeout(() => {
+                    graceTimerRef.current = null
+                    finalize()
+                }, 200)
+                return
+            }
+
+            if (phaseRef.current !== 'recording') return
+
+            if (fatalErrorRef.current) {
+                const msg = fatalErrorRef.current
+                processedRef.current = true
                 if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
                 if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+                recognitionRef.current = null
                 phaseRef.current = 'idle'
                 setPhase('idle')
                 setElapsed(0)
-                processResult(false)
+                setMicReady(false)
+                showError(msg)
+                return
             }
+
+            if (Date.now() - startTimeRef.current >= MAX_RECORDING_MS - 500) {
+                finishRecording(false)
+                return
+            }
+
+            // Still holding: Android ended the session after an utterance or
+            // silence gap. Carry over what we heard and start listening again.
+            if (sessionFinalRef.current) {
+                prevTranscriptRef.current =
+                    (prevTranscriptRef.current + ' ' + sessionFinalRef.current).trim()
+                sessionFinalRef.current = ''
+            }
+
+            if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
+            restartTimerRef.current = setTimeout(() => {
+                restartTimerRef.current = null
+                if (phaseRef.current !== 'recording' || processedRef.current) return
+                try { recognition.start() } catch {}
+            }, RESTART_DELAY_MS)
         }
 
         recognitionRef.current = recognition
@@ -257,23 +391,27 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             recognition.start()
         } catch {
             showError('Voice failed')
+            processedRef.current = true
             phaseRef.current = 'idle'
             setPhase('idle')
             setElapsed(0)
+            setMicReady(false)
             if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+            recognitionRef.current = null
             return
         }
 
         // Auto-stop after max duration
         maxTimerRef.current = setTimeout(() => {
-            finishRecording(false)
+            maxTimerRef.current = null
+            if (phaseRef.current === 'recording') finishRecording(false)
         }, MAX_RECORDING_MS)
 
         // If user released during startup, finish now
         if (releasedDuringStartupRef.current) {
             finishRecording(false)
         }
-    }, [disabled, showError, finishRecording])
+    }, [disabled, showError, finishRecording, finalize])
 
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (disabled || phaseRef.current === 'recording') return
@@ -297,6 +435,8 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     }, [])
 
     const handlePointerUp = useCallback(() => {
+        // Ignore duplicate/late pointerups (e.g. during the release grace window)
+        if (finishingRef.current) return
         // If recognition hasn't started yet, flag it and finishRecording will pick it up
         if (phaseRef.current === 'idle') {
             releasedDuringStartupRef.current = true
@@ -305,6 +445,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (phaseRef.current !== 'recording' && phaseRef.current !== 'cancelled') return
 
         pointerStartRef.current = null
+        setMicReady(false)
         const cancelled = isCancelledRef.current
         finishRecording(cancelled)
     }, [finishRecording])
@@ -341,7 +482,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                         className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
                     >
                         <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
-                            {timerText}
+                            {micReady ? timerText : 'Starting…'}
                         </div>
                     </motion.div>
                 )}
