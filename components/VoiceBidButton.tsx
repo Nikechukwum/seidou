@@ -15,8 +15,12 @@ interface VoiceBidButtonProps {
 
 const CANCEL_THRESHOLD_PX = 80
 const MAX_RECORDING_MS = 10000
-const RELEASE_GRACE_MS = 1500
-const RESTART_DELAY_MS = 250
+const RELEASE_GRACE_MS = 800
+const RESTART_DELAY_MS = 150
+// Chrome's speech service sometimes never fires onstart (wedged instance);
+// if the mic isn't live by then, discard it and spawn a fresh one.
+const START_WATCHDOG_MS = 1200
+const MAX_START_ATTEMPTS = 3
 
 // Android Chrome ignores `continuous` and ends recognition after every
 // utterance / silence gap, with slow startup and result delivery.
@@ -117,6 +121,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const releasedDuringStartupRef = useRef(false)
     const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const recognitionActiveRef = useRef(false)
     const fatalErrorRef = useRef<string | null>(null)
     const processedRef = useRef(false)
@@ -137,6 +142,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
         if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
         if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
+        if (watchdogTimerRef.current) { clearTimeout(watchdogTimerRef.current); watchdogTimerRef.current = null }
         if (recognitionRef.current) {
             const rec = recognitionRef.current
             recognitionRef.current = null
@@ -202,6 +208,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         finishingRef.current = false
         if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
         if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
+        if (watchdogTimerRef.current) { clearTimeout(watchdogTimerRef.current); watchdogTimerRef.current = null }
         if (recognitionRef.current) {
             const rec = recognitionRef.current
             recognitionRef.current = null
@@ -221,6 +228,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             finishingRef.current = false
             if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
             if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
+            if (watchdogTimerRef.current) { clearTimeout(watchdogTimerRef.current); watchdogTimerRef.current = null }
             if (recognitionRef.current) {
                 const rec = recognitionRef.current
                 recognitionRef.current = null
@@ -250,7 +258,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         if (disabled) return
 
         // Flush any previous session still in its grace window
-        if (finishingRef.current || graceTimerRef.current || restartTimerRef.current) {
+        if (finishingRef.current || graceTimerRef.current || restartTimerRef.current || watchdogTimerRef.current) {
             finalize(true)
         }
 
@@ -284,122 +292,181 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             setElapsed(Date.now() - startTimeRef.current)
         }, 100)
 
-        const recognition = new SpeechRecognition()
-        // Android Chrome misbehaves with continuous mode: it stops after each
-        // utterance anyway and can deliver no results at all. Use single-shot
-        // mode there and restart manually from onend.
-        recognition.continuous = !isAndroid()
-        recognition.interimResults = true
-        recognition.lang = 'en-US'
-        recognition.maxAlternatives = 1
+        let attempt = 0
 
-        recognition.onstart = () => {
-            recognitionActiveRef.current = true
-            setMicReady(true)
+        const teardownCurrent = () => {
+            const rec = recognitionRef.current
+            recognitionRef.current = null
+            if (rec) { try { rec.abort() } catch {} }
         }
 
-        recognition.onresult = (event: any) => {
-            let sessionFinal = ''
-            let lastInterim = ''
-            for (let i = 0; i < event.results.length; i++) {
-                if (event.results[i].isFinal) {
-                    sessionFinal += event.results[i][0].transcript + ' '
-                } else {
-                    lastInterim = event.results[i][0].transcript
-                }
-            }
-            sessionFinal = sessionFinal.trim()
-            sessionFinalRef.current = sessionFinal
-
-            const base = prevTranscriptRef.current ? prevTranscriptRef.current + ' ' : ''
-            if (sessionFinal) {
-                transcriptRef.current = (base + sessionFinal).trim()
-            } else if (lastInterim.trim()) {
-                transcriptRef.current = (base + lastInterim.trim()).trim()
-            }
-
-            // While waiting out the release window, a final result means we're done
-            if (finishingRef.current && sessionFinal && graceTimerRef.current) {
-                clearTimeout(graceTimerRef.current)
-                graceTimerRef.current = setTimeout(() => {
-                    graceTimerRef.current = null
-                    finalize()
-                }, 250)
-            }
+        const clearWatchdog = () => {
+            if (watchdogTimerRef.current) { clearTimeout(watchdogTimerRef.current); watchdogTimerRef.current = null }
         }
 
-        recognition.onerror = (e: any) => {
-            if (e.error === 'no-speech' || e.error === 'aborted') return
-            const msg = FATAL_ERROR_MESSAGES[e.error]
-            if (msg) fatalErrorRef.current = msg
-            console.warn('[voice] recognition error:', e.error)
-        }
-
-        recognition.onend = () => {
-            recognitionActiveRef.current = false
-
-            // Ended during the post-release window: results are flushed, wrap up
-            if (finishingRef.current) {
-                if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
-                graceTimerRef.current = setTimeout(() => {
-                    graceTimerRef.current = null
-                    finalize()
-                }, 200)
-                return
-            }
-
-            if (phaseRef.current !== 'recording') return
-
-            if (fatalErrorRef.current) {
-                const msg = fatalErrorRef.current
-                processedRef.current = true
-                if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-                if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-                recognitionRef.current = null
-                phaseRef.current = 'idle'
-                setPhase('idle')
-                setElapsed(0)
-                setMicReady(false)
-                showError(msg)
-                return
-            }
-
-            if (Date.now() - startTimeRef.current >= MAX_RECORDING_MS - 500) {
-                finishRecording(false)
-                return
-            }
-
-            // Still holding: Android ended the session after an utterance or
-            // silence gap. Carry over what we heard and start listening again.
-            if (sessionFinalRef.current) {
-                prevTranscriptRef.current =
-                    (prevTranscriptRef.current + ' ' + sessionFinalRef.current).trim()
-                sessionFinalRef.current = ''
-            }
-
-            if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
-            restartTimerRef.current = setTimeout(() => {
-                restartTimerRef.current = null
-                if (phaseRef.current !== 'recording' || processedRef.current) return
-                try { recognition.start() } catch {}
-            }, RESTART_DELAY_MS)
-        }
-
-        recognitionRef.current = recognition
-
-        try {
-            recognition.start()
-        } catch {
-            showError('Voice failed')
+        const giveUp = (msg: string) => {
             processedRef.current = true
+            clearWatchdog()
+            teardownCurrent()
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+            if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
             phaseRef.current = 'idle'
             setPhase('idle')
             setElapsed(0)
             setMicReady(false)
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-            recognitionRef.current = null
-            return
+            showError(msg)
         }
+
+        const armWatchdog = () => {
+            clearWatchdog()
+            watchdogTimerRef.current = setTimeout(() => {
+                watchdogTimerRef.current = null
+                if (phaseRef.current !== 'recording' || processedRef.current) return
+                if (recognitionActiveRef.current) return
+                attempt++
+                if (attempt >= MAX_START_ATTEMPTS) {
+                    giveUp(fatalErrorRef.current ?? 'Voice unavailable')
+                    return
+                }
+                teardownCurrent()
+                spawn()
+            }, START_WATCHDOG_MS)
+        }
+
+        const spawn = () => {
+            if (phaseRef.current !== 'recording' || processedRef.current) return
+
+            const recognition = new SpeechRecognition()
+            // Android Chrome misbehaves with continuous mode: it stops after each
+            // utterance anyway and can deliver no results at all. Use single-shot
+            // mode there and restart manually from onend.
+            recognition.continuous = !isAndroid()
+            recognition.interimResults = true
+            recognition.lang = 'en-US'
+            recognition.maxAlternatives = 1
+
+            const markLive = () => {
+                recognitionActiveRef.current = true
+                setMicReady(true)
+                clearWatchdog()
+            }
+
+            recognition.onstart = markLive
+            recognition.onaudiostart = markLive
+
+            recognition.onresult = (event: any) => {
+                markLive()
+
+                let sessionFinal = ''
+                let lastInterim = ''
+                for (let i = 0; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        sessionFinal += event.results[i][0].transcript + ' '
+                    } else {
+                        lastInterim = event.results[i][0].transcript
+                    }
+                }
+                sessionFinal = sessionFinal.trim()
+                sessionFinalRef.current = sessionFinal
+
+                const base = prevTranscriptRef.current ? prevTranscriptRef.current + ' ' : ''
+                if (sessionFinal) {
+                    transcriptRef.current = (base + sessionFinal).trim()
+                } else if (lastInterim.trim()) {
+                    transcriptRef.current = (base + lastInterim.trim()).trim()
+                }
+
+                // While waiting out the release window, a final result means we're done
+                if (finishingRef.current && sessionFinal && graceTimerRef.current) {
+                    clearTimeout(graceTimerRef.current)
+                    graceTimerRef.current = setTimeout(() => {
+                        graceTimerRef.current = null
+                        finalize()
+                    }, 100)
+                }
+            }
+
+            recognition.onerror = (e: any) => {
+                if (e.error === 'no-speech' || e.error === 'aborted') return
+                const msg = FATAL_ERROR_MESSAGES[e.error]
+                if (msg) fatalErrorRef.current = msg
+                console.warn('[voice] recognition error:', e.error)
+            }
+
+            recognition.onend = () => {
+                recognitionActiveRef.current = false
+                clearWatchdog()
+
+                // Ended during the post-release window: results are flushed, wrap up
+                if (finishingRef.current) {
+                    if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
+                    graceTimerRef.current = setTimeout(() => {
+                        graceTimerRef.current = null
+                        finalize()
+                    }, 100)
+                    return
+                }
+
+                if (phaseRef.current !== 'recording') return
+
+                if (fatalErrorRef.current) {
+                    const msg = fatalErrorRef.current
+                    processedRef.current = true
+                    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+                    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+                    recognitionRef.current = null
+                    phaseRef.current = 'idle'
+                    setPhase('idle')
+                    setElapsed(0)
+                    setMicReady(false)
+                    showError(msg)
+                    return
+                }
+
+                if (Date.now() - startTimeRef.current >= MAX_RECORDING_MS - 500) {
+                    finishRecording(false)
+                    return
+                }
+
+                // Still holding: the engine ends the session after each utterance
+                // or silence gap. Carry over what we heard and listen again.
+                if (sessionFinalRef.current) {
+                    prevTranscriptRef.current =
+                        (prevTranscriptRef.current + ' ' + sessionFinalRef.current).trim()
+                    sessionFinalRef.current = ''
+                }
+
+                if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
+                restartTimerRef.current = setTimeout(() => {
+                    restartTimerRef.current = null
+                    if (phaseRef.current !== 'recording' || processedRef.current) return
+                    attempt = 0
+                    spawn()
+                }, RESTART_DELAY_MS)
+            }
+
+            recognitionRef.current = recognition
+
+            try {
+                recognition.start()
+            } catch {
+                teardownCurrent()
+                if (++attempt >= MAX_START_ATTEMPTS) {
+                    giveUp('Voice failed')
+                    return
+                }
+                if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
+                restartTimerRef.current = setTimeout(() => {
+                    restartTimerRef.current = null
+                    spawn()
+                }, RESTART_DELAY_MS)
+                return
+            }
+
+            armWatchdog()
+        }
+
+        spawn()
 
         // Auto-stop after max duration
         maxTimerRef.current = setTimeout(() => {
