@@ -107,6 +107,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const [elapsed, setElapsed] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
     const [micReady, setMicReady] = useState(false)
+    const [retryCount, setRetryCount] = useState(0)
 
     // All mutable state tracked via refs to avoid stale closures
     const phaseRef = useRef<'idle' | 'recording' | 'cancelled'>('idle')
@@ -129,6 +130,8 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     const prevTranscriptRef = useRef('')
     const sessionFinalRef = useRef('')
     const graceExtendedRef = useRef(false)
+    const sessionGenRef = useRef(0)
+    const warmupRef = useRef<any>(null)
 
     const showError = useCallback((msg: string) => {
         setErrorText(msg)
@@ -156,6 +159,44 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
     useEffect(() => {
         return () => cleanup()
     }, [cleanup])
+
+    // Warm up the speech service right after mount (only when mic permission
+    // is already granted) so the first bid starts instantly instead of paying
+    // the engine's cold-start latency.
+    useEffect(() => {
+        const SpeechRecognition =
+            (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        if (!SpeechRecognition) return
+
+        let cancelled = false
+        ;(async () => {
+            try {
+                const st = await (navigator as any).permissions?.query?.({ name: 'microphone' })
+                if (st?.state !== 'granted') return
+            } catch {
+                return
+            }
+            if (cancelled || phaseRef.current !== 'idle') return
+            try {
+                const rec = new SpeechRecognition()
+                warmupRef.current = rec
+                rec.continuous = false
+                rec.interimResults = false
+                rec.lang = 'en-US'
+                rec.start()
+                setTimeout(() => {
+                    try { rec.abort() } catch {}
+                    if (warmupRef.current === rec) warmupRef.current = null
+                }, 400)
+            } catch {}
+        })()
+
+        return () => {
+            cancelled = true
+            try { warmupRef.current?.abort() } catch {}
+            warmupRef.current = null
+        }
+    }, [])
 
     const processResult = useCallback((cancelled: boolean) => {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
@@ -281,6 +322,11 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         finishingRef.current = false
         graceExtendedRef.current = false
         recognitionActiveRef.current = false
+        setRetryCount(0)
+
+        // Kill any pending warm-up session so it can't collide with the mic
+        try { warmupRef.current?.abort() } catch {}
+        warmupRef.current = null
 
         // Set phase immediately so UI responds
         phaseRef.current = 'recording'
@@ -317,10 +363,11 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             showError(msg)
         }
 
-        const armWatchdog = () => {
+        const armWatchdog = (gen: number) => {
             clearWatchdog()
             watchdogTimerRef.current = setTimeout(() => {
                 watchdogTimerRef.current = null
+                if (gen !== sessionGenRef.current) return
                 if (phaseRef.current !== 'recording' || processedRef.current) return
                 if (recognitionActiveRef.current) return
                 attempt++
@@ -328,6 +375,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                     giveUp(fatalErrorRef.current ?? 'Voice unavailable')
                     return
                 }
+                setRetryCount(attempt)
                 teardownCurrent()
                 spawn()
             }, START_WATCHDOG_MS)
@@ -335,6 +383,10 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
 
         const spawn = () => {
             if (phaseRef.current !== 'recording' || processedRef.current) return
+
+            // Generation token: aborted/stale instances fire events late; they
+            // must never touch shared state or the live instance's watchdog.
+            const gen = ++sessionGenRef.current
 
             const recognition = new SpeechRecognition()
             // Android Chrome misbehaves with continuous mode: it stops after each
@@ -345,7 +397,10 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             recognition.lang = 'en-US'
             recognition.maxAlternatives = 1
 
+            const isLive = () => gen === sessionGenRef.current
+
             const markLive = () => {
+                if (!isLive()) return
                 recognitionActiveRef.current = true
                 setMicReady(true)
                 clearWatchdog()
@@ -355,6 +410,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             recognition.onaudiostart = markLive
 
             recognition.onresult = (event: any) => {
+                if (!isLive()) return
                 markLive()
 
                 let sessionFinal = ''
@@ -387,6 +443,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             }
 
             recognition.onerror = (e: any) => {
+                if (!isLive()) return
                 if (e.error === 'no-speech' || e.error === 'aborted') return
                 const msg = FATAL_ERROR_MESSAGES[e.error]
                 if (msg) fatalErrorRef.current = msg
@@ -394,6 +451,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
             }
 
             recognition.onend = () => {
+                if (!isLive()) return
                 recognitionActiveRef.current = false
                 clearWatchdog()
 
@@ -463,7 +521,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                 return
             }
 
-            armWatchdog()
+            armWatchdog(gen)
         }
 
         spawn()
@@ -549,7 +607,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                         className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
                     >
                         <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
-                            {micReady ? timerText : 'Starting…'}
+                            {micReady ? timerText : retryCount > 0 ? 'Retrying mic…' : 'Starting…'}
                         </div>
                     </motion.div>
                 )}
