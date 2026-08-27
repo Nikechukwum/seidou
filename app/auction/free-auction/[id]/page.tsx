@@ -11,10 +11,12 @@ import { showToast } from "@/redux/toastSlice";
 import { PartialUpdateUser } from "@/redux/authSlice";
 import { RootState } from "@/redux/store";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
-import { PlusIcon, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import useAuth from "@/hooks/useAuth";
 import VoiceBidButton from "@/components/VoiceBidButton";
 import FloatingDelta from "@/components/FloatingDelta";
+import ControlsModal from "@/components/ControlsModal";
+import { useBidControls } from "@/hooks/useBidControls";
 
 type Bid = {
     id: number;
@@ -25,16 +27,18 @@ type Bid = {
     username?: string | null;
 }
 
+// BIG SIS REQUEST: "Increase Bid" renamed to "Controls"
 const TABS = [
     { key: 'buy', label: 'Buy Bidding Currency' },
     { key: 'fruits', label: 'Ability Fruits' },
-    { key: 'increase', label: 'Increase Bid' },
+    { key: 'controls', label: 'Controls' },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
 
 const LeaderboardPage = () => {
     const [activeTab, setActiveTab] = useState<TabKey>('buy')
+    const [controlsModal, setControlsModal] = useState(false)
     const [placeBidModal, setPlaceBidModal] = useState(false)
     const [buyModal, setBuyModal] = useState(false)
     const [underConstructionModal, setUnderConstructionModal] = useState(false)
@@ -54,6 +58,17 @@ const LeaderboardPage = () => {
     const user = useSelector((state: RootState) => state.auth.user)
     const { checkSession } = useAuth()
     const usernameCacheRef = useRef<Map<string, string | null>>(new Map())
+
+    // BIG SIS REQUEST: bid controls (increment / slider / voice)
+    const { bidMode, setBidMode, incrementAmounts, sliderConfig, getSliderValueFromPosition } = useBidControls()
+
+    // BIG SIS REQUEST: slider states
+    const [sliderDragging, setSliderDragging] = useState(false)
+    const [sliderValue, setSliderValue] = useState(sliderConfig.min)
+    const sliderTrackRef = useRef<HTMLDivElement>(null)
+
+    // BIG SIS REQUEST: voice mode key — forces VoiceBidButton remount when switching to voice
+    const [voiceKey, setVoiceKey] = useState(0)
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -205,12 +220,10 @@ const LeaderboardPage = () => {
         setPressedIncrement(increment)
         setQuickBidding(true)
 
-        // Optimistic: wallet balance
         if (user) {
             dispatch(PartialUpdateUser({ bidding_balance: user.bidding_balance - increment }))
         }
 
-        // Optimistic: bid card amount
         let previousBids: Bid[] | null = null
         if (user) {
             previousBids = bids
@@ -296,17 +309,70 @@ const LeaderboardPage = () => {
         }
     }, [quickBidding, user, bids, auctionId, dispatch, fetchProfileBalance, fireDelta])
 
+    // BIG SIS REQUEST: Controls tab opens ControlsModal
     const handleTabClick = (tab: TabKey) => {
         setActiveTab(tab)
         if (tab === 'buy') setBuyModal(true)
         if (tab === 'fruits') setUnderConstructionModal(true)
-        if (tab === 'increase') setPlaceBidModal(true)
+        if (tab === 'controls') setControlsModal(true)
     }
+
+    // BIG SIS REQUEST: ControlsModal save handler
+    const handleControlsSave = useCallback((mode: typeof bidMode) => {
+        setBidMode(mode)
+        setSliderDragging(false)
+        if (mode === 'voice') setVoiceKey(k => k + 1)
+    }, [setBidMode])
+
+    // BIG SIS REQUEST: slider drag handlers
+    const getSliderPositionFromEvent = useCallback((e: React.PointerEvent | PointerEvent): number => {
+        const track = sliderTrackRef.current
+        if (!track) return 0
+        const rect = track.getBoundingClientRect()
+        const x = e.clientX - rect.left
+        return Math.max(0, Math.min(100, (x / rect.width) * 100))
+    }, [])
+
+    const handleSliderPointerDown = useCallback((e: React.PointerEvent) => {
+        if (quickBidding || bidding) return
+        e.preventDefault()
+        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+        sliderStartYRef.current = e.clientY
+        const pos = getSliderPositionFromEvent(e)
+        const val = getSliderValueFromPosition(pos)
+        setSliderValue(val)
+        setSliderDragging(true)
+    }, [quickBidding, bidding, getSliderPositionFromEvent, getSliderValueFromPosition])
+
+    const handleSliderPointerMove = useCallback((e: React.PointerEvent) => {
+        if (!sliderDragging) return
+        const pos = getSliderPositionFromEvent(e)
+        const val = getSliderValueFromPosition(pos)
+        setSliderValue(val)
+    }, [sliderDragging, getSliderPositionFromEvent, getSliderValueFromPosition])
+
+    // BIG SIS REQUEST: on release, swipe up cancels bid (like voice cancel), otherwise submit
+    const handleSliderPointerUp = useCallback((e: React.PointerEvent) => {
+        if (!sliderDragging) return
+        setSliderDragging(false)
+        const dy = sliderStartYRef.current - e.clientY
+        if (dy > 60) {
+            dispatch(showToast({ type: 'success', message: 'Bid cancelled' }))
+            return
+        }
+        void handleQuickBid(sliderValue)
+    }, [sliderDragging, sliderValue, handleQuickBid, dispatch])
+
+    // BIG SIS REQUEST: swipe up cancels slider bid (same as voice cancel)
+    const sliderStartYRef = useRef(0)
+
+    // BIG SIS REQUEST: bid controls footer always present → always use extended padding
+    const bottomPadding = 'pb-[11rem]'
 
     return (
         <PageLayout
             pageTitle="Table"
-            className="px-4 bg-[#f5f5f5]"
+            className={`px-4 bg-[#f5f5f5] ${bottomPadding}`}
             extraButton={
                 <div className="flex items-center gap-1.5">
                     <span className="font-bold text-base text-[#111827]">
@@ -323,11 +389,7 @@ const LeaderboardPage = () => {
                         <button
                             key={tab.key}
                             onClick={() => handleTabClick(tab.key)}
-                            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-                                activeTab === tab.key
-                                    ? 'bg-black text-white'
-                                    : 'bg-gray-100 text-gray-600'
-                            }`}
+                            className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors bg-gray-100 text-gray-600"
                         >
                             {tab.label}
                         </button>
@@ -369,13 +431,15 @@ const LeaderboardPage = () => {
                 </div>
             </Modal>
 
-            <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
-
-            <VoiceBidButton
-                onBid={handleVoiceBid}
-                onBuy={() => setBuyModal(true)}
-                disabled={quickBidding || bidding}
+            {/* BIG SIS REQUEST: Controls modal */}
+            <ControlsModal
+                isActive={controlsModal}
+                setIsActive={setControlsModal}
+                currentMode={bidMode}
+                onSave={handleControlsSave}
             />
+
+            <BuyBiddingCurrencyModal isActive={buyModal} setIsActive={setBuyModal} />
 
             {loading ? (
                 <p className="text-center text-gray-500 mt-8">Loading...</p>
@@ -389,13 +453,11 @@ const LeaderboardPage = () => {
                     {bids.map((bid, index) => {
                         const isYou = bid.userId === currentUserId || bid.userId === user?.id
                         return (
-                            
                             <div
                                 key={bid.id}
                                 className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100"
                             >
-                                
-                                <div className="flex items-start gap-4 mb-6">
+                                <div className="flex items-start gap-4">
                                     <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
                                         {index + 1}
                                     </div>
@@ -427,33 +489,87 @@ const LeaderboardPage = () => {
                                         </p>
                                     </div>
                                 </div>
-                                {isYou && (
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => handleQuickBid(50000)}
-                                            disabled={quickBidding}
-                                            className={`flex-1 flex items-center justify-center gap-1 rounded-full border bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60 ${
-                                                pressedIncrement === 50000 ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
-                                            }`}
-                                        >
-                                            <PlusIcon className="size-4" strokeWidth={2.5} />
-                                            50,000
-                                        </button>
-                                        <button
-                                            onClick={() => handleQuickBid(100000)}
-                                            disabled={quickBidding}
-                                            className={`flex-1 flex items-center justify-center gap-1 rounded-full border bg-transparent py-3 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60 ${
-                                                pressedIncrement === 100000 ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
-                                            }`}
-                                        >
-                                            <PlusIcon className="size-4" strokeWidth={2.5} />
-                                            100,000
-                                        </button>
-                                    </div>
-                                )}
                             </div>
                         )
                     })}
+                </div>
+            )}
+
+            {/* BIG SIS REQUEST: Slider overlay — dims page, shows value, submits on release, swipe up to cancel */}
+            {sliderDragging && (
+                <>
+                    <div
+                        className="fixed inset-0 z-50 bg-black/50 pointer-events-none"
+                    />
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none">
+                        <div className="bg-black/80 text-white text-5xl font-bold px-10 py-6 rounded-3xl">
+                            B {sliderValue.toLocaleString()}
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* BIG SIS REQUEST: Increment buttons in footer (default mode) */}
+            {bidMode === 'increment' && (
+                <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-4 py-4 flex justify-center items-center gap-3 max-w-md mx-auto">
+                    {incrementAmounts.map((amount) => (
+                        <button
+                            key={amount}
+                            onClick={() => void handleQuickBid(amount)}
+                            disabled={quickBidding || bidding}
+                            className={`flex-1 flex items-center justify-center gap-1 rounded-full border bg-transparent py-3.5 text-sm font-bold text-black active:bg-black active:text-white duration-100 disabled:opacity-60 ${
+                                pressedIncrement === amount ? 'border-green-500 ring-2 ring-green-500' : 'border-gray-200'
+                            }`}
+                        >
+                            +{amount.toLocaleString()}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {/* BIG SIS REQUEST: Slider in footer */}
+            {bidMode === 'slider' && (
+                <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-6 py-5 max-w-md mx-auto">
+                    <div className="relative w-full">
+                        <div
+                            ref={sliderTrackRef}
+                            className="relative w-full h-2 bg-gray-200 rounded-full cursor-pointer"
+                            onPointerDown={handleSliderPointerDown}
+                            onPointerMove={handleSliderPointerMove}
+                            onPointerUp={handleSliderPointerUp}
+                            style={{ touchAction: 'none' }}
+                        >
+                            <div
+                                className="absolute inset-y-0 left-0 bg-blue-500 rounded-full"
+                                style={{
+                                    width: `${((sliderValue - sliderConfig.min) / (sliderConfig.max - sliderConfig.min)) * 100}%`,
+                                }}
+                            />
+                            <div
+                                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-6 bg-white border-2 border-blue-500 rounded-full shadow-md transition-none"
+                                style={{
+                                    left: `${((sliderValue - sliderConfig.min) / (sliderConfig.max - sliderConfig.min)) * 100}%`,
+                                }}
+                            />
+                        </div>
+                        <div className="flex justify-between mt-2 text-xs text-gray-400">
+                            <span>10,000</span>
+                            <span>1,000,000</span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* BIG SIS REQUEST: Voice mode — mic icon centered in footer, no background color */}
+            {bidMode === 'voice' && (
+                <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center h-16 max-w-md mx-auto">
+                    <VoiceBidButton
+                        key={voiceKey}
+                        onBid={handleVoiceBid}
+                        onBuy={() => setBuyModal(true)}
+                        disabled={quickBidding || bidding}
+                        renderInline
+                    />
                 </div>
             )}
         </PageLayout>

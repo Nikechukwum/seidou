@@ -11,6 +11,8 @@ interface VoiceBidButtonProps {
     onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
     disabled?: boolean
+    // BIG SIS REQUEST: render inline instead of portal (for footer placement)
+    renderInline?: boolean
 }
 
 const CANCEL_THRESHOLD_PX = 80
@@ -112,7 +114,7 @@ function extForMime(mime: string): string {
     return 'webm'
 }
 
-export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButtonProps) {
+export default function VoiceBidButton({ onBid, onBuy, disabled, renderInline = false }: VoiceBidButtonProps) {
     const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
     const [elapsed, setElapsed] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
@@ -842,7 +844,10 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
                 onPointerMove={handlePointerMove}
                 onPointerCancel={() => { if (phaseRef.current === 'recording') { isCancelledRef.current = true; finishRecording(true) } }}
                 disabled={disabled}
-                className="fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95"
+                className={`${renderInline
+                    ? 'size-14 rounded-full bg-transparent text-black flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95'
+                    : 'fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95'
+                }`}
                 aria-label="Hold to speak a bid"
             >
                 <Mic className="size-6" />
@@ -850,5 +855,7 @@ export default function VoiceBidButton({ onBid, onBuy, disabled }: VoiceBidButto
         </>
     )
 
+    // BIG SIS REQUEST: renderInline skips portal so parent can position it
+    if (renderInline) return button
     return createPortal(button, document.body)
 }
