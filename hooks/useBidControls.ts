@@ -9,10 +9,10 @@ export type BidMode = 'increment' | 'slider' | 'voice'
 const STORAGE_KEY = 'seidou_bid_mode'
 const DEFAULT_MODE: BidMode = 'increment'
 
+// BIG SIS REQUEST: max slider value reduced to 500,000
 const SLIDER_STEPS = [
     10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000,
-    100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000,
-    1000000,
+    100000, 200000, 300000, 400000, 500000,
 ]
 
 export function useBidControls() {
@@ -36,7 +36,7 @@ export function useBidControls() {
 
     const sliderConfig = useMemo(() => ({
         min: 10000,
-        max: 1000000,
+        max: 500000,
         steps: SLIDER_STEPS,
     }), [])
 

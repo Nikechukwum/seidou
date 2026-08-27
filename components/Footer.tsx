@@ -7,12 +7,13 @@ type Props = {};
 export const Footer = ({}: Props) => {
   const pathname = usePathname();
 
-   // BIG SIS REQUEST: Hide footer icons on table page (bid controls replace them)
+   // BIG SIS REQUEST: Hide footer icons on all table/bid pages (bid controls replace them)
    const hiddenFooterPaths = [
       '/signin', 
       '/signup'
    ]
-   const isTablePage = /^\/auction\/free-auction\/\d+$/.test(pathname)
+   // Matches any /auction/free-auction/<something> (table page) — robust to quirks
+   const isTablePage = /^\/auction\/free-auction\//.test(pathname) && !pathname.endsWith('/free-auction')
 
    const isActive = !(hiddenFooterPaths.includes(pathname) || isTablePage)
 

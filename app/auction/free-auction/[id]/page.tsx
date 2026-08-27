@@ -65,6 +65,7 @@ const LeaderboardPage = () => {
     // BIG SIS REQUEST: slider states
     const [sliderDragging, setSliderDragging] = useState(false)
     const [sliderValue, setSliderValue] = useState(sliderConfig.min)
+    const [sliderCancelled, setSliderCancelled] = useState(false)
     const sliderTrackRef = useRef<HTMLDivElement>(null)
 
     // BIG SIS REQUEST: voice mode key — forces VoiceBidButton remount when switching to voice
@@ -333,15 +334,19 @@ const LeaderboardPage = () => {
         return Math.max(0, Math.min(100, (x / rect.width) * 100))
     }, [])
 
+    // BIG SIS REQUEST: track pointer start Y for swipe-up detection
+    const sliderDragStartYRef = useRef(0)
+
     const handleSliderPointerDown = useCallback((e: React.PointerEvent) => {
         if (quickBidding || bidding) return
         e.preventDefault()
         ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-        sliderStartYRef.current = e.clientY
+        sliderDragStartYRef.current = e.clientY
         const pos = getSliderPositionFromEvent(e)
         const val = getSliderValueFromPosition(pos)
         setSliderValue(val)
         setSliderDragging(true)
+        setSliderCancelled(false)
     }, [quickBidding, bidding, getSliderPositionFromEvent, getSliderValueFromPosition])
 
     const handleSliderPointerMove = useCallback((e: React.PointerEvent) => {
@@ -349,22 +354,24 @@ const LeaderboardPage = () => {
         const pos = getSliderPositionFromEvent(e)
         const val = getSliderValueFromPosition(pos)
         setSliderValue(val)
+        // BIG SIS REQUEST: detect upward swipe → show "Release to cancel"
+        const dy = sliderDragStartYRef.current - e.clientY
+        setSliderCancelled(dy > 80)
     }, [sliderDragging, getSliderPositionFromEvent, getSliderValueFromPosition])
 
     // BIG SIS REQUEST: on release, swipe up cancels bid (like voice cancel), otherwise submit
     const handleSliderPointerUp = useCallback((e: React.PointerEvent) => {
         if (!sliderDragging) return
         setSliderDragging(false)
-        const dy = sliderStartYRef.current - e.clientY
-        if (dy > 60) {
+        const dy = sliderDragStartYRef.current - e.clientY
+        if (dy > 80) {
+            setSliderCancelled(false)
             dispatch(showToast({ type: 'success', message: 'Bid cancelled' }))
             return
         }
+        setSliderCancelled(false)
         void handleQuickBid(sliderValue)
     }, [sliderDragging, sliderValue, handleQuickBid, dispatch])
-
-    // BIG SIS REQUEST: swipe up cancels slider bid (same as voice cancel)
-    const sliderStartYRef = useRef(0)
 
     // BIG SIS REQUEST: bid controls footer always present → always use extended padding
     const bottomPadding = 'pb-[11rem]'
@@ -495,16 +502,19 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: Slider overlay — dims page, shows value, submits on release, swipe up to cancel */}
+            {/* BIG SIS REQUEST: Slider overlay — dims page, shows value + swipe text, submits on release, swipe up to cancel */}
             {sliderDragging && (
                 <>
-                    <div
-                        className="fixed inset-0 z-50 bg-black/50 pointer-events-none"
-                    />
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none">
+                    <div className="fixed inset-0 z-50 bg-black/50 pointer-events-none" />
+                    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center pointer-events-none">
                         <div className="bg-black/80 text-white text-5xl font-bold px-10 py-6 rounded-3xl">
                             B {sliderValue.toLocaleString()}
                         </div>
+                        <p className={`mt-3 text-sm font-medium transition-colors ${
+                            sliderCancelled ? 'text-red-400' : 'text-white/70'
+                        }`}>
+                            {sliderCancelled ? 'Release to cancel' : 'Swipe up to cancel'}
+                        </p>
                     </div>
                 </>
             )}
@@ -554,15 +564,15 @@ const LeaderboardPage = () => {
                         </div>
                         <div className="flex justify-between mt-2 text-xs text-gray-400">
                             <span>10,000</span>
-                            <span>1,000,000</span>
+                            <span>500,000</span>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: Voice mode — mic icon centered in footer, no background color */}
+            {/* BIG SIS REQUEST: Voice mode — only mic icon centered in footer, no background */}
             {bidMode === 'voice' && (
-                <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center h-16 max-w-md mx-auto">
+                <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center max-w-md mx-auto">
                     <VoiceBidButton
                         key={voiceKey}
                         onBid={handleVoiceBid}
