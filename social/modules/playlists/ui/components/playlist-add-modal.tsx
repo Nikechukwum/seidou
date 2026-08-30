@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckIcon, Loader2Icon, PlusIcon, SquareIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
+
+import { cn } from "@/social/lib/utils";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
@@ -21,6 +23,11 @@ interface PlaylistAddModalProps {
  *
  * Creating happens inline rather than in a second modal: DrawerModal renders
  * a fixed overlay, so stacking two would leave them fighting over the screen.
+ *
+ * Picking a playlist closes the sheet — saving is a one-tap action, and
+ * leaving it open invites a second, accidental tap. The checkboxes are
+ * therefore mostly an indicator: come back to save the same video again and
+ * the ticks show where it already is.
  */
 export const PlaylistAddModal = ({
   videoId,
@@ -59,6 +66,7 @@ export const PlaylistAddModal = ({
     onSuccess: () => {
       toast.success("Saved to playlist");
       invalidate();
+      onOpenChange(false);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -67,6 +75,7 @@ export const PlaylistAddModal = ({
     onSuccess: () => {
       toast.success("Removed from playlist");
       invalidate();
+      onOpenChange(false);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -75,6 +84,7 @@ export const PlaylistAddModal = ({
     onSuccess: async (playlist) => {
       // Creating from here means you wanted the video in it — saving it
       // straight away avoids making you tap the row you just made.
+      // addVideo closes the sheet and toasts on success.
       await addVideo.mutateAsync({ playlistId: playlist.id, videoId });
       setIsCreating(false);
       setName("");
@@ -149,11 +159,20 @@ export const PlaylistAddModal = ({
               }
               className="flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left disabled:opacity-50"
             >
-              {playlist.containsVideo ? (
-                <CheckIcon className="size-5 shrink-0" />
-              ) : (
-                <SquareIcon className="size-5 shrink-0 text-gray-300" />
-              )}
+              {/* The box keeps its shape either way; only its fill changes.
+                  Swapping the box for a bare tick made the row jump. */}
+              <span
+                className={cn(
+                  "flex size-5 shrink-0 items-center justify-center rounded border-2 transition-colors",
+                  playlist.containsVideo
+                    ? "border-black bg-black"
+                    : "border-gray-300"
+                )}
+              >
+                {playlist.containsVideo && (
+                  <CheckIcon className="size-3.5 text-white" strokeWidth={3} />
+                )}
+              </span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium">
                 {playlist.name}
               </span>
