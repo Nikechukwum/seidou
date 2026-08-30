@@ -18,6 +18,7 @@ import { Button } from "@/components/Button";
 import { socialPath } from "@/social/constants";
 import { useViewer } from "@/social/hooks/use-viewer";
 import { Modal } from "@/components/Modal";
+import { WrenchScrewdriverIcon } from "@heroicons/react/24/outline";
 import { UserAvatar } from "@/social/components/user-avatar";
 
 /**
@@ -142,18 +143,27 @@ export const SocialProfileView = () => {
       </div>
 
       <Modal isActive={!!inProgress} setIsActive={() => setInProgress(null)}>
-        <div className="text-center">
-          <h2 className="text-lg font-bold">Feature in progress</h2>
-          <p className="mt-2 text-sm text-gray-500">
-            {inProgress} is still being built. It will open here once it is
-            ready.
+        {/* Same markup the auction wallet, loyalty rewards and product
+            container already use, so unfinished features look the same
+            wherever you meet them. */}
+        <div className="flex flex-col items-center text-center">
+          <div className="w-18 h-18 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+            <WrenchScrewdriverIcon className="w-8 h-8 text-black" />
+          </div>
+
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            Under Construction
+          </h2>
+          <p className="text-slate-500 mb-8 text-sm">
+            We are working hard to bring this feature to life. It will be
+            available in a future update.
           </p>
-          <button
+
+          <Button
+            text="Got it"
+            classname="w-full py-3.5"
             onClick={() => setInProgress(null)}
-            className="mt-6 w-full rounded-full bg-black py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]"
-          >
-            Got it
-          </button>
+          />
         </div>
       </Modal>
     </PageLayout>
