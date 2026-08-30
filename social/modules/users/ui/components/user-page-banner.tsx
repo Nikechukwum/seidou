@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { PlusIcon, XIcon } from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
@@ -15,12 +16,9 @@ interface UserPageBannerProps {
 }
 
 /**
- * Renders nothing for a visitor when the channel has no banner.
- *
- * Upstream always drew the block with a flat-colour fallback, which read as a
- * broken image rather than an empty slot. The owner still gets an affordance
- * to add one, so the feature is discoverable without imposing dead space on
- * everyone else.
+ * The empty state IS the affordance — the strip itself reads "+ Add banner"
+ * and is the upload trigger, rather than a placeholder sitting above a
+ * separate button. Visitors see nothing at all when there is no banner.
  */
 export const UserPageBanner = ({ user }: UserPageBannerProps) => {
   const utils = trpc.useUtils();
@@ -47,51 +45,62 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
   const onRemove = async () => {
     // Deletion needs the user session the storage policies check, which only
     // exists in the browser.
-    if (user.bannerKey) {
-      await deleteSocialImage(user.bannerKey);
-    }
+    if (user.bannerKey) await deleteSocialImage(user.bannerKey);
     removeBanner.mutate();
   };
 
   if (!user.bannerUrl && !isOwner) return null;
 
+  const onUploaded = async ({ url, key }: { url: string; key: string }) => {
+    await updateBanner.mutateAsync({ bannerUrl: url, bannerKey: key });
+  };
+
+  // Empty, and it is your channel: the strip is the button.
+  if (!user.bannerUrl) {
+    return (
+      <ImageUploadButton
+        path={bannerPath(viewerId!)}
+        label="Add banner"
+        onUploaded={onUploaded}
+        className="flex h-24 w-full items-center justify-center gap-1.5 border-b border-dashed border-gray-300 bg-gray-50 text-sm font-semibold text-gray-500"
+      >
+        <>
+          <PlusIcon className="size-4" />
+          Add banner
+        </>
+      </ImageUploadButton>
+    );
+  }
+
   return (
-    <div className="relative">
-      {user.bannerUrl ? (
-        <div className="relative h-28 w-full overflow-hidden">
-          <Image
-            src={user.bannerUrl}
-            alt={`${user.name} banner`}
-            fill
-            className="object-cover"
-            unoptimized
-          />
-        </div>
-      ) : (
-        <div className="flex h-20 w-full items-center justify-center border-b border-dashed border-gray-200 bg-gray-50">
-          <p className="text-xs text-muted-foreground">No banner yet</p>
-        </div>
-      )}
+    <div className="relative h-28 w-full overflow-hidden">
+      <Image
+        src={user.bannerUrl}
+        alt={`${user.name} banner`}
+        fill
+        className="object-cover"
+        unoptimized
+      />
 
       {isOwner && viewerId && (
-        <div className="flex justify-center gap-2 px-4 py-2">
+        <div className="absolute right-2 top-2 flex gap-1.5">
           <ImageUploadButton
             path={bannerPath(viewerId)}
-            label={user.bannerUrl ? "Replace banner" : "Add banner"}
-            onUploaded={async ({ url, key }) => {
-              await updateBanner.mutateAsync({ bannerUrl: url, bannerKey: key });
-            }}
-          />
-          {user.bannerUrl && (
-            <button
-              type="button"
-              onClick={onRemove}
-              disabled={removeBanner.isPending}
-              className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-            >
-              Remove
-            </button>
-          )}
+            label="Replace banner"
+            onUploaded={onUploaded}
+            className="rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur"
+          >
+            Change
+          </ImageUploadButton>
+          <button
+            type="button"
+            onClick={onRemove}
+            disabled={removeBanner.isPending}
+            aria-label="Remove banner"
+            className="rounded-full bg-black/60 p-1.5 text-white backdrop-blur disabled:opacity-50"
+          >
+            <XIcon className="size-3.5" />
+          </button>
         </div>
       )}
     </div>

@@ -27,6 +27,8 @@ export const thumbnailPath = (userId: string, videoId: string) =>
 
 export const bannerPath = (userId: string) => `banners/${userId}/banner`;
 
+export const avatarPath = (userId: string) => `avatars/${userId}/avatar`;
+
 export interface UploadResult {
   url: string;
   key: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { ReactNode, useRef, useState } from "react";
 import { Loader2Icon } from "lucide-react";
 
 import { toast } from "@/social/lib/toast";
@@ -12,6 +12,11 @@ interface ImageUploadButtonProps {
   label: string;
   onUploaded: (result: UploadResult) => void | Promise<void>;
   className?: string;
+  /**
+   * Replaces the default pill. Used by the avatar's corner badge and the
+   * empty banner strip, which need to look nothing like a button.
+   */
+  children?: ReactNode;
 }
 
 /**
@@ -24,6 +29,7 @@ export const ImageUploadButton = ({
   label,
   onUploaded,
   className = "",
+  children,
 }: ImageUploadButtonProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -60,10 +66,19 @@ export const ImageUploadButton = ({
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={isUploading}
-        className={`flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold disabled:opacity-50 ${className}`}
+        aria-label={label}
+        className={
+          children
+            ? `disabled:opacity-50 ${className}`
+            : `flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold disabled:opacity-50 ${className}`
+        }
       >
-        {isUploading && <Loader2Icon className="size-4 animate-spin" />}
-        {isUploading ? "Uploading…" : label}
+        {children ?? (
+          <>
+            {isUploading && <Loader2Icon className="size-4 animate-spin" />}
+            {isUploading ? "Uploading…" : label}
+          </>
+        )}
       </button>
     </>
   );

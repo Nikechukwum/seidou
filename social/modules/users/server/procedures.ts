@@ -16,6 +16,47 @@ import {
 } from "@/social/trpc/init";
 
 export const usersRouter = createTRPCRouter({
+  /** Records a profile picture after the browser has uploaded it. */
+  updateAvatar: protectedProcedure
+    .input(
+      z.object({
+        avatarUrl: z.string().url(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updatedUser] = await db
+        .update(users)
+        .set({ imageUrl: input.avatarUrl, updatedAt: new Date() })
+        .where(eq(users.id, ctx.user.id))
+        .returning(socialUserColumns);
+
+      return updatedUser;
+    }),
+
+  /**
+   * The channel's display name.
+   *
+   * Separate from the commerce profile at /profile/my-details, which holds
+   * the account's legal name, address and phone. This is the name that
+   * appears on videos and comments, and until now users had no way to change
+   * it — it was derived from their commerce first/last name at signup.
+   */
+  updateProfile: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1, "Name is required").max(60),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updatedUser] = await db
+        .update(users)
+        .set({ name: input.name, updatedAt: new Date() })
+        .where(eq(users.id, ctx.user.id))
+        .returning(socialUserColumns);
+
+      return updatedUser;
+    }),
+
   /** Records a channel banner after the browser has uploaded it. */
   updateBanner: protectedProcedure
     .input(

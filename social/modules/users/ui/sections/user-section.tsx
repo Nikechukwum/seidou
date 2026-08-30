@@ -33,7 +33,7 @@ export const UserSection = ({ userId }: UserSectionProps) => {
 const UserSectionSkeleton = () => (
   <div>
     <div className="flex flex-col items-center gap-3 px-4 py-6">
-      <Skeleton className="size-[160px] rounded-full" />
+      <Skeleton className="size-28 rounded-full" />
       <Skeleton className="h-6 w-40" />
       <Skeleton className="h-4 w-52" />
     </div>
