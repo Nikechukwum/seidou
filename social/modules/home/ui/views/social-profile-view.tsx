@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import {
-  ClapperboardIcon,
-  FlameIcon,
-  HistoryIcon,
-  ListVideoIcon,
-  PlaySquareIcon,
-  ThumbsUpIcon,
+  ClockIcon,
+  FireIcon,
+  HandThumbUpIcon,
+  PlayCircleIcon,
+  RectangleStackIcon,
   UserIcon,
-} from "lucide-react";
+  VideoCameraIcon,
+} from "@heroicons/react/20/solid";
 
 import { PageLayout } from "@/components/PageLayout";
 import { IconListItem } from "@/components/IconListItem";
@@ -34,37 +34,37 @@ const ENTRIES = [
     label: "Your videos",
     description: "Upload and manage your videos",
     href: "/studio",
-    icon: ClapperboardIcon,
+    icon: VideoCameraIcon,
   },
   {
     label: "Playlists",
     description: "Collections you have made",
     href: "/playlists",
-    icon: ListVideoIcon,
+    icon: RectangleStackIcon,
   },
   {
     label: "Liked videos",
     description: "Everything you have liked",
     href: "/playlists/liked",
-    icon: ThumbsUpIcon,
+    icon: HandThumbUpIcon,
   },
   {
     label: "History",
     description: "Videos you have watched",
     href: "/playlists/history",
-    icon: HistoryIcon,
+    icon: ClockIcon,
   },
   {
     label: "Subscriptions",
     description: "Channels you follow",
     href: "/feed/subscribed",
-    icon: PlaySquareIcon,
+    icon: PlayCircleIcon,
   },
   {
     label: "Trending",
     description: "What is popular right now",
     href: "/feed/trending",
-    icon: FlameIcon,
+    icon: FireIcon,
   },
 ];
 
@@ -106,7 +106,7 @@ export const SocialProfileView = () => {
               </Link>
             )}
 
-            <div className="space-y-5">
+            <div className="flex flex-col gap-y-4">
               {ENTRIES.map((entry) => (
                 <Link key={entry.href} href={socialPath(entry.href)}>
                   <IconListItem
