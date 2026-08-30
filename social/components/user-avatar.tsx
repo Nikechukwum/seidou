@@ -17,12 +17,20 @@ const avatarVariants = cva(
   "relative shrink-0 overflow-hidden rounded-full flex items-center justify-center select-none",
   {
     variants: {
+      /**
+       * Each size pairs a box with a matching text size, so the initial keeps
+       * roughly the same proportion of the circle throughout. Override the box
+       * with a className and the text will NOT follow — tailwind-merge has no
+       * reason to drop a text-* class that does not conflict with size-*. Add
+       * a variant instead.
+       */
       size: {
-        default: "h-9 w-9 text-sm",
         xs: "h-4 w-4 text-[8px]",
         sm: "h-6 w-6 text-[10px]",
+        default: "h-9 w-9 text-sm",
         lg: "h-10 w-10 text-sm",
-        xl: "h-[160px] w-[160px] text-5xl",
+        xl: "h-16 w-16 text-2xl",
+        hero: "h-[160px] w-[160px] text-5xl",
       },
     },
     defaultVariants: {

@@ -92,7 +92,6 @@ export const SocialProfileView = () => {
               >
                 <UserAvatar
                   size="xl"
-                  className="size-16"
                   imageUrl={avatarUrl}
                   name={displayName || "You"}
                 />

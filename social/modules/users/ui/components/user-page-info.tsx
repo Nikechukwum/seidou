@@ -27,7 +27,7 @@ export const UserPageInfo = ({ user }: UserPageInfoProps) => {
 
   return (
     <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-      <UserAvatar size="xl" imageUrl={user.imageUrl} name={user.name} />
+      <UserAvatar size="hero" imageUrl={user.imageUrl} name={user.name} />
 
       <div>
         <h1 className="text-xl font-bold">{user.name}</h1>
