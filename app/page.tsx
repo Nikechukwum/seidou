@@ -3,9 +3,9 @@ import { Footer } from "@/components/Footer";
 import { HomeHeader } from "@/components/HomeHeader";
 import InfiniteScroll from "react-infinite-scroll-component";
 import { sanityClient } from "../lib/sanity/client";
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { HomeProduct } from "@/types";
-import { PRODUCT_QUERY, SEARCH_FILTERS } from "@/utils/defaults";
+import { buildInterestFilters, FilterMap, CategoryFilter } from "@/utils/defaults";
 import { ProductContainer } from "@/components/ProductContainer";
 import WelcomeModal from "@/components/WelcomeModal";
 import { ProductInfo } from "@/components/ProductInfo";
@@ -14,24 +14,82 @@ import { useDispatch, useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import { appendToFeed, clearFeed, resetFeed, setHasMore, setLastId, setActiveFilter } from "@/redux/feedSlice";
 import { SmallLoader } from "@/components/SmallLoader";
+import useAuth from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const dispatch = useDispatch();
+  const router = useRouter();
   const [feedShouldReset, setFeedShouldReset] = useState(false);
   const [feedLoading, setFeedLoading] = useState(false);
   const [userLikedProducts, setUserLikedProducts] = useState();
   const [userSavedProducts, setUserSavedProducts] = useState();
   const [showWelcome, setShowWelcome] = useState(false);
+  const [categoryTitles, setCategoryTitles] = useState<Record<string, string>>({});
+  const [categoryTree, setCategoryTree] = useState<Record<string, string[]>>({});
 
   const feed = useSelector((state: RootState) => state.feed.feed);
   const hasMore = useSelector((state: RootState) => state.feed.hasMore);
   const lastIdFromStore = useSelector((state: RootState) => state.feed.lastId);
-  const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as keyof typeof SEARCH_FILTERS;
+  const activeFilter = useSelector((state: RootState) => state.feed.activeFilter) as string;
   const LOCAL_DISABLE_KEY = "seidou_welcome_disabled";
   const SCROLL_POSITION_KEY = "seidou_feed_scroll_position";
-  
+  const { checkSession, user } = useAuth();
+  const { filters: dynamicFilters, categoryFilter } = useMemo(
+    () => buildInterestFilters(user?.interests || [], categoryTitles, categoryTree),
+    [user?.interests, categoryTitles, categoryTree]
+  );
+
   const lastId = useRef<string | null>(lastIdFromStore);
   const currentFetchTotal = useRef(feed.length);
+  const checkedRef = useRef(false);
+  const loadedFilterRef = useRef<string | null>(null);
+  const fetchingRef = useRef(false);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    if (!checkedRef.current) {
+      checkedRef.current = true;
+      const verify = async () => {
+        await checkSession(false);
+        setAuthReady(true);
+      };
+      verify();
+    }
+  }, [checkSession]);
+
+  useEffect(() => {
+    const getCategoryTitles = async () => {
+      try {
+        const results = await sanityClient.fetch<
+          { title: string; slug: string; children: { slug: string }[] }[]
+        >(
+          `*[_type == 'category' && slug.current != null]{
+            title,
+            "slug": slug.current,
+            "children": children[]->{ "slug": slug.current }
+          }`
+        );
+
+        const nextCategoryTitles = results.reduce((acc, category) => {
+          acc[category.slug] = category.title;
+          return acc;
+        }, {} as Record<string, string>);
+
+        const nextCategoryTree = results.reduce((acc, category) => {
+          acc[category.slug] = (category.children || []).map((child) => child.slug);
+          return acc;
+        }, {} as Record<string, string[]>);
+
+        setCategoryTitles(nextCategoryTitles);
+        setCategoryTree(nextCategoryTree);
+      } catch (error) {
+        console.error('Error fetching category titles:', error);
+      }
+    };
+
+    getCategoryTitles();
+  }, []);
 
   // Sync ref when Redux lastId changes (e.g., after filter change)
   useEffect(() => {
@@ -43,66 +101,85 @@ export default function Home() {
    * If shouldReset is true, it will ignore lastId and fetch the first page of results for the new filter.
    * It constructs the query dynamically based on whether it's a reset and the active filter's tags.
    */
-  async function fetchNextPage(shouldReset: boolean = false) {
-    if(shouldReset){
+  const fetchNextPage = useCallback(async (shouldReset: boolean = false) => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
+    if (shouldReset) {
       setFeedLoading(true);
     }
     const current = lastId.current;
-    const nextSetQuery = shouldReset? '' : `_id > $current &&`
-    const tagFilterQuery = SEARCH_FILTERS[activeFilter].length
-      ? `count(tags[@ in $selectedTags]) > 0 &&`
-      : "";
-    const data = await sanityClient.fetch(
-      `*[_type == "product" && ${nextSetQuery}
-      ${tagFilterQuery}
-      true
-      ] | order(_id) [0...5] {
-      defaultProductVariant{
-        "images": images[]{
-            "url": asset->url,
-            "lqip": asset->metadata.lqip
-        }
-      },
-      _id,
-      title,
-      slug,
-      category,
-      vendor->{
-         title,
-         logo,
-         _id
-      },
-    }`,
-      {
-        current: current,
-        selectedTags: SEARCH_FILTERS[activeFilter],
-        tagFilterQuery: tagFilterQuery,
-        nextSetQuery: nextSetQuery,
-      }
-    );
-    if (data.length > 0) {
-      lastId.current = data[data.length - 1]._id;
-      shouldReset? dispatch(resetFeed(data)) : dispatch(appendToFeed(data));
-      dispatch(setLastId(lastId.current));
-    } else {
-      lastId.current = null;
-      dispatch(setLastId(null));
-      dispatch(setHasMore(false));
-    }
-    currentFetchTotal.current += data.length;
-    setFeedLoading(false);
-  }
+    const nextSetQuery = shouldReset ? '' : `_id > $current &&`;
+    
+    const expandedCategories =
+      activeFilter === "All"
+        ? Object.values(categoryFilter.expandedByCategory).flat()
+        : categoryFilter.expandedByCategory[activeFilter] || [];
 
-   const handleFilterChange = useCallback((newFilter: keyof typeof SEARCH_FILTERS) => {
-     setFeedShouldReset(true);
-     dispatch(setActiveFilter(newFilter));
-   }, [dispatch]);
+    const categoryFilterQuery =
+      categoryFilter.categories.length && expandedCategories.length
+        ? `category->slug.current in $selectedCategories &&`
+        : "";
+
+    try {
+      const data = await sanityClient.fetch(
+        `*[_type == "product" && ${nextSetQuery}
+        ${categoryFilterQuery}
+        true
+        ] | order(_id) [0...5] {
+        defaultProductVariant{
+          "images": images[]{
+              "url": asset->url,
+              "lqip": asset->metadata.lqip
+          }
+        },
+        _id,
+        title,
+        slug,
+        category,
+        vendor->{
+           title,
+           logo,
+           _id
+        },
+      }`,
+        {
+          current: current,
+          selectedCategories: expandedCategories,
+        }
+      );
+      if (data.length > 0) {
+        lastId.current = data[data.length - 1]._id;
+        shouldReset ? dispatch(resetFeed(data)) : dispatch(appendToFeed(data));
+        dispatch(setLastId(lastId.current));
+      } else {
+        lastId.current = null;
+        dispatch(setLastId(null));
+        dispatch(setHasMore(false));
+      }
+      currentFetchTotal.current += data.length;
+    } catch (error) {
+      console.error("Error fetching feed:", error);
+    } finally {
+      fetchingRef.current = false;
+      setFeedLoading(false);
+    }
+  }, [activeFilter, categoryFilter, dispatch]);
+
+   const handleFilterChange = useCallback((newFilter: string) => {
+      setFeedShouldReset(true);
+      dispatch(setActiveFilter(newFilter));
+    }, [dispatch]);
 
   useEffect(() => {
-    if(feed.length > 0 && !feedShouldReset) return
-    fetchNextPage(true);
+    if (loadedFilterRef.current === activeFilter && !feedShouldReset && feed.length > 0) return;
+
+    loadedFilterRef.current = activeFilter;
     setFeedShouldReset(false);
-  }, [feedShouldReset, activeFilter]);
+    dispatch(clearFeed());
+    lastId.current = null;
+    fetchNextPage(true);
+  }, [feedShouldReset, activeFilter, feed.length, dispatch, fetchNextPage]);
 
   useEffect(() => {
     const permanentlyDisabled = localStorage.getItem(LOCAL_DISABLE_KEY) === "true";
@@ -160,9 +237,28 @@ export default function Home() {
     setShowWelcome(false);
   };
 
+  if (!authReady) {
+    return (
+      <div className="min-h-dvh">
+        <HomeHeader
+          filterAction={handleFilterChange}
+          filters={dynamicFilters}
+          filterLabels={categoryFilter.labels}
+        />
+        <div className="h-screen flex items-center justify-center">
+          <SmallLoader color="border-black/90"/>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-dvh">
-      <HomeHeader filterAction={handleFilterChange}/>
+      <HomeHeader
+        filterAction={handleFilterChange}
+        filters={dynamicFilters}
+        filterLabels={categoryFilter.labels}
+      />
       <WelcomeModal
         isOpen={showWelcome}
         onClose={handleWelcomeClose}
@@ -172,6 +268,12 @@ export default function Home() {
       {feedLoading? (
         <div className="h-screen flex items-center justify-center">
           <SmallLoader color="border-black/90"/>
+        </div>
+      ) : feed.length === 0 ? (
+        <div className="h-screen flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-gray-500 text-lg font-medium">No products in this category</p>
+          </div>
         </div>
       ) : (
         <InfiniteScroll
@@ -187,12 +289,13 @@ export default function Home() {
           scrollableTarget="main"
           className="flex flex-col items-center pt-2 pb-20"
         >
-          {feed.map((product) => {
+          {feed.map((product, index) => {
             if (product.vendor && product.vendor.logo)
               return (
                 <ProductContainer
                   productDetails={product}
                   key={product._id}
+                  priority={index === 0}
                 />
               );
           })}

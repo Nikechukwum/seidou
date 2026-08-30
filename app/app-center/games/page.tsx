@@ -97,7 +97,7 @@ const GamesPage = () => {
       dispatch(showToast({ type: "error", message: "Could not save your reward. Please try again." }));
     } else {
       dispatch(PartialUpdateUser({ loyalty_rewards: updatedRewards }));
-      dispatch(showToast({ type: "success", message: "Reward saved to your Loyalty Rewards." }));
+      dispatch(showToast({ type: "success", message: "Reward saved to your Land Wars Wallet." }));
     }
 
     setClaimModalActive(false);
@@ -159,7 +159,7 @@ const GamesPage = () => {
         <h2 className="text-xl font-bold text-[#111827] mb-2">Accept your reward before you go...</h2>
         <p className="text-gray-500 mb-8 text-sm">
           You have been awarded bidding currency. You can choose to accept or reject it.
-          All accepted rewards can later be claimed in the Loyalty Rewards page.
+          All accepted rewards can later be claimed in your Land Wars Wallet.
         </p>
         <div className="flex flex-col gap-3">
           <Button

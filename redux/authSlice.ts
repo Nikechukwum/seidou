@@ -10,6 +10,7 @@ export interface UserState {
     id: string,
     firstname: string,
     lastname: string,
+    username: string,
     email: string,
     gender: 'male'|'female'|'',
     phone: string,
@@ -19,7 +20,8 @@ export interface UserState {
     state: string,
     cash_balance: number,
     bidding_balance: number,
-    loyalty_rewards: LoyaltyReward[]
+    loyalty_rewards: LoyaltyReward[],
+    interests: string[],
     // Added for Seidou Social. Populated by useAuth's select("*"), so these
     // are present at runtime for every user.
     display_name?: string,

@@ -19,12 +19,17 @@ export default function WelcomeModal({
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         // if user has checked don't show again, persist it
         if (dontShowAgain) localStorage.setItem(LOCAL_DISABLE_KEY, "true");
-        onClose({ permanentlyDisabled: dontShowAgain });
+        onCloseRef.current({ permanentlyDisabled: dontShowAgain });
       }
     };
 
@@ -40,7 +45,7 @@ export default function WelcomeModal({
         document.body.style.overflow = prev;
       };
     }
-  }, [isOpen, dontShowAgain, onClose]);
+  }, [isOpen, dontShowAgain]);
 
   const onOverlayClick = (e: React.MouseEvent) => {
     if (e.target === overlayRef.current) {

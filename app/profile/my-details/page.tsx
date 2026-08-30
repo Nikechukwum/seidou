@@ -1,11 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { RootState } from '@/redux/store'
 import { useDispatch, useSelector } from 'react-redux'
-import { ArrowLeftIcon, ChevronLeftIcon } from '@heroicons/react/24/outline'
-import { PartialUpdateUser, UpdateUser, UserState } from '@/redux/authSlice'
+import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { PartialUpdateUser, UserState } from '@/redux/authSlice'
 import { showToast } from '@/redux/toastSlice'
 
 export default function MyDetailsPage() {
@@ -21,8 +21,12 @@ export default function MyDetailsPage() {
   const [profile, setProfile] = useState({
     firstname: user?.firstname,
     lastname: user?.lastname,
+    username: user?.username,
     phone: user?.phone,
     dob: user?.dob,
+    address_line1: user?.address_line1,
+    address_line2: user?.address_line2,
+    state: user?.state ?? 'Lagos',
     gender: user?.gender
   })
 
@@ -33,18 +37,35 @@ export default function MyDetailsPage() {
     const formData = new FormData(e.currentTarget)
     const updates = Object.fromEntries(formData)
 
+    const username = String(updates.username || '').trim()
+    if (username) {
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .neq('id', user?.id)
+        .maybeSingle()
+
+      if (existing) {
+        setLoading(false)
+        dispatch(showToast({ type: 'error', message: 'Username already taken' }))
+        return
+      }
+    }
+
     const { error } = await supabase
       .from('users')
       .upsert({
         id: user?.id,
         ...updates,
+        username: username || null,
         updated_at: new Date().toISOString(),
       })
 
     setLoading(false)
     if (error) dispatch(showToast({ type: 'error', message: error.message }))
     else {
-        dispatch(PartialUpdateUser(updates as Partial<UserState>));
+        dispatch(PartialUpdateUser({ ...updates, username: username || null } as Partial<UserState>));
         dispatch(showToast({ type: 'success', message: 'Details updated successfully' }))
     }
   }
@@ -83,6 +104,17 @@ export default function MyDetailsPage() {
             />
             </div>
 
+            {/* Username */}
+            <div>
+            <label className="block text-sm font-medium text-gray-400 uppercase">Username</label>
+            <input 
+                name="username"
+                defaultValue={profile.username}
+                placeholder="e.g. toby"
+                className="w-full font-medium border-b border-gray-300 py-2 focus:border-black outline-none"
+            />
+            </div>
+
             {/* Email - Read Only (Auth handled) */}
             <div>
             <label className="block text-sm font-medium text-gray-400 uppercase">Email Address</label>
@@ -90,7 +122,7 @@ export default function MyDetailsPage() {
                 type="email" 
                 value={user?.email} 
                 disabled 
-                className="w-full font-medium border-b border-gray-200 py-2 text-gray-400 cursor-not-allowed"
+                className="w-full font-medium border-b border-gray-200 py-2 text-black cursor-not-allowed"
             />
             </div>
 
@@ -114,6 +146,36 @@ export default function MyDetailsPage() {
                 required
                 defaultValue={profile.dob}
                 className="w-full font-medium border-b border-gray-300 py-2 focus:border-black outline-none bg-transparent"
+            />
+            </div>
+
+            {/* Address Line 1 */}
+            <div>
+            <label className="block text-sm font-medium text-gray-400 uppercase">Address Line 1</label>
+            <input 
+                name="address_line1"
+                defaultValue={profile.address_line1}
+                className="w-full font-medium border-b border-gray-300 py-2 focus:border-black outline-none"
+            />
+            </div>
+
+            {/* Address Line 2 */}
+            <div>
+            <label className="block text-sm font-medium text-gray-400 uppercase">Address Line 2</label>
+            <input 
+                name="address_line2"
+                defaultValue={profile.address_line2}
+                className="w-full font-medium border-b border-gray-300 py-2 focus:border-black outline-none"
+            />
+            </div>
+
+            {/* State */}
+            <div>
+            <label className="block text-sm font-medium text-gray-400 uppercase">State</label>
+            <input 
+                name="state"
+                defaultValue={profile.state}
+                className="w-full font-medium border-b border-gray-300 py-2 focus:border-black outline-none"
             />
             </div>
 
@@ -145,7 +207,7 @@ export default function MyDetailsPage() {
             </div>
 
             <div className="px-3 w-full h-fit mt-10">
-                <button type='submit' disabled={loading} className="w-full bg-black font-bold p-3 rounded-lg grid place-content-center text-white">
+                <button type='submit' disabled={loading} className="w-full bg-black font-bold p-3 rounded-full grid place-content-center text-white">
                     {loading ? 'Updating...' : 'Update Details'}
                 </button>
             </div>

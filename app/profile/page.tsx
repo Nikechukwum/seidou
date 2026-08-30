@@ -5,12 +5,12 @@ import { ClearUser } from '@/redux/authSlice';
 import { RootState } from '@/redux/store';
 import { 
   UserIcon, 
-  MapPinIcon, 
   WalletIcon, 
   QuestionMarkCircleIcon, 
-  Cog6ToothIcon, 
+  Cog6ToothIcon,
   ChevronRightIcon,
-  ArrowLeftStartOnRectangleIcon, 
+  ArrowLeftStartOnRectangleIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/20/solid';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -32,7 +32,7 @@ export default function ProfilePage() {
       console.error('Error logging out:', error.message)
     } else {
       dispatch(ClearUser())
-      router.push('/')
+      router.push('/signin')
     }
   }
 
@@ -42,11 +42,11 @@ export default function ProfilePage() {
       icon: UserIcon,
       route: '/profile/my-details',
     },
-    {
-      label: 'Address Book',
-      icon: MapPinIcon,
-      route: '/profile/address-book',
-    },
+    // {
+    //   label: 'Interests',
+    //   icon: AdjustmentsHorizontalIcon,
+    //   route: '/onboarding?from=profile',
+    // },
     {
       label: 'Wallet',
       icon: WalletIcon,
