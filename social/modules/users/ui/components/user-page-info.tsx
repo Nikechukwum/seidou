@@ -141,10 +141,17 @@ const EditChannelModal = ({
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-left">
         <div>
-          <label className="mb-2 block text-sm font-bold text-gray-700">
-            Channel name
+          {/* htmlFor/id pair: without it the label is just text sitting above
+              the field, so tapping it does nothing and screen readers do not
+              announce the field's purpose. */}
+          <label
+            htmlFor="social-display-name"
+            className="mb-2 block text-sm font-bold text-gray-700"
+          >
+            Display name
           </label>
           <input
+            id="social-display-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
             maxLength={60}

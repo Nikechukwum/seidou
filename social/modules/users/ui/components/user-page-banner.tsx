@@ -2,7 +2,12 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowLeftRightIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
@@ -113,17 +118,21 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
                   path={bannerPath(viewerId)}
                   label="Change banner"
                   onUploaded={onUploaded}
-                  className="w-full px-4 py-2.5 text-left text-sm font-medium"
+                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium"
                 >
-                  Change
+                  <>
+                    <ArrowLeftRightIcon className="size-4 shrink-0" />
+                    Change
+                  </>
                 </ImageUploadButton>
 
                 <button
                   type="button"
                   onClick={onRemove}
                   disabled={removeBanner.isPending}
-                  className="w-full border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 disabled:opacity-50"
+                  className="flex w-full items-center gap-2.5 border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 disabled:opacity-50"
                 >
+                  <Trash2Icon className="size-4 shrink-0" />
                   Remove
                 </button>
               </div>
