@@ -48,7 +48,7 @@ const PlaylistsSectionSuspense = () => {
   if (items.length === 0) {
     return (
       <p className="px-4 py-12 text-center text-sm text-muted-foreground">
-        No playlists yet. Create one to start saving videos.
+        No playlists yet.
       </p>
     );
   }

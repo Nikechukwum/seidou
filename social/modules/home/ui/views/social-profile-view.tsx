@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   ClockIcon,
@@ -16,6 +17,7 @@ import { IconListItem } from "@/components/IconListItem";
 import { Button } from "@/components/Button";
 import { socialPath } from "@/social/constants";
 import { useViewer } from "@/social/hooks/use-viewer";
+import { Modal } from "@/components/Modal";
 import { UserAvatar } from "@/social/components/user-avatar";
 
 /**
@@ -63,12 +65,16 @@ const ENTRIES = [
   {
     label: "Trending",
     description: "What is popular right now",
-    href: "/feed/trending",
+    // No href: ranked purely by view count, which says nothing useful until
+    // there is real traffic. The route exists and works — it is the data that
+    // is not ready, so the entry shows a placeholder instead of linking.
+    href: null,
     icon: FireIcon,
   },
 ];
 
 export const SocialProfileView = () => {
+  const [inProgress, setInProgress] = useState<string | null>(null);
   const { viewerId, displayName, avatarUrl, isSignedIn, isLoaded, requireSignIn } =
     useViewer();
 
@@ -107,20 +113,49 @@ export const SocialProfileView = () => {
             )}
 
             <div className="flex flex-col gap-y-4">
-              {ENTRIES.map((entry) => (
-                <Link key={entry.href} href={socialPath(entry.href)}>
+              {ENTRIES.map((entry) => {
+                const item = (
                   <IconListItem
                     icon={<entry.icon className="size-5.5 text-[#4b5563]" />}
                     title={entry.label}
                     description={entry.description}
                     chevron
                   />
-                </Link>
-              ))}
+                );
+
+                return entry.href ? (
+                  <Link key={entry.label} href={socialPath(entry.href)}>
+                    {item}
+                  </Link>
+                ) : (
+                  <div
+                    key={entry.label}
+                    onClick={() => setInProgress(entry.label)}
+                  >
+                    {item}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
       </div>
+
+      <Modal isActive={!!inProgress} setIsActive={() => setInProgress(null)}>
+        <div className="text-center">
+          <h2 className="text-lg font-bold">Feature in progress</h2>
+          <p className="mt-2 text-sm text-gray-500">
+            {inProgress} is still being built. It will open here once it is
+            ready.
+          </p>
+          <button
+            onClick={() => setInProgress(null)}
+            className="mt-6 w-full rounded-full bg-black py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]"
+          >
+            Got it
+          </button>
+        </div>
+      </Modal>
     </PageLayout>
   );
 };
