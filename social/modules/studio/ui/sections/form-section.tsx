@@ -254,8 +254,9 @@ const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
                 src={video.thumbnailUrl}
                 alt={video.title}
                 fill
+                sizes="112px"
+                quality={65}
                 className="object-cover"
-                unoptimized
               />
             )}
           </div>

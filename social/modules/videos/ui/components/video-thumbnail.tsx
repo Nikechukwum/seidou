@@ -33,6 +33,9 @@ export const VideoThumbnail = ({
           src={imageUrl || THUMBNAIL_FALLBACK}
           alt={title}
           fill
+          // One column inside a max-w-md shell, so never wider than 448px.
+          sizes="(max-width: 448px) 100vw, 448px"
+          quality={65}
           className="h-full w-full object-cover group-hover:opacity-0"
         />
         {/* Animated preview. unoptimized because it is a GIF — Next's

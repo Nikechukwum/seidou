@@ -54,7 +54,7 @@ export const UserPageInfo = ({ user }: UserPageInfoProps) => {
             onUploaded={async ({ url }) => {
               await updateAvatar.mutateAsync({ avatarUrl: url });
             }}
-            className="absolute bottom-0 right-0 flex size-8 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-sm"
+            className="absolute bottom-0 right-0 flex size-8 items-center justify-center rounded-full border border-gray-200 bg-white text-black shadow-sm"
           >
             <PencilIcon className="size-3.5" />
           </ImageUploadButton>

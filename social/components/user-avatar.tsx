@@ -39,6 +39,23 @@ const avatarVariants = cva(
   }
 );
 
+/**
+ * Rendered width per variant, handed to next/image as `sizes`.
+ *
+ * With `fill` and no `sizes`, Next assumes 100vw and picks a source wide
+ * enough for the whole viewport — roughly a 640px image behind a 36px avatar.
+ * Telling it the real size is what keeps the small ones small; `quality` only
+ * trims bytes at whatever resolution it already chose.
+ */
+const AVATAR_SIZES: Record<string, string> = {
+  xs: "16px",
+  sm: "24px",
+  default: "36px",
+  lg: "40px",
+  xl: "64px",
+  hero: "112px",
+};
+
 interface UserAvatarProps extends VariantProps<typeof avatarVariants> {
   imageUrl?: string | null;
   name: string;
@@ -65,7 +82,14 @@ export const UserAvatar = ({
       role={onClick ? "button" : undefined}
     >
       {imageUrl ? (
-        <Image src={imageUrl} alt={name} fill className="object-cover" />
+        <Image
+          src={imageUrl}
+          alt={name}
+          fill
+          sizes={AVATAR_SIZES[size ?? "default"]}
+          quality={65}
+          className="object-cover"
+        />
       ) : (
         <span className="font-semibold text-white">{initial}</span>
       )}

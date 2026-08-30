@@ -2,12 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-import {
-  ArrowLeftRightIcon,
-  PencilIcon,
-  PlusIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
@@ -88,8 +83,9 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
           src={user.bannerUrl}
           alt={`${user.name} banner`}
           fill
+          sizes="(max-width: 448px) 100vw, 448px"
+          quality={70}
           className="object-cover"
-          unoptimized
         />
       </div>
 
@@ -121,7 +117,7 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
                   className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-medium"
                 >
                   <>
-                    <ArrowLeftRightIcon className="size-4 shrink-0" />
+                    <PencilIcon className="size-4 shrink-0" />
                     Change
                   </>
                 </ImageUploadButton>

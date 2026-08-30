@@ -80,6 +80,9 @@ const VideosSectionSuspense = () => {
                 src={video.thumbnailUrl || THUMBNAIL_FALLBACK}
                 alt={video.title}
                 fill
+                // w-36 in the list, so a viewport-wide source is wasted.
+                sizes="144px"
+                quality={65}
                 className="object-cover"
               />
               <div className="absolute bottom-1 right-1 rounded bg-black/80 px-1 py-0.5 text-[10px] font-medium text-white">

@@ -29,6 +29,8 @@ export const PlaylistGridCard = ({ data }: PlaylistGridCardProps) => {
             src={data.thumbnailUrl || THUMBNAIL_FALLBACK}
             alt={data.name}
             fill
+            sizes="(max-width: 448px) 100vw, 448px"
+            quality={65}
             className="object-cover"
           />
 
