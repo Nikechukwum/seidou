@@ -1,10 +1,5 @@
-import Link from "next/link";
-import { SearchIcon, UserRoundIcon } from "lucide-react";
+import { SocialFeedHeader } from "@/social/components/social-feed-header";
 
-import { PageLayout } from "@/components/PageLayout";
-import { socialPath } from "@/social/constants";
-
-import { CategoriesSection } from "../sections/categories-section";
 import { HomeVideosSection } from "../sections/home-videos-section";
 
 interface HomeViewProps {
@@ -12,40 +7,17 @@ interface HomeViewProps {
 }
 
 /**
- * Uses Seidou's PageLayout/Header rather than the upstream sidebar shell.
- * PageLayout is a client component, but a server component may render it, so
- * the page above can still prefetch.
+ * Uses SocialFeedHeader rather than PageLayout: the category chips live
+ * inside the header so they collapse away on scroll, matching the games app.
+ * That means the padding is set here (pt-28) instead of by PageLayout.
  */
 export const HomeView = ({ categoryId }: HomeViewProps) => {
   return (
-    <PageLayout
-      pageTitle="Seidou Social"
-      className="bg-white"
-      extraButton={
-        <div className="flex items-center gap-3">
-          <Link
-            prefetch
-            href={socialPath("/search")}
-            aria-label="Search"
-            className="flex items-center"
-          >
-            <SearchIcon className="size-5" />
-          </Link>
-          <Link
-            prefetch
-            href={socialPath("/you")}
-            aria-label="You"
-            className="flex items-center"
-          >
-            <UserRoundIcon className="size-5" />
-          </Link>
-        </div>
-      }
-    >
-      <div className="flex flex-col gap-6">
-        <CategoriesSection categoryId={categoryId} />
+    <div className="min-h-lvh bg-white">
+      <SocialFeedHeader title="Seidou Social" categoryId={categoryId} />
+      <div className="pt-28 pb-20">
         <HomeVideosSection categoryId={categoryId} />
       </div>
-    </PageLayout>
+    </div>
   );
 };

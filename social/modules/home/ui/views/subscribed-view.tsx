@@ -1,13 +1,14 @@
-import { PageLayout } from "@/components/PageLayout";
+import { SocialFeedHeader } from "@/social/components/social-feed-header";
 
 import { SubscribedVideosSection } from "../sections/subscribed-videos-section";
 
 export const SubscribedView = () => {
   return (
-    <PageLayout pageTitle="Subscribed" className="bg-white">
-      <div className="flex flex-col gap-6">
+    <div className="min-h-lvh bg-white">
+      <SocialFeedHeader title="Subscribed" showCategories={false} />
+      <div className="pt-20 pb-20">
         <SubscribedVideosSection />
       </div>
-    </PageLayout>
+    </div>
   );
 };

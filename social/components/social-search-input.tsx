@@ -31,20 +31,20 @@ export const SocialSearchInput = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="relative px-4">
-      <SearchIcon className="absolute left-8 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
+    <form onSubmit={handleSubmit} className="relative">
+      <SearchIcon className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
       <input
         value={value}
         onChange={(event) => setValue(event.target.value)}
         placeholder="Search videos"
-        className="w-full rounded-full border border-gray-200 bg-white py-2.5 pl-11 pr-10 text-sm outline-none transition-all focus:border-black focus:ring-1 focus:ring-black"
+        className="w-full rounded-full border border-gray-200 bg-white py-2 pl-10 pr-9 text-sm outline-none transition-all focus:border-black focus:ring-1 focus:ring-black"
       />
       {value && (
         <button
           type="button"
           onClick={() => setValue("")}
           aria-label="Clear search"
-          className="absolute right-8 top-1/2 -translate-y-1/2"
+          className="absolute right-4 top-1/2 -translate-y-1/2"
         >
           <XIcon className="size-4 text-gray-400" />
         </button>
