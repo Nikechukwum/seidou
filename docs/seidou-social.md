@@ -37,12 +37,11 @@ declared-vs-actual and can propose dropping commerce columns from
 | File | Adds | Applied |
 |---|---|---|
 | `0000_seidou_social.sql` | 7 social tables, users columns, RLS | ✅ |
-| `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ⬜ **pending** |
-| `0002_storage.sql` | `social` storage bucket + policies | ⬜ **pending** |
+| `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ✅ |
+| `0002_storage.sql` | `social` storage bucket + policies | ✅ |
 
-Until `0001` runs, the Playlists pages error; Liked and History still work,
-because they read `video_reactions` and `video_views` rather than the new
-tables. Until `0002` runs, thumbnail and banner uploads fail.
+All applied. Add future migrations here rather than running
+`drizzle-kit push`.
 
 ---
 
