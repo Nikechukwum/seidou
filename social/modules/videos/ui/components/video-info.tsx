@@ -7,6 +7,8 @@ import { Skeleton } from "@/social/components/ui/skeleton";
 import { UserAvatar } from "@/social/components/user-avatar";
 import { UserInfo } from "@/social/modules/users/ui/components/user-info";
 
+import { VideoMenu } from "./video-menu";
+
 import { VideoGetManyOutput } from "../../types";
 
 interface VideoInfoProps {
@@ -26,7 +28,7 @@ export const VideoInfoSkeleton = () => {
   );
 };
 
-export const VideoInfo = ({ data }: VideoInfoProps) => {
+export const VideoInfo = ({ data, onRemove }: VideoInfoProps) => {
   const compactViews = useMemo(() => {
     return Intl.NumberFormat("en", { notation: "compact" }).format(
       data.viewCount
@@ -57,8 +59,7 @@ export const VideoInfo = ({ data }: VideoInfoProps) => {
           </p>
         </Link>
       </div>
-      {/* VideoMenu (share / add to playlist / remove) lands with M4-M5 —
-          it needs the watch route and the studio mutations to exist. */}
+      <VideoMenu videoId={data.id} onRemove={onRemove} />
     </div>
   );
 };

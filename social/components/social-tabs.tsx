@@ -16,6 +16,9 @@ const TABS = [
   { label: "Home", href: "", auth: false },
   { label: "Trending", href: "/feed/trending", auth: false },
   { label: "Subscribed", href: "/feed/subscribed", auth: true },
+  { label: "Playlists", href: "/playlists", auth: true },
+  { label: "Liked", href: "/playlists/liked", auth: true },
+  { label: "History", href: "/playlists/history", auth: true },
 ];
 
 export const SocialTabs = () => {

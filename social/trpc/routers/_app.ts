@@ -1,6 +1,7 @@
 import { usersRouter } from '@/social/modules/users/server/procedures';
 import { studioRouter } from '@/social/modules/studio/server/procedures';
 import { searchRouter } from '@/social/modules/search/server/procedures';
+import { playlistsRouter } from '@/social/modules/playlists/server/procedures';
 import { videosRouter } from '@/social/modules/videos/server/procedures';
 import { commentsRouter } from '@/social/modules/comments/server/procedures';
 import { categoriesRouter } from '@/social/modules/categories/server/procedures';
@@ -12,14 +13,13 @@ import { commentReactionsRouter } from '@/social/modules/comment-reactions/serve
 
 import { createTRPCRouter } from '../init';
 
-/**
- * All v1 routers. `playlists` is deferred — see docs/seidou-social.md.
- */
+/** Every router. */
 export const appRouter = createTRPCRouter({
   users: usersRouter,
   videos: videosRouter,
   studio: studioRouter,
   search: searchRouter,
+  playlists: playlistsRouter,
   comments: commentsRouter,
   categories: categoriesRouter,
   videoViews: videoViewsRouter,
