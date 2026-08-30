@@ -1,10 +1,8 @@
 import Link from "next/link";
-import { SearchIcon } from "lucide-react";
+import { SearchIcon, UserRoundIcon } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
 import { socialPath } from "@/social/constants";
-
-import { SocialTabs } from "@/social/components/social-tabs";
 
 import { CategoriesSection } from "../sections/categories-section";
 import { HomeVideosSection } from "../sections/home-videos-section";
@@ -35,16 +33,16 @@ export const HomeView = ({ categoryId }: HomeViewProps) => {
           </Link>
           <Link
             prefetch
-            href={socialPath("/studio")}
-            className="text-sm font-semibold"
+            href={socialPath("/you")}
+            aria-label="You"
+            className="flex items-center"
           >
-            Studio
+            <UserRoundIcon className="size-5" />
           </Link>
         </div>
       }
     >
       <div className="flex flex-col gap-6">
-        <SocialTabs />
         <CategoriesSection categoryId={categoryId} />
         <HomeVideosSection categoryId={categoryId} />
       </div>

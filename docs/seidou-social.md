@@ -51,6 +51,7 @@ tables. Until `0002` runs, thumbnail and banner uploads fail.
 ```
 /app-center/apps/seidou-social
   /                          home feed
+  /you                       your hub: videos, playlists, liked, history
   /feed/trending             ordered by view count
   /feed/subscribed           channels you follow          (auth)
   /search?query=&categoryId= title search + category filter
@@ -127,7 +128,7 @@ tables. Until `0002` runs, thumbnail and banner uploads fail.
 | sonner (toasts) | Seidou's Redux toast | Avoids a second toast system |
 | vaul (drawer) | Seidou's `DrawerModal` | Already exists |
 | embla (carousel) | Seidou's scrolling chip row | Already exists |
-| shadcn sidebar | `PageLayout` + `Header` + `Footer` + `SocialTabs` | A desktop sidebar makes no sense in a mobile shell |
+| shadcn sidebar | `PageLayout` + `Header` + a `/you` hub | A desktop sidebar has nowhere to live in a mobile shell; its Personal group became a destination, like YouTube's "You" tab |
 | Radix DropdownMenu | Bottom sheet | A dropdown anchored to a small icon is awkward on touch |
 
 ### What was kept
