@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { PlusIcon, XIcon } from "lucide-react";
+import { useState } from "react";
+import { PencilIcon, PlusIcon } from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
@@ -17,12 +18,13 @@ interface UserPageBannerProps {
 
 /**
  * The empty state IS the affordance — the strip itself reads "+ Add banner"
- * and is the upload trigger, rather than a placeholder sitting above a
- * separate button. Visitors see nothing at all when there is no banner.
+ * and is the upload trigger, rather than a placeholder above a separate
+ * button. Visitors see nothing at all when there is no banner.
  */
 export const UserPageBanner = ({ user }: UserPageBannerProps) => {
   const utils = trpc.useUtils();
   const { viewerId } = useViewer();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const isOwner = viewerId === user.id;
 
@@ -30,6 +32,7 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
     onSuccess: () => {
       utils.users.getOne.invalidate({ id: user.id });
       toast.success("Banner updated");
+      setMenuOpen(false);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -38,6 +41,7 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
     onSuccess: () => {
       utils.users.getOne.invalidate({ id: user.id });
       toast.success("Banner removed");
+      setMenuOpen(false);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -73,34 +77,58 @@ export const UserPageBanner = ({ user }: UserPageBannerProps) => {
   }
 
   return (
-    <div className="relative h-28 w-full overflow-hidden">
-      <Image
-        src={user.bannerUrl}
-        alt={`${user.name} banner`}
-        fill
-        className="object-cover"
-        unoptimized
-      />
+    <div className="relative h-28 w-full">
+      <div className="absolute inset-0 overflow-hidden">
+        <Image
+          src={user.bannerUrl}
+          alt={`${user.name} banner`}
+          fill
+          className="object-cover"
+          unoptimized
+        />
+      </div>
 
       {isOwner && viewerId && (
-        <div className="absolute right-2 top-2 flex gap-1.5">
-          <ImageUploadButton
-            path={bannerPath(viewerId)}
-            label="Replace banner"
-            onUploaded={onUploaded}
-            className="rounded-full bg-black/60 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur"
-          >
-            Change
-          </ImageUploadButton>
+        <div className="absolute right-2 top-2">
           <button
             type="button"
-            onClick={onRemove}
-            disabled={removeBanner.isPending}
-            aria-label="Remove banner"
-            className="rounded-full bg-black/60 p-1.5 text-white backdrop-blur disabled:opacity-50"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label="Edit banner"
+            aria-expanded={menuOpen}
+            className="rounded-full bg-black/60 p-2 text-white backdrop-blur"
           >
-            <XIcon className="size-3.5" />
+            <PencilIcon className="size-3.5" />
           </button>
+
+          {menuOpen && (
+            <>
+              {/* Catches the outside tap that should dismiss the menu. */}
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setMenuOpen(false)}
+              />
+
+              <div className="absolute right-0 top-full z-20 mt-1 w-36 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+                <ImageUploadButton
+                  path={bannerPath(viewerId)}
+                  label="Change banner"
+                  onUploaded={onUploaded}
+                  className="w-full px-4 py-2.5 text-left text-sm font-medium"
+                >
+                  Change
+                </ImageUploadButton>
+
+                <button
+                  type="button"
+                  onClick={onRemove}
+                  disabled={removeBanner.isPending}
+                  className="w-full border-t border-gray-100 px-4 py-2.5 text-left text-sm font-medium text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

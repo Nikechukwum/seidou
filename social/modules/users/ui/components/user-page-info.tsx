@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PencilIcon, PlusIcon } from "lucide-react";
+import { PencilIcon } from "lucide-react";
 
 import { Button } from "@/components/Button";
 import { trpc } from "@/social/trpc/client";
@@ -54,9 +54,9 @@ export const UserPageInfo = ({ user }: UserPageInfoProps) => {
             onUploaded={async ({ url }) => {
               await updateAvatar.mutateAsync({ avatarUrl: url });
             }}
-            className="absolute bottom-0 right-0 flex size-9 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-sm"
+            className="absolute bottom-0 right-0 flex size-8 items-center justify-center rounded-full border-2 border-white bg-black text-white shadow-sm"
           >
-            <PlusIcon className="size-4" strokeWidth={3} />
+            <PencilIcon className="size-3.5" />
           </ImageUploadButton>
         )}
       </div>
