@@ -58,9 +58,12 @@ export const InfiniteScroll = ({
           onClick={() => fetchNextPage()}
         />
       ) : (
-        <p className="text-xs text-muted-foreground">
-          You have reached the end of the list
-        </p>
+        // A full sentence at the end of every list is noise once you have
+        // seen it once; a dot says "that is all" without asking to be read.
+        <div
+          aria-label="End of list"
+          className="size-1.5 rounded-full bg-gray-200"
+        />
       )}
     </div>
   );

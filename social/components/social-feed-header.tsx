@@ -108,7 +108,7 @@ export const SocialFeedHeader = ({
         )}
 
         {titleSlot ? (
-          <div className="min-w-0 flex-1 pr-2">{titleSlot}</div>
+          <div className="min-w-0 flex-1 pl-2 pr-1">{titleSlot}</div>
         ) : (
           <>
             <span
