@@ -16,6 +16,7 @@ export const SearchView = ({ query, categoryId }: SearchViewProps) => {
       <SocialFeedHeader
         title="Search"
         categoryId={categoryId}
+        showBack
         titleSlot={
           <SocialSearchInput
             defaultQuery={query}

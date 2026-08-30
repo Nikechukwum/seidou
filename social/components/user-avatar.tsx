@@ -2,6 +2,7 @@ import Image from "next/image";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/social/lib/utils";
+import { avatarColour } from "@/social/lib/avatar-colour";
 
 /**
  * Rewritten on next/image rather than the Radix Avatar the upstream project
@@ -13,7 +14,7 @@ import { cn } from "@/social/lib/utils";
  * avatar_url is empty for every existing user.
  */
 const avatarVariants = cva(
-  "relative shrink-0 overflow-hidden rounded-full bg-muted flex items-center justify-center select-none",
+  "relative shrink-0 overflow-hidden rounded-full flex items-center justify-center select-none",
   {
     variants: {
       size: {
@@ -49,13 +50,16 @@ export const UserAvatar = ({
   return (
     <div
       className={cn(avatarVariants({ size, className }))}
+      // Only colour the fallback: a real photo fills the circle, and a tinted
+      // ring behind it would show through while the image loads.
+      style={imageUrl ? undefined : { backgroundColor: avatarColour(name) }}
       onClick={onClick}
       role={onClick ? "button" : undefined}
     >
       {imageUrl ? (
         <Image src={imageUrl} alt={name} fill className="object-cover" />
       ) : (
-        <span className="font-semibold text-muted-foreground">{initial}</span>
+        <span className="font-semibold text-white">{initial}</span>
       )}
     </div>
   );

@@ -22,6 +22,11 @@ interface SocialFeedHeaderProps {
   categoryId?: string;
   /** Trending and Subscribed have no category filter. */
   showCategories?: boolean;
+  /**
+   * Off on the feed, which is a destination rather than somewhere you
+   * navigated into — Seidou's footer already gets you out of the app.
+   */
+  showBack?: boolean;
 }
 
 /**
@@ -42,6 +47,7 @@ export const SocialFeedHeader = ({
   titleSlot,
   categoryId,
   showCategories = true,
+  showBack = false,
 }: SocialFeedHeaderProps) => {
   const router = useRouter();
   const [fullHeader, setFullHeader] = useState(true);
@@ -91,19 +97,27 @@ export const SocialFeedHeader = ({
     >
       {/* Top row */}
       <div className="h-14 flex items-center px-3 pt-3">
-        <button
-          onClick={() => router.back()}
-          aria-label="Go back"
-          className="p-2 text-black"
-        >
-          <ArrowLeftIcon className="size-5" strokeWidth={3} />
-        </button>
+        {showBack && (
+          <button
+            onClick={() => router.back()}
+            aria-label="Go back"
+            className="p-2 text-black"
+          >
+            <ArrowLeftIcon className="size-5" strokeWidth={3} />
+          </button>
+        )}
 
         {titleSlot ? (
           <div className="min-w-0 flex-1 pr-2">{titleSlot}</div>
         ) : (
           <>
-            <span className="absolute left-1/2 -translate-x-1/2 font-semibold text-xl">
+            <span
+              className={
+                showBack
+                  ? "absolute left-1/2 -translate-x-1/2 font-semibold text-xl"
+                  : "pl-2 font-semibold text-xl"
+              }
+            >
               {title}
             </span>
 
@@ -118,8 +132,8 @@ export const SocialFeedHeader = ({
               </Link>
               <Link
                 prefetch
-                href={socialPath("/you")}
-                aria-label="You"
+                href={socialPath("/social-profile")}
+                aria-label="Social profile"
                 className="p-2"
               >
                 <UserRoundIcon className="size-5" />
