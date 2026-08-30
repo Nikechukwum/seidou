@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import Link from "next/link";
+import Image from "next/image";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -15,6 +16,9 @@ import { socialPath, socialUrl } from "@/social/constants";
 import { Skeleton } from "@/social/components/ui/skeleton";
 import { Button } from "@/components/Button";
 import { VideoPlayer } from "@/social/modules/videos/ui/components/video-player";
+import { ImageUploadButton } from "@/social/components/image-upload-button";
+import { deleteSocialImage, thumbnailPath } from "@/social/lib/storage";
+import { useViewer } from "@/social/hooks/use-viewer";
 
 interface FormSectionProps {
   videoId: string;
@@ -69,6 +73,7 @@ const inputClass =
 const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
   const router = useRouter();
   const utils = trpc.useUtils();
+  const { viewerId } = useViewer();
   const [copied, setCopied] = useState(false);
 
   const [video] = trpc.studio.getOne.useSuspenseQuery({ id: videoId });
@@ -138,6 +143,33 @@ const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const updateThumbnail = trpc.videos.updateThumbnail.useMutation({
+    onSuccess: () => {
+      utils.studio.getOne.invalidate({ id: videoId });
+      utils.studio.getMany.invalidate();
+      toast.success("Thumbnail updated");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restoreThumbnail = trpc.videos.restoreThumbnail.useMutation({
+    onSuccess: () => {
+      utils.studio.getOne.invalidate({ id: videoId });
+      utils.studio.getMany.invalidate();
+      toast.success("Reverted to the generated thumbnail");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const onRestoreThumbnail = async () => {
+    // Remove the stored object first: deletion needs the user session the
+    // storage policies check, which only exists in the browser.
+    if (video.thumbnailKey) {
+      await deleteSocialImage(video.thumbnailKey);
+    }
+    restoreThumbnail.mutate({ id: videoId });
+  };
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -209,6 +241,50 @@ const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
             <CopyIcon className="size-4" />
           )}
         </button>
+      </div>
+
+      <div>
+        <label className="mb-2 block text-sm font-bold text-gray-700">
+          Thumbnail
+        </label>
+        <div className="flex items-center gap-3">
+          <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg bg-muted">
+            {video.thumbnailUrl && (
+              <Image
+                src={video.thumbnailUrl}
+                alt={video.title}
+                fill
+                className="object-cover"
+                unoptimized
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {viewerId && (
+              <ImageUploadButton
+                path={thumbnailPath(viewerId, videoId)}
+                label={video.thumbnailKey ? "Replace" : "Upload"}
+                onUploaded={async ({ url, key }) => {
+                  await updateThumbnail.mutateAsync({
+                    id: videoId,
+                    thumbnailUrl: url,
+                    thumbnailKey: key,
+                  });
+                }}
+              />
+            )}
+            {video.thumbnailKey && (
+              <button
+                type="button"
+                onClick={onRestoreThumbnail}
+                disabled={restoreThumbnail.isPending}
+                className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div>

@@ -12,7 +12,6 @@ interface VideoViewProps {
  * Single column, unlike the upstream two-column watch layout — inside a
  * max-w-md shell there is no room for a suggestions rail, so it stacks below
  * the player instead.
- *
  */
 export const VideoView = ({ videoId }: VideoViewProps) => {
   return (

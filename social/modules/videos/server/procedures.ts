@@ -30,7 +30,7 @@ import {
 import { APP_URL } from "@/social/constants";
 
 /**
- * Read path for the video feeds.
+ * Videos: the feeds, the watch page, and the studio's write operations.
  *
  * Every `user:` projection selects socialUserColumns rather than the whole
  * users row. public.users is shared with the commerce app, so spreading it
@@ -41,7 +41,8 @@ import { APP_URL } from "@/social/constants";
  * asking for "strictly older than the last row I saw". Stays correct when rows
  * are inserted mid-scroll, which OFFSET does not.
  *
- * getOne and the studio mutations land with M4 and M5.
+ * Every mutation scopes its WHERE by ctx.user.id, so a video you do not own
+ * simply matches nothing rather than being modified.
  */
 /**
  * Re-reads an asset from Mux and writes back the columns the webhook would
@@ -236,6 +237,82 @@ export const videosRouter = createTRPCRouter({
         // as it stands rather than failing the poll — the next tick retries.
         return existingVideo;
       }
+    }),
+
+  /**
+   * Records a custom thumbnail after the browser has uploaded it.
+   *
+   * The file itself went straight to Supabase Storage under a folder named
+   * after the uploader, which the bucket policies enforce. This is where
+   * ownership of the VIDEO is checked, so nobody can point someone else's
+   * video at their own image.
+   */
+  updateThumbnail: protectedProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        thumbnailUrl: z.string().url(),
+        thumbnailKey: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id: userId } = ctx.user;
+
+      const [updatedVideo] = await db
+        .update(videos)
+        .set({
+          thumbnailUrl: input.thumbnailUrl,
+          thumbnailKey: input.thumbnailKey,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(videos.id, input.id), eq(videos.userId, userId)))
+        .returning();
+
+      if (!updatedVideo) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      return updatedVideo;
+    }),
+
+  /**
+   * Reverts to the thumbnail Mux generated.
+   *
+   * Upstream re-fetched the image from Mux and re-uploaded it. Since we
+   * reference Mux URLs directly, this is just clearing the override — the
+   * stored object is deleted by the caller, which holds the user session the
+   * storage policies require.
+   */
+  restoreThumbnail: protectedProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { id: userId } = ctx.user;
+
+      const [existingVideo] = await db
+        .select()
+        .from(videos)
+        .where(and(eq(videos.id, input.id), eq(videos.userId, userId)));
+
+      if (!existingVideo) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
+      if (!existingVideo.muxPlaybackId) {
+        throw new TRPCError({ code: "BAD_REQUEST" });
+      }
+
+      const [updatedVideo] = await db
+        .update(videos)
+        .set({
+          thumbnailUrl: `https://image.mux.com/${existingVideo.muxPlaybackId}/thumbnail.jpg`,
+          previewUrl: `https://image.mux.com/${existingVideo.muxPlaybackId}/animated.gif`,
+          thumbnailKey: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(videos.id, input.id), eq(videos.userId, userId)))
+        .returning();
+
+      return updatedVideo;
     }),
 
   getOne: baseProcedure

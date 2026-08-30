@@ -9,9 +9,45 @@ import {
   users,
   videos,
 } from "@/social/db/schema";
-import { baseProcedure, createTRPCRouter } from "@/social/trpc/init";
+import {
+  baseProcedure,
+  createTRPCRouter,
+  protectedProcedure,
+} from "@/social/trpc/init";
 
 export const usersRouter = createTRPCRouter({
+  /** Records a channel banner after the browser has uploaded it. */
+  updateBanner: protectedProcedure
+    .input(
+      z.object({
+        bannerUrl: z.string().url(),
+        bannerKey: z.string().min(1),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          bannerUrl: input.bannerUrl,
+          bannerKey: input.bannerKey,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, ctx.user.id))
+        .returning(socialUserColumns);
+
+      return updatedUser;
+    }),
+
+  removeBanner: protectedProcedure.mutation(async ({ ctx }) => {
+    const [updatedUser] = await db
+      .update(users)
+      .set({ bannerUrl: null, bannerKey: null, updatedAt: new Date() })
+      .where(eq(users.id, ctx.user.id))
+      .returning(socialUserColumns);
+
+    return updatedUser;
+  }),
+
   getOne: baseProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
