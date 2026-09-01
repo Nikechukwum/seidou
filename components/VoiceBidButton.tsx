@@ -1,28 +1,35 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Mic } from 'lucide-react'
+import { Mic, Check } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 
-type VoiceAction = 'BID' | 'BUY'
+type Phase = 'idle' | 'listening' | 'sending' | 'error'
 
 interface VoiceBidButtonProps {
     onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
+    // Fire the optimistic UI (balance drop, leaderboard bump, "Bid Placed" toast)
+    // the instant we parse an amount. Do NOT wait for the server.
+    onOptimisticBid?: (amount: number) => void
+    // Optional: called if the user slides left within the post-send cancel window
+    onCancelBid?: () => void
     disabled?: boolean
-    // BIG SIS REQUEST: render inline instead of portal (for footer placement)
+    lang?: string
+    // Render the mic inline without viewport positioning (caller provides the
+    // container, e.g. a fixed footer). Floating status labels stay viewport-anchored.
     renderInline?: boolean
+    // Pure safety ceiling for a stuck finger. Release-to-send is what makes the
+    // action fast; this only prevents an infinite hold. (Spec suggested 1300ms,
+    // but that would force-send while longer phrases are still being spoken.)
+    maxHoldMs?: number
 }
 
-const CANCEL_THRESHOLD_PX = 80
-const MAX_RECORDING_MS = 10000
-// Web Speech grace window after release before we stop and read the transcript
-const RELEASE_GRACE_MS = 800
-// If the native engine shows no sign of life by then, hand off to
-// MediaRecorder + server transcription mid-hold (Chrome Android's engine
-// is dead on many devices; Edge/iOS bundle their own and start in ~300ms).
-const FALLBACK_HANDOFF_MS = 900
+const SLIDE_CANCEL_PX = 70
+const POST_SEND_CANCEL_MS = 4000
+const CHECK_MARK_MS = 200
+const ERROR_MS = 2000
 const TRANSCRIBE_TIMEOUT_MS = 8000
 
 const isAndroid = () =>
@@ -64,47 +71,68 @@ function wordsToNumber(text: string): number | null {
     return found && total > 0 ? total : null
 }
 
-function parseTranscript(transcript: string): { action: VoiceAction; amount: number } | null {
-    const cleaned = transcript.toLowerCase().replace(/[₦$,]/g, '').replace(/\s+/g, ' ').trim()
+function digitsToNumber(digits: string): number {
+    return parseFloat(digits.replace(/,/g, '.'))
+}
 
-    const kMatch = cleaned.match(/(\d+(?:[.,]\d+)?)\s*k\b/)
+function tryNumber(text: string): number | null {
+    const t = text.toLowerCase()
+
+    // "bid 3k" / "3k" / "3.5k" / "1,5k" -> x1000
+    const kMatch = t.match(/(\d+(?:[.,]\d+)?)\s*k\b/)
     if (kMatch) {
-        const amount = Math.round(parseFloat(kMatch[1].replace(',', '.')) * 1000)
-        const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
-        if (amount > 0) return { action, amount }
+        const n = digitsToNumber(kMatch[1])
+        if (n > 0) return Math.round(n * 1000)
     }
 
-    const digitMatch = cleaned.match(/(\d[\d,]*)/)
+    // "3 thousand" / "2 hundred" / "1.5 million" -> digit + unit word
+    const unitMatch = t.match(/(\d+(?:[.,]\d+)?)\s*(hundred|thousand|million|billion)\b/)
+    if (unitMatch) {
+        const n = digitsToNumber(unitMatch[1])
+        const mul = { hundred: 100, thousand: 1000, million: 1000000, billion: 1000000000 }[unitMatch[2]]
+        const total = Math.round(n * mul!)
+        if (total > 0) return total
+    }
+
+    // plain digits: "100", "3,000"
+    const digitMatch = t.match(/(\d[\d,]*)/)
     if (digitMatch) {
-        const amount = parseInt(digitMatch[1].replace(/,/g, ''), 10)
-        if (amount > 0) {
-            const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
-            return { action, amount }
-        }
+        const n = parseInt(digitMatch[1].replace(/,/g, ''), 10)
+        if (n > 0) return n
     }
 
-    const wordAmount = wordsToNumber(cleaned)
-    if (wordAmount !== null) {
-        const action = cleaned.match(/\b(buy|purchase)\b/) ? 'BUY' : 'BID'
-        return { action, amount: wordAmount }
-    }
-
-    return null
+    // word form: "three thousand", "one hundred", "hundred"
+    return wordsToNumber(t)
 }
 
-function vibrate(ms: number) {
-    try { navigator.vibrate?.(ms) } catch {}
+interface Parsed {
+    action: 'BID' | 'BUY'
+    amount: number
 }
 
-function pickRecorderMime(): string | null {
-    if (typeof MediaRecorder === 'undefined') return null
+function parseTranscript(transcript: string): Parsed | null {
+    const cleaned = transcript.toLowerCase().replace(/[₦$]/g, '').replace(/\s+/g, ' ').trim()
+    if (!cleaned) return null
+
+    const amount = tryNumber(cleaned)
+    if (amount === null) return null
+
+    const action = /\b(buy|purchase)\b/.test(cleaned) ? 'BUY' : 'BID'
+    return { action, amount }
+}
+
+function vibrate(pattern: number | number[]) {
+    try { navigator.vibrate?.(pattern) } catch {}
+}
+
+function pickRecorderMime(): string {
     const candidates = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']
     for (const candidate of candidates) {
         try {
             if (MediaRecorder.isTypeSupported(candidate)) return candidate
         } catch {}
     }
-    return null
+    return ''
 }
 
 function extForMime(mime: string): string {
@@ -114,748 +142,484 @@ function extForMime(mime: string): string {
     return 'webm'
 }
 
-export default function VoiceBidButton({ onBid, onBuy, disabled, renderInline = false }: VoiceBidButtonProps) {
-    const [phase, setPhase] = useState<'idle' | 'recording' | 'cancelled'>('idle')
-    const [elapsed, setElapsed] = useState(0)
-    const [errorText, setErrorText] = useState<string | null>(null)
-    const [micReady, setMicReady] = useState(false)
-    const [processing, setProcessing] = useState(false)
+export default function VoiceBidButton({
+    onBid,
+    onBuy,
+    onOptimisticBid,
+    onCancelBid,
+    disabled,
+    lang = 'en-US',
+    renderInline = false,
+    maxHoldMs = 4000,
+}: VoiceBidButtonProps) {
+    const [phase, setPhase] = useState<Phase>('idle')
+    const [label, setLabel] = useState<string | null>(null)
 
-    // All mutable state tracked via refs to avoid stale closures
-    const phaseRef = useRef<'idle' | 'recording' | 'cancelled'>('idle')
+    const phaseRef = useRef<Phase>('idle')
+    const startTsRef = useRef(0)
     const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
-    const isCancelledRef = useRef(false)
+    const genRef = useRef(0)
+
+    // --- Native Web Speech engine ---
     const recognitionRef = useRef<any>(null)
-    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-    const startTimeRef = useRef(0)
-    const transcriptRef = useRef('')
-    const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const releasedDuringStartupRef = useRef(false)
-    const graceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const handoffTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const recognitionActiveRef = useRef(false)
-    const processedRef = useRef(false)
-    const finishingRef = useRef(false)
-    const prevTranscriptRef = useRef('')
+    const lastTranscriptRef = useRef('')
+    const prevFinalsRef = useRef('')
     const sessionFinalRef = useRef('')
-    const graceExtendedRef = useRef(false)
-    const sessionGenRef = useRef(0)
-    const warmupRef = useRef<any>(null)
-    // Recorded-audio fallback (MediaRecorder -> /api/voice/transcribe)
-    const usingFallbackRef = useRef(false)
-    const mediaStreamRef = useRef<MediaStream | null>(null)
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const srLiveRef = useRef(false)
+    const nativeRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // --- Recorded-audio fallback (MediaRecorder -> /api/voice/transcribe) ---
+    const recorderRef = useRef<MediaRecorder | null>(null)
+    const streamRef = useRef<MediaStream | null>(null)
     const chunksRef = useRef<Blob[]>([])
-    const pendingReleaseRef = useRef(false)
+
+    const maxHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const cancelWindowRef = useRef(false)
+    const cancelWindowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const cancelFiredRef = useRef(false)
 
     const showError = useCallback((msg: string) => {
-        setErrorText(msg)
+        phaseRef.current = 'error'
+        setPhase('error')
+        setLabel(msg)
         if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
-        errorTimerRef.current = setTimeout(() => setErrorText(null), 2000)
+        errorTimerRef.current = setTimeout(() => {
+            phaseRef.current = 'idle'
+            setPhase('idle')
+            setLabel(null)
+        }, ERROR_MS)
     }, [])
 
-    const teardownCurrentRecognition = () => {
-        if (recognitionRef.current) {
-            const rec = recognitionRef.current
-            recognitionRef.current = null
-            try { rec.abort() } catch {}
-        }
-    }
+    const clearTimers = useCallback(() => {
+        if (maxHoldTimerRef.current) { clearTimeout(maxHoldTimerRef.current); maxHoldTimerRef.current = null }
+        if (nativeRestartTimerRef.current) { clearTimeout(nativeRestartTimerRef.current); nativeRestartTimerRef.current = null }
+        if (checkTimerRef.current) { clearTimeout(checkTimerRef.current); checkTimerRef.current = null }
+        if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
+        if (cancelWindowTimerRef.current) { clearTimeout(cancelWindowTimerRef.current); cancelWindowTimerRef.current = null }
+    }, [])
 
-    const teardownMedia = useCallback(() => {
-        if (mediaRecorderRef.current) {
-            const rec = mediaRecorderRef.current
-            mediaRecorderRef.current = null
-            try { if (rec.state !== 'inactive') rec.stop() } catch {}
+    // stopNative: on iOS Safari, stop() leaves the recognizer's session/audio
+    // holding the mic with the speech service, which can lag, swallow results,
+    // or make the NEXT start() throw InvalidStateError. abort() hard-cancels and
+    // frees everything immediately so a fast press-release-press works cleanly.
+    // Safe to call on every browser.
+    const stopNative = useCallback(() => {
+        const rec = recognitionRef.current
+        recognitionRef.current = null
+        if (!rec) return
+        try { rec.stop() } catch {}
+        try { rec.abort() } catch {}
+    }, [])
+
+    const stopRecorder = useCallback(() => {
+        const rec = recorderRef.current
+        const stream = streamRef.current
+        recorderRef.current = null
+        streamRef.current = null
+        if (rec && rec.state !== 'inactive') {
+            try { rec.stop() } catch {}
         }
-        if (mediaStreamRef.current) {
-            const stream = mediaStreamRef.current
-            mediaStreamRef.current = null
+        if (stream) {
             stream.getTracks().forEach((t) => { try { t.stop() } catch {} })
         }
     }, [])
 
+    const teardownAll = useCallback(() => {
+        clearTimers()
+        stopNative()
+        stopRecorder()
+    }, [clearTimers, stopNative, stopRecorder])
+
     useEffect(() => {
-        return () => {
-            if (timerRef.current) clearInterval(timerRef.current)
-            if (maxTimerRef.current) clearTimeout(maxTimerRef.current)
-            if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
-            if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
-            if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
-            if (handoffTimerRef.current) clearTimeout(handoffTimerRef.current)
-            teardownMedia()
-            teardownCurrentRecognition()
+        return () => teardownAll()
+    }, [teardownAll])
+
+    const placeBid = useCallback((parsed: Parsed, gen: number) => {
+        if (phaseRef.current !== 'listening') return
+        phaseRef.current = 'sending'
+        setPhase('sending')
+        setLabel(null)
+        vibrate(30)
+
+        // Optimistic UI FIRST, server call after. Page owns balance/leaderboard.
+        onOptimisticBid?.(parsed.amount)
+        void onBid(parsed.amount)
+
+        if (parsed.action === 'BUY' && onBuy) {
+            onBuy(parsed.amount)
         }
-    }, [teardownMedia])
 
-    // Warm up the native speech engine right after mount (only when mic
-    // permission is already granted) so capable devices start instantly.
-    useEffect(() => {
-        const SpeechRecognition =
-            (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-        if (!SpeechRecognition) return
+        // Post-send "slide left to cancel" window
+        cancelWindowRef.current = true
+        cancelFiredRef.current = false
+        if (cancelWindowTimerRef.current) clearTimeout(cancelWindowTimerRef.current)
+        cancelWindowTimerRef.current = setTimeout(() => {
+            cancelWindowRef.current = false
+        }, POST_SEND_CANCEL_MS)
 
-        let cancelled = false
-        ;(async () => {
-            try {
-                const st = await (navigator as any).permissions?.query?.({ name: 'microphone' })
-                if (st?.state !== 'granted') return
-            } catch {
-                return
+        // Green check for 200ms, then idle (hand control back to held mic state)
+        if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+        checkTimerRef.current = setTimeout(() => {
+            if (phaseRef.current === 'sending') {
+                phaseRef.current = 'idle'
+                setPhase('idle')
             }
-            if (cancelled || phaseRef.current !== 'idle') return
-            try {
-                const rec = new SpeechRecognition()
-                warmupRef.current = rec
-                rec.continuous = false
-                rec.interimResults = false
-                rec.lang = 'en-US'
-                rec.start()
-                setTimeout(() => {
-                    try { rec.abort() } catch {}
-                    if (warmupRef.current === rec) warmupRef.current = null
-                }, 400)
-            } catch {}
-        })()
+        }, CHECK_MARK_MS)
+    }, [onBid, onBuy, onOptimisticBid])
 
-        return () => {
-            cancelled = true
-            try { warmupRef.current?.abort() } catch {}
-            warmupRef.current = null
-        }
-    }, [])
+    const transcribe = useCallback(async (blob: Blob, gen: number) => {
+        phaseRef.current = 'listening'
+        setPhase('listening')
+        setLabel('Checking…')
 
-    const processResult = useCallback(() => {
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-
-        phaseRef.current = 'idle'
-        setPhase('idle')
-        setElapsed(0)
-
-        const transcript = transcriptRef.current
-
-        if (!transcript) {
+        if (!blob.size) {
             showError('No speech')
             return
         }
 
-        const parsed = parseTranscript(transcript)
-
-        if (!parsed) {
-            showError('Try again')
-            return
-        }
-
-        vibrate(30)
-
-        if (parsed.action === 'BUY' && onBuy) {
-            onBuy(parsed.amount)
-        } else {
-            void onBid(parsed.amount)
-        }
-    }, [onBid, onBuy, showError])
-
-    const finalize = useCallback((force = false) => {
-        // Mic never actually started (slow init): extend the wait once instead
-        // of instantly reporting "No speech"
-        if (!force && !processedRef.current && finishingRef.current &&
-            !recognitionActiveRef.current && !transcriptRef.current &&
-            !graceExtendedRef.current) {
-            graceExtendedRef.current = true
-            graceTimerRef.current = setTimeout(() => {
-                graceTimerRef.current = null
-                finalize()
-            }, RELEASE_GRACE_MS)
-            return
-        }
-        if (processedRef.current) return
-        processedRef.current = true
-        finishingRef.current = false
-        if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
-        if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
-        if (handoffTimerRef.current) { clearTimeout(handoffTimerRef.current); handoffTimerRef.current = null }
-        if (recognitionRef.current) {
-            const rec = recognitionRef.current
-            recognitionRef.current = null
-            try { rec.stop() } catch {}
-        }
-        recognitionActiveRef.current = false
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        processResult()
-    }, [processResult])
-
-    const submitFallbackAudio = useCallback(async (blob: Blob) => {
-        if (processedRef.current) return
-        const genAtStart = sessionGenRef.current
-        processedRef.current = true
-        finishingRef.current = false
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-
-        if (!blob.size) {
-            processResult()
-            return
-        }
-
-        setProcessing(true)
         try {
             const form = new FormData()
-            form.append('audio', blob, `speech.${extForMime(blob.type || 'audio/webm')}`)
+            form.append('audio', blob, `speech.${extForMime(blob.type)}`)
             const ctrl = new AbortController()
             const timeout = setTimeout(() => ctrl.abort(), TRANSCRIBE_TIMEOUT_MS)
-            const res = await fetch('/api/voice/transcribe', {
-                method: 'POST',
-                body: form,
-                signal: ctrl.signal,
-            })
+            const res = await fetch('/api/voice/transcribe', { method: 'POST', body: form, signal: ctrl.signal })
             clearTimeout(timeout)
 
-            // A newer hold gesture started while we were uploading: drop this
-            // result entirely rather than corrupting the new session.
-            if (sessionGenRef.current !== genAtStart) return
+            if (gen !== genRef.current) return
 
             const data = await res.json().catch(() => ({}))
-            setProcessing(false)
-
             if (!res.ok) {
-                showError(res.status === 503 ? 'Voice setup missing' : 'Could not hear you')
+                showError(res.status === 503 ? 'Setup missing' : 'No speech')
                 return
             }
-            transcriptRef.current = String(data.text ?? '').trim()
+
+            const text = String(data.text ?? '').trim()
+            lastTranscriptRef.current = text
+            const parsed = parseTranscript(text)
+            if (!parsed) {
+                showError(text ? 'Try again' : 'No speech')
+                return
+            }
+            placeBid(parsed, gen)
         } catch {
-            if (sessionGenRef.current !== genAtStart) return
-            setProcessing(false)
+            if (gen !== genRef.current) return
             showError('Network error')
+        }
+    }, [placeBid, showError])
+
+    // ==== Recording path: capture audio from t=0 so even a dead native engine
+    // never loses your speech. ====
+    const startRecorder = useCallback((gen: number) => {
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
             return
         }
-
-        processResult()
-    }, [processResult, showError])
-
-    const finishFallbackCapture = useCallback(() => {
-        const recorder = mediaRecorderRef.current
-        if (!recorder) {
-            // Stream still being acquired; startFallback will auto-stop it
-            pendingReleaseRef.current = true
-            return
-        }
-        try {
-            if (recorder.state === 'inactive') {
-                mediaRecorderRef.current = null
-                const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        navigator.mediaDevices
+            .getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+            .then((stream) => {
+                if (gen !== genRef.current || phaseRef.current !== 'listening') {
+                    stream.getTracks().forEach((t) => { try { t.stop() } catch {} })
+                    return
+                }
+                const mime = pickRecorderMime()
+                let recorder: MediaRecorder
+                try {
+                    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
+                } catch {
+                    stream.getTracks().forEach((t) => { try { t.stop() } catch {} })
+                    return
+                }
                 chunksRef.current = []
-                teardownMedia()
-                void submitFallbackAudio(blob)
-            } else {
-                recorder.stop()
-            }
-        } catch {
-            teardownMedia()
-            if (!processedRef.current) {
-                processedRef.current = true
-                showError('Voice failed')
-            }
-        }
-    }, [submitFallbackAudio, teardownMedia, showError])
+                recorder.ondataavailable = (e: any) => {
+                    if (gen === genRef.current && e.data && e.data.size > 0) chunksRef.current.push(e.data)
+                }
+                recorder.onstop = () => {
+                    if (gen !== genRef.current) return
+                    const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || 'audio/webm' })
+                    stopRecorder()
+                    void transcribe(blob, gen)
+                }
+                recorderRef.current = recorder
+                streamRef.current = stream
+                try { recorder.start(200) } catch {
+                    stopRecorder()
+                }
+            })
+            .catch(() => {})
+    }, [stopRecorder, transcribe])
 
-    const finishRecording = useCallback((cancelled: boolean) => {
-        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-
-        if (cancelled) {
-            processedRef.current = true
-            finishingRef.current = false
-            if (graceTimerRef.current) { clearTimeout(graceTimerRef.current); graceTimerRef.current = null }
-            if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null }
-            if (handoffTimerRef.current) { clearTimeout(handoffTimerRef.current); handoffTimerRef.current = null }
-            if (recognitionRef.current) {
-                const rec = recognitionRef.current
-                recognitionRef.current = null
-                try { rec.stop() } catch {}
-            }
-            teardownMedia()
-            recognitionActiveRef.current = false
-            phaseRef.current = 'idle'
-            setPhase('idle')
-            setElapsed(0)
-            setMicReady(false)
-            return
-        }
-
-        // Released while recording via MediaRecorder: audio up to this moment
-        // is complete, transcribe immediately (no artificial wait)
-        if (usingFallbackRef.current) {
-            finishingRef.current = true
-            phaseRef.current = 'idle'
-            setPhase('idle')
-            setElapsed(0)
-            setMicReady(false)
-            finishFallbackCapture()
-            return
-        }
-
-        // Released on the Web Speech path: keep the recognizer alive briefly
-        // so it can flush its pending/final results before we read them.
-        finishingRef.current = true
-        phaseRef.current = 'idle'
-        setPhase('idle')
-        setElapsed(0)
-
-        graceTimerRef.current = setTimeout(() => {
-            graceTimerRef.current = null
-            finalize()
-        }, RELEASE_GRACE_MS)
-    }, [finalize, finishFallbackCapture, teardownMedia])
-
-    const startRecording = useCallback(async () => {
-        if (disabled) return
-
-        // Flush any previous session still winding down
-        if (finishingRef.current || graceTimerRef.current || restartTimerRef.current || handoffTimerRef.current) {
-            finalize(true)
-        }
-
+    const startNative = useCallback((gen: number) => {
         const SpeechRecognition =
             (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+        if (!SpeechRecognition) return
 
-        if (!SpeechRecognition && !navigator.mediaDevices?.getUserMedia) {
-            showError('Voice not supported')
-            return
+        const rec = new SpeechRecognition()
+        rec.continuous = true
+        rec.interimResults = true
+        rec.lang = lang
+        rec.maxAlternatives = 1
+
+        rec.onstart = () => { if (gen === genRef.current) { srLiveRef.current = true } }
+        rec.onaudiostart = () => { if (gen === genRef.current) { srLiveRef.current = true } }
+
+        rec.onresult = (event: any) => {
+            if (gen !== genRef.current) return
+            srLiveRef.current = true
+
+            let sessionFinal = ''
+            let lastInterim = ''
+            for (let i = 0; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    sessionFinal += event.results[i][0].transcript + ' '
+                } else {
+                    lastInterim = event.results[i][0].transcript
+                }
+            }
+            sessionFinal = sessionFinal.trim()
+            sessionFinalRef.current = sessionFinal
+
+            const base = prevFinalsRef.current ? prevFinalsRef.current + ' ' : ''
+            lastTranscriptRef.current = (base + (sessionFinal || lastInterim)).trim()
         }
 
-        vibrate(50)
-        isCancelledRef.current = false
-        releasedDuringStartupRef.current = false
-        transcriptRef.current = ''
-        prevTranscriptRef.current = ''
-        sessionFinalRef.current = ''
-        processedRef.current = false
-        finishingRef.current = false
-        graceExtendedRef.current = false
-        recognitionActiveRef.current = false
-        usingFallbackRef.current = false
-        pendingReleaseRef.current = false
-        chunksRef.current = []
-
-        // Kill any pending warm-up session so it can't collide with the mic
-        try { warmupRef.current?.abort() } catch {}
-        warmupRef.current = null
-
-        // Set phase immediately so UI responds
-        phaseRef.current = 'recording'
-        setPhase('recording')
-
-        startTimeRef.current = Date.now()
-        setElapsed(0)
-        timerRef.current = setInterval(() => {
-            setElapsed(Date.now() - startTimeRef.current)
-        }, 100)
-
-        const giveUp = (msg: string) => {
-            if (processedRef.current) return
-            processedRef.current = true
-            finishingRef.current = false
-            clearHandoff()
-            teardownCurrentRecognition()
-            teardownMedia()
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-            if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
-            phaseRef.current = 'idle'
-            setPhase('idle')
-            setElapsed(0)
-            setMicReady(false)
-            showError(msg)
+        rec.onerror = (e: any) => {
+            if (gen !== genRef.current) return
+            // A dead/failing engine is fine — the recorder has the audio.
+            console.warn('[voice] native error:', e.error)
         }
 
-        const clearHandoff = () => {
-            if (handoffTimerRef.current) { clearTimeout(handoffTimerRef.current); handoffTimerRef.current = null }
+        rec.onend = () => {
+            if (gen !== genRef.current) return
+            // Engine ended the session on its own (typical on Android, where the
+            // recognizer stops after an utterance even with continuous=true).
+            // Carry the last finals and re-open it if the user is still holding.
+            if (phaseRef.current !== 'listening') return
+            if (sessionFinalRef.current) {
+                prevFinalsRef.current = (prevFinalsRef.current + ' ' + sessionFinalRef.current).trim()
+                sessionFinalRef.current = ''
+            }
+            if (Date.now() - startTsRef.current >= maxHoldMs - 200) return
+            if (nativeRestartTimerRef.current) clearTimeout(nativeRestartTimerRef.current)
+            nativeRestartTimerRef.current = setTimeout(() => {
+                nativeRestartTimerRef.current = null
+                if (gen !== genRef.current || phaseRef.current !== 'listening') return
+                startNative(gen)
+            }, 120)
         }
 
-        const teardownCurrent = () => {
-            const rec = recognitionRef.current
+        recognitionRef.current = rec
+        try {
+            rec.start()
+        } catch {
             recognitionRef.current = null
-            if (rec) { try { rec.abort() } catch {} }
         }
+    }, [lang, maxHoldMs])
 
-        // ---- Recorded-audio fallback ----
+    const release = useCallback(() => {
+        if (phaseRef.current !== 'listening') return
 
-        const startFallback = async () => {
-            if (phaseRef.current !== 'recording' || processedRef.current) return
-            // Claim a fresh generation: stale native-engine handlers are now inert
-            const gen = ++sessionGenRef.current
+        if (maxHoldTimerRef.current) { clearTimeout(maxHoldTimerRef.current); maxHoldTimerRef.current = null }
+        if (nativeRestartTimerRef.current) { clearTimeout(nativeRestartTimerRef.current); nativeRestartTimerRef.current = null }
 
-            if (!navigator.mediaDevices?.getUserMedia) {
-                giveUp('Voice not supported')
-                return
-            }
-
-            usingFallbackRef.current = true
-
-            let stream: MediaStream
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-                })
-            } catch (err: any) {
-                if (gen !== sessionGenRef.current) return
-                const name = err?.name
-                giveUp(
-                    name === 'NotAllowedError' ? 'Allow mic access'
-                        : name === 'NotFoundError' ? 'No microphone found'
-                            : 'Mic failed'
-                )
-                return
-            }
-
-            if (gen !== sessionGenRef.current || processedRef.current) {
-                stream.getTracks().forEach((t) => { try { t.stop() } catch {} })
-                return
-            }
-            mediaStreamRef.current = stream
-
-            const mime = pickRecorderMime()
-            let recorder: MediaRecorder
-            try {
-                recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
-            } catch {
-                stream.getTracks().forEach((t) => { try { t.stop() } catch {} })
-                giveUp('Voice failed')
-                return
-            }
-
-            chunksRef.current = []
-            recorder.ondataavailable = (e: any) => {
-                if (gen !== sessionGenRef.current) return
-                if (e.data && e.data.size > 0) chunksRef.current.push(e.data)
-            }
-            recorder.onstop = () => {
-                if (gen !== sessionGenRef.current) return
-                const blob = new Blob(chunksRef.current, { type: recorder.mimeType || mime || 'audio/webm' })
-                chunksRef.current = []
-                teardownMedia()
-                void submitFallbackAudio(blob)
-            }
-
-            mediaRecorderRef.current = recorder
-            recognitionActiveRef.current = true
-            setMicReady(true)
-
-            try {
-                recorder.start(250)
-            } catch {
-                teardownMedia()
-                giveUp('Voice failed')
-                return
-            }
-
-            // User already released while the mic was still being acquired
-            if ((finishingRef.current || pendingReleaseRef.current) && !processedRef.current) {
-                finishFallbackCapture()
-            }
-        }
-
-        // ---- Native Web Speech path ----
-
-        const spawn = () => {
-            if (phaseRef.current !== 'recording' || processedRef.current) return
-
-            if (!SpeechRecognition) {
-                void startFallback()
-                return
-            }
-
-            // Generation token: aborted/stale instances fire events late; they
-            // must never touch shared state or the live instance's timers.
-            const gen = ++sessionGenRef.current
-
-            const recognition = new SpeechRecognition()
-            // Android Chrome misbehaves with continuous mode: use single-shot
-            // there and restart manually from onend.
-            recognition.continuous = !isAndroid()
-            recognition.interimResults = true
-            recognition.lang = 'en-US'
-            recognition.maxAlternatives = 1
-
-            const isLive = () => gen === sessionGenRef.current
-
-            const markLive = () => {
-                if (!isLive()) return
-                recognitionActiveRef.current = true
-                setMicReady(true)
-                clearHandoff()
-            }
-
-            recognition.onstart = markLive
-            recognition.onaudiostart = markLive
-
-            recognition.onresult = (event: any) => {
-                if (!isLive()) return
-                markLive()
-
-                let sessionFinal = ''
-                let lastInterim = ''
-                for (let i = 0; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        sessionFinal += event.results[i][0].transcript + ' '
-                    } else {
-                        lastInterim = event.results[i][0].transcript
-                    }
-                }
-                sessionFinal = sessionFinal.trim()
-                sessionFinalRef.current = sessionFinal
-
-                const base = prevTranscriptRef.current ? prevTranscriptRef.current + ' ' : ''
-                if (sessionFinal) {
-                    transcriptRef.current = (base + sessionFinal).trim()
-                } else if (lastInterim.trim()) {
-                    transcriptRef.current = (base + lastInterim.trim()).trim()
-                }
-
-                // While waiting out the release window, a final result means we're done
-                if (finishingRef.current && sessionFinal && graceTimerRef.current) {
-                    clearTimeout(graceTimerRef.current)
-                    graceTimerRef.current = setTimeout(() => {
-                        graceTimerRef.current = null
-                        finalize()
-                    }, 100)
-                }
-            }
-
-            recognition.onerror = (e: any) => {
-                if (!isLive()) return
-                if (e.error === 'no-speech' || e.error === 'aborted') return
-                console.warn('[voice] recognition error:', e.error)
-                // Engine failing (dead service, network, permission) — switch to
-                // the recorded-audio fallback within the same hold gesture.
-                teardownCurrent()
-                void startFallback()
-            }
-
-            recognition.onend = () => {
-                if (!isLive()) return
-                recognitionActiveRef.current = false
-                clearHandoff()
-
-                // Ended during the post-release window: results are flushed, wrap up
-                if (finishingRef.current) {
-                    if (graceTimerRef.current) clearTimeout(graceTimerRef.current)
-                    graceTimerRef.current = setTimeout(() => {
-                        graceTimerRef.current = null
-                        finalize()
-                    }, 100)
-                    return
-                }
-
-                if (phaseRef.current !== 'recording') return
-
-                if (Date.now() - startTimeRef.current >= MAX_RECORDING_MS - 500) {
-                    finishRecording(false)
-                    return
-                }
-
-                // Still holding: the engine ends the session after each utterance
-                // or silence gap. Carry over what we heard and listen again.
-                if (sessionFinalRef.current) {
-                    prevTranscriptRef.current =
-                        (prevTranscriptRef.current + ' ' + sessionFinalRef.current).trim()
-                    sessionFinalRef.current = ''
-                }
-
-                if (restartTimerRef.current) clearTimeout(restartTimerRef.current)
-                restartTimerRef.current = setTimeout(() => {
-                    restartTimerRef.current = null
-                    if (phaseRef.current !== 'recording' || processedRef.current) return
-                    spawn()
-                }, 150)
-            }
-
-            recognitionRef.current = recognition
-
-            try {
-                recognition.start()
-            } catch {
-                teardownCurrent()
-                void startFallback()
-                return
-            }
-
-            // If the engine shows no sign of life shortly after start(), hand
-            // off to the recorded-audio fallback instead of hanging.
-            clearHandoff()
-            handoffTimerRef.current = setTimeout(() => {
-                handoffTimerRef.current = null
-                if (gen !== sessionGenRef.current) return
-                if (phaseRef.current !== 'recording' || processedRef.current) return
-                if (recognitionActiveRef.current) return
-                teardownCurrent()
-                void startFallback()
-            }, FALLBACK_HANDOFF_MS)
-        }
-
-        spawn()
-
-        // Auto-stop after max duration
-        maxTimerRef.current = setTimeout(() => {
-            maxTimerRef.current = null
-            if (phaseRef.current === 'recording') finishRecording(false)
-        }, MAX_RECORDING_MS)
-
-        // If user released during startup, finish now
-        if (releasedDuringStartupRef.current) {
-            finishRecording(false)
-        }
-    }, [disabled, showError, finishRecording, finalize, finishFallbackCapture, submitFallbackAudio, teardownMedia])
-
-    const handlePointerDown = useCallback((e: React.PointerEvent) => {
-        if (disabled || phaseRef.current === 'recording') return
-        e.preventDefault()
-        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-        pointerStartRef.current = { x: e.clientX, y: e.clientY }
-        startRecording()
-    }, [disabled, startRecording])
-
-    const handlePointerMove = useCallback((e: React.PointerEvent) => {
-        if (phaseRef.current !== 'recording' || !pointerStartRef.current) return
-        const dx = e.clientX - pointerStartRef.current.x
-        const dy = e.clientY - pointerStartRef.current.y
-        const distance = Math.sqrt(dx * dx + dy * dy)
-
-        if (dx < -CANCEL_THRESHOLD_PX || distance > CANCEL_THRESHOLD_PX) {
-            isCancelledRef.current = true
-            phaseRef.current = 'cancelled'
-            setPhase('cancelled')
-        }
-    }, [])
-
-    const handlePointerUp = useCallback(() => {
-        // Ignore duplicate/late pointerups (e.g. during the release grace window)
-        if (finishingRef.current) return
-        // If recognition hasn't started yet, flag it and finishRecording will pick it up
-        if (phaseRef.current === 'idle') {
-            releasedDuringStartupRef.current = true
+        // The GRACE notes: take the latest transcript NOW and try to send
+        // immediately. Do not wait for onend.
+        const transcript = lastTranscriptRef.current
+        const parsed = parseTranscript(transcript)
+        if (parsed) {
+            const gen = genRef.current
+            stopNative()
+            stopRecorder()
+            placeBid(parsed, gen)
             return
         }
-        if (phaseRef.current !== 'recording' && phaseRef.current !== 'cancelled') return
 
+        // No usable native result. If the recorder has audio from this hold,
+        // stop it and transcribe (the reliable path for broken-engine devices).
+        if (recorderRef.current && recorderRef.current.state === 'recording') {
+            stopNative()
+            try { recorderRef.current.stop() } catch {}
+            return // recorder.onstop will transcribe for this gen
+        }
+
+        // Neither source produced anything.
+        const gen = genRef.current
+        stopNative()
+        stopRecorder()
+        showError('No speech')
+    }, [placeBid, showError, stopNative, stopRecorder])
+
+    const handleDown = useCallback((e: React.PointerEvent | React.TouchEvent) => {
+        if (disabled || phaseRef.current !== 'idle') return
+        e.preventDefault()
+
+        let x = 0, y = 0
+        if ('clientX' in e) {
+            x = e.clientX; y = e.clientY
+        } else if (e.touches && e.touches[0]) {
+            x = e.touches[0].clientX; y = e.touches[0].clientY
+        }
+        pointerStartRef.current = { x, y }
+
+        phaseRef.current = 'listening'
+        setPhase('listening')
+        setLabel('Listening…')
+        vibrate(20)
+
+        const gen = ++genRef.current
+        lastTranscriptRef.current = ''
+        prevFinalsRef.current = ''
+        sessionFinalRef.current = ''
+        srLiveRef.current = false
+        cancelWindowRef.current = false
+        cancelFiredRef.current = false
+        startTsRef.current = Date.now()
+
+        // Run both in parallel: native engine (instant results where it works)
+        // and the recorder (guaranteed capture where it doesn't).
+        startRecorder(gen)
+        startNative(gen)
+
+        if (maxHoldTimerRef.current) clearTimeout(maxHoldTimerRef.current)
+        maxHoldTimerRef.current = setTimeout(() => {
+            maxHoldTimerRef.current = null
+            if (phaseRef.current === 'listening') release()
+        }, maxHoldMs)
+    }, [disabled, maxHoldMs, release, startNative, startRecorder])
+
+    const handleMove = useCallback((e: React.PointerEvent | React.TouchEvent) => {
+        if (phaseRef.current !== 'listening' && phaseRef.current !== 'sending') return
+        if (!pointerStartRef.current) return
+
+        let x = 0, y = 0
+        if ('clientX' in e) {
+            x = e.clientX; y = e.clientY
+        } else if (e.touches && e.touches[0]) {
+            x = e.touches[0].clientX; y = e.touches[0].clientY
+        }
+        const dx = x - pointerStartRef.current.x
+        const dy = y - pointerStartRef.current.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        if (dx < -SLIDE_CANCEL_PX || dist > SLIDE_CANCEL_PX * 1.5) {
+            if (phaseRef.current === 'listening') {
+                // Slide-left while holding = abort, don't send anything.
+                phaseRef.current = 'idle'
+                setPhase('idle')
+                setLabel(null)
+                pointerStartRef.current = null
+                const gen = ++genRef.current // invalidate everything
+                stopNative()
+                stopRecorder()
+                vibrate(10)
+            } else if (phaseRef.current === 'sending' && cancelWindowRef.current && !cancelFiredRef.current) {
+                // Slide-left within the post-send cancel window = undo the bid
+                cancelFiredRef.current = true
+                cancelWindowRef.current = false
+                void onCancelBid?.()
+                vibrate(10)
+            }
+        }
+    }, [onCancelBid, stopNative, stopRecorder])
+
+    const handleUp = useCallback((_e: React.PointerEvent | React.TouchEvent) => {
         pointerStartRef.current = null
-        setMicReady(false)
-        const cancelled = isCancelledRef.current
-        finishRecording(cancelled)
-    }, [finishRecording])
 
-    const handlePointerUpEvent = useCallback((_e: React.PointerEvent) => {
-        handlePointerUp()
-    }, [handlePointerUp])
-
-    const elapsedSec = Math.floor(elapsed / 1000)
-    const elapsedMs = Math.floor((elapsed % 1000) / 100)
-    const timerText = `${elapsedSec}.${elapsedMs}s`
+        if (phaseRef.current === 'listening') {
+            release()
+            return
+        }
+        if (phaseRef.current === 'sending') {
+            return // keep showing the green check until the 200ms timer flips it
+        }
+        if (phaseRef.current === 'error') {
+            return
+        }
+    }, [release])
 
     const button = (
         <>
             <AnimatePresence>
-                {(phase === 'recording' || phase === 'cancelled') && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-40 bg-black/30"
-                        onPointerUp={handlePointerUpEvent}
-                        onPointerMove={handlePointerMove}
-                    />
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {phase === 'recording' && (
+                {(phase === 'listening') && (
                     <motion.div
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 40 }}
-                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3"
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2"
                     >
-                        <div className="bg-black/70 text-white text-sm font-mono font-bold px-4 py-1.5 rounded-full">
-                            {micReady ? timerText : 'Starting…'}
+                        <div className="bg-black/80 text-white text-sm font-bold px-4 py-1.5 rounded-full animate-pulse">
+                            {label ?? 'Listening…'}
                         </div>
+                        <div className="text-white/50 text-[11px] font-medium">Slide left to cancel</div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
-                {processing && (
+                {phase === 'sending' && (
                     <motion.div
-                        key="processing"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-black/70 text-white text-xs font-semibold px-4 py-2 rounded-full"
-                    >
-                        Placing your bid…
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {phase === 'recording' && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="fixed bottom-44 left-1/2 -translate-x-1/2 z-50 text-white/50 text-xs font-medium"
-                    >
-                        Slide left to cancel
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-                {phase === 'cancelled' && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.9 }}
+                        initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.9 }}
-                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-black/70 text-white/70 text-sm font-medium px-5 py-2.5 rounded-full"
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2"
                     >
-                        Release to cancel
+                        <div className="bg-green-500 text-white text-sm font-bold px-4 py-1.5 rounded-full">
+                            Bid placed ✓
+                        </div>
+                        <div className="text-white/50 text-[11px] font-medium">Slide left to cancel</div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
             <AnimatePresence>
-                {errorText && (
+                {phase === 'error' && label && (
                     <motion.div
-                        key={errorText}
-                        initial={{ opacity: 0, y: 6, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                        transition={{ duration: 0.25 }}
-                        className="fixed bottom-22 right-4 z-50 bg-red-500/90 text-white text-xs font-semibold px-3 py-1.5 rounded-full shadow-md pointer-events-none"
+                        key={label}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white text-xs font-semibold px-4 py-1.5 rounded-full"
                     >
-                        {errorText}
+                        {label}
                     </motion.div>
                 )}
             </AnimatePresence>
 
             <button
-                onPointerDown={handlePointerDown}
-                onPointerUp={handlePointerUpEvent}
-                onPointerMove={handlePointerMove}
-                onPointerCancel={() => { if (phaseRef.current === 'recording') { isCancelledRef.current = true; finishRecording(true) } }}
+                onPointerDown={handleDown}
+                onPointerMove={handleMove}
+                onPointerUp={handleUp}
+                onPointerCancel={handleUp}
+                onTouchStart={!(window as any).PointerEvent ? handleDown : undefined}
+                onTouchMove={!(window as any).PointerEvent ? handleMove : undefined}
+                onTouchEnd={!(window as any).PointerEvent ? handleUp : undefined}
+                onTouchCancel={!(window as any).PointerEvent ? handleUp : undefined}
                 disabled={disabled}
-                className={`${renderInline
-                    ? 'size-14 rounded-full bg-transparent text-black flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95'
-                    : 'fixed bottom-6 right-6 z-50 size-14 rounded-full bg-black text-white shadow-lg flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 active:scale-95'
-                }`}
+                className={`size-14 rounded-full flex items-center justify-center select-none touch-none transition-transform duration-150 disabled:opacity-40 ${
+                    disabled
+                        ? 'bg-gray-400 text-white cursor-not-allowed'
+                        : phase === 'listening'
+                            ? 'bg-red-500 text-white shadow-lg shadow-red-500/40 active:scale-95 animate-pulse'
+                            : phase === 'sending'
+                                ? 'bg-green-500 text-white shadow-lg shadow-green-500/40'
+                                : 'bg-gray-900 text-white shadow-lg active:scale-95'
+                } ${renderInline ? '' : 'fixed bottom-6 right-6 z-50'}`}
                 aria-label="Hold to speak a bid"
             >
-                <Mic className="size-6" />
+                <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                        key={phase === 'sending' ? 'check' : 'mic'}
+                        initial={{ opacity: 0, scale: 0.5 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        transition={{ duration: 0.1 }}
+                    >
+                        {phase === 'sending' ? <Check className="size-6" /> : <Mic className="size-6" />}
+                    </motion.span>
+                </AnimatePresence>
             </button>
         </>
     )
 
-    // BIG SIS REQUEST: renderInline skips portal so parent can position it
-    if (renderInline) return button
     return createPortal(button, document.body)
 }
