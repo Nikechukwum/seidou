@@ -537,7 +537,7 @@ export default function VoiceBidButton({
         }
     }, [release])
 
-    const button = (
+    const overlays = (
         <>
             <AnimatePresence>
                 {(phase === 'listening') && (
@@ -584,7 +584,11 @@ export default function VoiceBidButton({
                     </motion.div>
                 )}
             </AnimatePresence>
+        </>
+    )
 
+    const button = (
+        <>
             <button
                 onPointerDown={handleDown}
                 onPointerMove={handleMove}
@@ -603,7 +607,7 @@ export default function VoiceBidButton({
                             : phase === 'sending'
                                 ? 'bg-green-500 text-white shadow-lg shadow-green-500/40'
                                 : 'bg-gray-900 text-white shadow-lg active:scale-95'
-                } ${renderInline ? '' : 'fixed bottom-6 right-6 z-50'}`}
+                } ${renderInline ? '' : 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50'}`}
                 aria-label="Hold to speak a bid"
             >
                 <AnimatePresence mode="wait" initial={false}>
@@ -621,5 +625,16 @@ export default function VoiceBidButton({
         </>
     )
 
-    return createPortal(button, document.body)
+    return renderInline ? (
+        <>
+            {createPortal(overlays, document.body)}
+            {button}
+        </>
+    ) : createPortal(
+        <>
+            {overlays}
+            {button}
+        </>,
+        document.body,
+    )
 }
