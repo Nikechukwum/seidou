@@ -23,6 +23,7 @@ interface CrashGameState {
   // Game state
   gameState: GameState;
   multiplier: number;
+  crashPoint: number;
   cashoutMultiplier: number;
   nextGameTimestamp: number | null;
 
@@ -43,6 +44,7 @@ const initialState: CrashGameState = {
   // Game state
   gameState: 'idle',
   multiplier: 1,
+  crashPoint: 2,
   cashoutMultiplier: 0,
   nextGameTimestamp: null,
 
@@ -123,7 +125,7 @@ const crashGameSlice = createSlice({
 
       state.history = generateHistory();
       state.gameState = 'betting';
-      state.nextGameTimestamp = Date.now() + 10000;
+      state.nextGameTimestamp = Date.now() + 5000;
       state.multiplier = 1;
       state.cashoutMultiplier = 0;
     },
@@ -132,6 +134,7 @@ const crashGameSlice = createSlice({
     startRound: (state, action: PayloadAction<{ crashPoint: number; duration: number }>) => {
       state.gameState = 'flying';
       state.multiplier = 1;
+      state.crashPoint = action.payload.crashPoint;
       state.cashoutMultiplier = 0;
       state.currentBet = {
         ...state.currentBet,
@@ -180,10 +183,12 @@ const crashGameSlice = createSlice({
       const crashPoint = action.payload;
       state.gameState = 'crashed';
       state.multiplier = crashPoint;
+      state.crashPoint = crashPoint;
 
       // Add to history
+      
       const newHistoryItem: HistoryItem = {
-        id: state.history.length > 0 ? state.history[0].id + 1 : 1,
+        id: Date.now(),
         crashPoint,
         timestamp: Date.now(),
       };
@@ -205,6 +210,7 @@ const crashGameSlice = createSlice({
     resetGame: (state) => {
       state.gameState = 'betting';
       state.multiplier = 1;
+      state.crashPoint = 2;
       state.nextGameTimestamp = Date.now() + 5000;
       state.currentBet = {
         amount: 0,

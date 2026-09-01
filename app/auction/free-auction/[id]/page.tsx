@@ -382,7 +382,7 @@ const LeaderboardPage = () => {
             className={`px-4 bg-[#f5f5f5] ${bottomPadding}`}
             extraButton={
                 <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-base text-[#111827]">
+                    <span className="font-bold text-base text-[#111827] whitespace-nowrap">
                         B {(user?.bidding_balance ?? 0).toLocaleString()}
                     </span>
                     <div className="flex items-center justify-center size-8 rounded-full bg-gray-100">
