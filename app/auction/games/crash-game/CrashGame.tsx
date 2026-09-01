@@ -4,8 +4,13 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { motion, useAnimationControls, AnimatePresence } from 'motion/react';
 import { Volume2, VolumeX, ChevronDown } from 'lucide-react';
-import { PageLayout } from '@/components/PageLayout';
+import { createClient } from '@/lib/supabase/client';
 import type { RootState, AppDispatch } from '@/redux/store';
+
+// BIG SIS REQUEST: official Aviator-style cubic multiplier curve:
+//   multiplier = 1 + MULTIPLIER_CONST * t^3  (t in ms)
+// Constant tuned so rounds feel snappy: ~6s to 2x, ~12.5s to 10x, ~17s to 25x.
+const MULTIPLIER_CONST = 4.6e-12;
 import {
   initializeGame,
   startRound,
@@ -16,6 +21,7 @@ import {
   resetGame,
   setBetAmount,
   setAutoCashout,
+  setBalance,
   toggleMute,
   type GameState,
   type HistoryItem,
@@ -336,121 +342,81 @@ function Background({ gameState }: { gameState: GameState }) {
 function Plane({
   gameState,
   multiplier,
+  crashPoint,
   cashoutMultiplier,
 }: {
   gameState: GameState;
   multiplier: number;
+  crashPoint: number;
   cashoutMultiplier: number;
 }) {
   const controls = useAnimationControls();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const startTimeRef = useRef(0);
-  const [planePosition, setPlanePosition] = useState({ x: 5, y: 90 });
-  const [angle, setAngle] = useState(0);
-
-  const CRUISE_MULTIPLIER = 4.0;
-  const MAX_HEIGHT_PERCENT = 40;
-  const START_HEIGHT_PERCENT = 90;
-  const BOB_AMPLITUDE_PERCENT = 3;
-  const BOB_FREQUENCY = 2;
+  // BIG SIS REQUEST: Aviator-style flight — duck starts bottom-left, climbs diagonally up-right.
+  // Position maps to multiplier progress (which follows the cubic curve), so speed always syncs
+  // with the multiplier and the duck naturally accelerates toward the crash point.
+  const [style, setStyle] = useState({ x: 4, y: 88, angle: 0 });
 
   useEffect(() => {
-    if (gameState !== 'flying') {
-      startTimeRef.current = 0;
-      return;
+    if (gameState === 'flying') {
+      const p = Math.min(1, Math.max(0, (multiplier - 1) / Math.max(0.01, crashPoint - 1)));
+      // Diagonal climb: x runs bottom-left to right, y rises toward the top.
+      const x = 4 + 82 * p;
+      // Higher power keeps the duck low early then climbs steeply, matching Aviator.
+      const y = 88 - 74 * Math.pow(p, 1.4);
+      // Tilt up as it climbs faster, driven by speed (higher multiplier = steeper).
+      const angle = -18 * Math.min(1, 0.3 + p);
+      setStyle({ x, y, angle });
     }
-
-    if (startTimeRef.current === 0) {
-      startTimeRef.current = Date.now();
-    }
-
-    const elapsedTime = (Date.now() - startTimeRef.current) / 1000;
-
-    const progress = Math.log(multiplier) / Math.log(50);
-    const normalizedProgress = Math.min(1, Math.max(0, progress));
-    const xPositionPercent = 5 + (90 * normalizedProgress);
-
-    let yPositionPercent: number;
-    let planeAngle: number;
-
-    if (multiplier <= CRUISE_MULTIPLIER) {
-      const riseProgress = (multiplier - 1) / (CRUISE_MULTIPLIER - 1);
-      yPositionPercent = START_HEIGHT_PERCENT - ((START_HEIGHT_PERCENT - MAX_HEIGHT_PERCENT) * riseProgress);
-      planeAngle = -20 * riseProgress;
-    } else {
-      const bobOffset = Math.sin(elapsedTime * BOB_FREQUENCY * Math.PI * 2) * BOB_AMPLITUDE_PERCENT;
-      yPositionPercent = MAX_HEIGHT_PERCENT + bobOffset;
-      planeAngle = Math.cos(elapsedTime * BOB_FREQUENCY * Math.PI * 2) * 5;
-    }
-
-    setPlanePosition({ x: xPositionPercent, y: yPositionPercent });
-    setAngle(planeAngle);
-  }, [multiplier, gameState]);
+  }, [multiplier, gameState, crashPoint]);
 
   useEffect(() => {
-    if (gameState === 'betting' || gameState === 'idle') {
-      setPlanePosition({ x: 5, y: START_HEIGHT_PERCENT });
-      setAngle(0);
-      startTimeRef.current = 0;
-    }
-
     if (gameState === 'crashed') {
+      // BIG SIS REQUEST: no delay — duck flies off-screen fast and instantly disappears.
       controls.start({
-        y: 300,
-        rotate: 90,
-        opacity: [1, 0.8, 0.6, 0.4, 0],
-        transition: { duration: 1, ease: 'easeIn' },
+        x: 240,
+        y: -160,
+        rotate: 40,
+        opacity: [1, 1, 0],
+        transition: { duration: 0.35, ease: 'easeIn' },
       });
     } else {
-      controls.start({
-        y: 0,
-        rotate: 0,
-        opacity: 1,
-        transition: { duration: 0.3 },
-      });
+      controls.start({ x: 0, y: 0, rotate: 0, opacity: 1, transition: { duration: 0.1 } });
     }
   }, [gameState, controls]);
 
-  return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden pointer-events-none">
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <line
-          x1="0"
-          y1={MAX_HEIGHT_PERCENT}
-          x2="100"
-          y2={MAX_HEIGHT_PERCENT}
-          stroke="rgba(255,255,255,0.1)"
-          strokeWidth="0.2"
-          strokeDasharray="2,1"
-        />
-      </svg>
+  // Duck is hidden while READY/counting down, flies during FLYING, and stays visible
+  // briefly so the crash fly-off animation shows before reset.
+  const visible = gameState === 'flying' || gameState === 'crashed';
 
-      <div className="absolute top-0 left-0 w-full h-full overflow-visible">
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-visible">
         <motion.div
           animate={controls}
           style={{
             position: 'absolute',
-            left: `${planePosition.x}%`,
-            top: `${planePosition.y}%`,
+            left: `${visible ? style.x : 4}%`,
+            top: `${visible ? style.y : 88}%`,
             transformOrigin: 'center center',
             zIndex: 40,
+            opacity: visible ? 1 : 0,
           }}
         >
+          {/* BIG SIS REQUEST: motion-blur trail behind the duck, opposite flight direction */}
+          <div className="absolute top-1/2 right-3 -translate-y-1/2 w-24 md:w-36 h-4 bg-gradient-to-l from-yellow-300/50 via-yellow-300/20 to-transparent rounded-full blur-md translate-x-full" />
+
           <motion.div
             className={`w-20 h-20 md:w-28 md:h-28 flex items-center justify-center -mt-10 -ml-10 md:-mt-14 md:-ml-14
-              ${gameState === 'crashed'
-                ? 'text-red-500'
-                : cashoutMultiplier > 0
-                ? 'text-green-500'
-                : 'text-yellow-300'
-              }`}
-            style={{
-              transform: `rotate(${angle}deg)`,
-              transition: 'transform 0.1s ease-out',
-            }}
+              ${cashoutMultiplier > 0 ? 'text-green-500' : 'text-yellow-300'}`}
+            style={{ transform: `rotate(${style.angle}deg)`, transition: 'transform 0.08s linear' }}
+            // BIG SIS REQUEST: subtle wing flap + wobble so it feels alive, not a straight line
+            animate={
+              visible
+                ? { scale: [1, 1.12, 1, 0.92, 1], rotate: [style.angle, style.angle + 3, style.angle - 3, style.angle] }
+                : {}
+            }
+            transition={{ duration: visible ? 0.5 : 0, repeat: Infinity, ease: 'easeInOut' }}
           >
-            <div className="absolute inset-0 rounded-full bg-white/40 blur-md" />
-
             <svg
               viewBox="0 0 24 24"
               width="100%"
@@ -458,7 +424,6 @@ function Plane({
               fill="currentColor"
               strokeWidth="0.5"
               stroke="#000"
-              className={gameState === 'crashed' ? 'animate-spin' : ''}
               style={{ filter: 'drop-shadow(0 0 15px rgba(255,255,255,0.9))' }}
             >
               <path d="M23,11C22.14,11 21.35,11.32 20.75,11.83C20.38,11.32 19.89,10.91 19.31,10.63C19.75,10.33 20.09,9.89 20.27,9.37C20.45,8.84 20.45,8.28 20.27,7.76C20.09,7.24 19.75,6.8 19.31,6.5C18.87,6.2 18.35,6.03 17.8,6.03C17.24,6.03 16.73,6.2 16.29,6.5C15.84,6.8 15.5,7.23 15.33,7.76C15.15,8.29 15.15,8.85 15.33,9.37C15.5,9.89 15.84,10.33 16.29,10.63C15.57,10.97 15,11.57 14.68,12.32C14.15,12.12 13.58,12 13,12C12.24,12 11.5,12.18 10.85,12.5L14.68,8.68C14.86,8.5 15,8.28 15.08,8.03C15.14,7.79 15.14,7.53 15.08,7.28C15,7.04 14.86,6.82 14.68,6.64C14.5,6.46 14.28,6.32 14.03,6.24C13.79,6.18 13.53,6.18 13.28,6.24C13.04,6.32 12.82,6.46 12.64,6.64L10.87,8.41C10.82,8.17 10.78,7.92 10.73,7.67C10.64,7.17 10.5,6.67 10.3,6.19C10.1,5.71 9.85,5.27 9.54,4.86C9.24,4.45 8.89,4.09 8.5,3.77C8.12,3.44 7.68,3.18 7.23,2.97C6.77,2.76 6.28,2.62 5.79,2.55C5.29,2.47 4.79,2.47 4.29,2.54C3.79,2.61 3.31,2.75 2.85,2.96C3.09,3.78 3.44,4.55 3.89,5.26C4.24,5.83 4.66,6.36 5.13,6.81C5.46,7.15 5.81,7.44 6.19,7.7L4.12,9.77C3.91,9.97 3.76,10.24 3.69,10.53C3.62,10.83 3.64,11.14 3.75,11.42C3.86,11.71 4.04,11.97 4.29,12.15C4.54,12.34 4.83,12.46 5.14,12.5C5.38,12.74 5.68,12.92 6,13C6.83,14.74 8.77,16 11,16C12.96,16 14.69,15.07 15.58,13.67C15.92,13.25 16.17,12.76 16.33,12.24C16.65,12.09 16.94,11.87 17.17,11.6C17.39,11.33 17.56,11.02 17.67,10.69C17.77,10.36 17.8,10.01 17.75,9.67C18.81,9.95 19.94,9.65 20.72,8.86C21.35,9.37 22.14,9.69 23,9.69V11Z" />
@@ -473,12 +438,6 @@ function Plane({
             {cashoutMultiplier > 0 && (
               <div className="absolute -bottom-16 -left-24 z-20">
                 <div className="w-48 h-14 bg-gradient-to-r from-transparent to-green-500/70 rounded-full blur-md" />
-              </div>
-            )}
-
-            {gameState === 'crashed' && (
-              <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2">
-                <div className="w-20 h-20 bg-gradient-to-t from-red-600 to-orange-400 rounded-full blur-md animate-pulse" />
               </div>
             )}
           </motion.div>
@@ -573,6 +532,7 @@ function MultiplierDisplay({ multiplier, gameState }: { multiplier: number; game
         {displayMultiplier}×
       </div>
 
+      {/* BIG SIS REQUEST: progress bar below multiplier */}
       <div className="flex items-center space-x-1 mt-2">
         <div className="flex items-center justify-between w-full max-w-[200px] h-2 bg-slate-800/50 rounded-full overflow-hidden">
           <motion.div
@@ -581,11 +541,6 @@ function MultiplierDisplay({ multiplier, gameState }: { multiplier: number; game
             className="h-full bg-gradient-to-r from-yellow-500 to-red-500"
           />
         </div>
-      </div>
-
-      <div className="flex justify-between w-full max-w-[200px] text-xs font-normal text-white/70 mt-1">
-        <span>1×</span>
-        <span>Max: 50×</span>
       </div>
     </div>
   );
@@ -628,9 +583,20 @@ function CountdownTimer() {
 
 function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { gameState, multiplier, cashoutMultiplier, nextGameTimestamp } = useSelector(
+  const { gameState, multiplier, crashPoint, cashoutMultiplier, nextGameTimestamp, currentBet } = useSelector(
     (state: RootState) => state.crashGame
   );
+
+  // BIG SIS REQUEST: cashout winnings display on game board
+  const currentBetWinningsView = useMemo(() => {
+    if (currentBet.cashedOut) {
+      return currentBet.winnings.toFixed(2);
+    }
+    if (currentBet.active && gameState === 'flying') {
+      return (currentBet.amount * multiplier).toFixed(2);
+    }
+    return '0.00';
+  }, [currentBet, gameState, multiplier]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -657,14 +623,18 @@ function GameCanvas() {
 
       <div className="absolute inset-0 w-full h-full">
         <Background gameState={gameState} />
-        <Plane gameState={gameState} multiplier={multiplier} cashoutMultiplier={cashoutMultiplier} />
+        <Plane gameState={gameState} multiplier={multiplier} crashPoint={crashPoint} cashoutMultiplier={cashoutMultiplier} />
 
-        <div className="absolute inset-0 flex flex-col items-center justify-between p-4">
+        {/* BIG SIS REQUEST: Row 3 content — multiplier centered upper area */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
           <MultiplierDisplay multiplier={multiplier} gameState={gameState} />
 
-          <div className="self-end mb-4 mr-4">
-            <CashoutButton />
-          </div>
+          {/* BIG SIS REQUEST: cashout amount displayed on the game board */}
+          {cashoutMultiplier > 0 && (
+            <div className="mt-3 bg-emerald-600/90 px-5 py-2 rounded-full text-white text-lg font-bold shadow-lg">
+              +{currentBetWinningsView} ({cashoutMultiplier.toFixed(2)}×)
+            </div>
+          )}
         </div>
 
         {gameState === 'crashed' && (
@@ -675,19 +645,16 @@ function GameCanvas() {
           </div>
         )}
 
-        {gameState === 'flying' && cashoutMultiplier > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-green-500/80 px-6 py-3 rounded-lg text-white text-3xl font-bold animate-pulse">
-              CASHED OUT @ {cashoutMultiplier.toFixed(2)}×
-            </div>
-          </div>
-        )}
-
+        {/* BIG SIS REQUEST: Row 4 — timer raised up, above the bottom edge */}
         {gameState === 'betting' && nextGameTimestamp && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2">
+          <div className="absolute top-6 left-1/2 transform -translate-x-1/2">
             <CountdownTimer />
           </div>
         )}
+
+        <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2">
+          <CashoutButton />
+        </div>
       </div>
     </div>
   );
@@ -944,81 +911,95 @@ function BettingPanel() {
       </AnimatePresence>
 
       <div className="p-2">
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="space-y-2">
-            <div className="grid grid-cols-2 justify-between">
-              <label className="text-sm font-medium text-gray-300">Bet Amount</label>
-
-              {betAmount > 0 && (
-                <div className="text-sm">
-                  <div className="text-gray-400 text-xs mb-1">Potential Return</div>
-                  <div className="font-bold text-green-400">
-                    {potentialReturn.toFixed(2)}
-                    <span className="text-xs ml-2 text-green-300">(+{profit.toFixed(2)})</span>
-                  </div>
-                </div>
-              )}
-            </div>
+            <label className="text-sm font-medium text-gray-300">Bet Amount</label>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <div className="flex items-center gap-2 bg-gray-900 rounded-xl p-3">
-                <button
-                  onClick={() => dispatch(setBetAmount(Math.max(betAmount - 10, 1)))}
-                  className="w-5 h-5 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400"
-                >
-                  <span className="text-xl">−</span>
-                </button>
+          {/* FIGMA ROW 5: [ - amount + ] [Potential Return] [Bet] in one horizontal row */}
+          <div className="grid grid-cols-[1fr_auto] items-stretch gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <div className="flex items-center gap-2 bg-gray-900 rounded-xl p-2">
+              <button
+                onClick={() => dispatch(setBetAmount(Math.max(betAmount - 10, 1)))}
+                className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 flex items-center justify-center text-gray-400"
+              >
+                <span className="text-xl">−</span>
+              </button>
 
-                <div className="flex-1 text-center">
-                  <input
-                    type="number"
-                    min={1}
-                    max={balance}
-                    value={inputValue}
-                    onChange={handleBetAmountChange}
-                    className="text-center font-bold bg-transparent border-none focus:outline-none text-white w-full"
-                  />
-                </div>
-
-                <button
-                  onClick={() => dispatch(setBetAmount(betAmount + 10))}
-                  disabled={betAmount + 10 > balance}
-                  className="w-5 h-5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-gray-400"
-                >
-                  <span className="text-xl">+</span>
-                </button>
+              <div className="flex-1 text-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={balance}
+                  value={inputValue}
+                  onChange={handleBetAmountChange}
+                  className="text-center font-bold bg-transparent border-none focus:outline-none text-white w-full"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                {quickBetPresets.map((preset) => (
-                  <button
-                    key={preset.value}
-                    onClick={() => dispatch(setBetAmount(preset.value))}
-                    disabled={preset.value > balance}
-                    className={`py-2 rounded-lg text-sm font-semibold ${
-                      betAmount === preset.value
-                        ? 'bg-gray-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+              <button
+                onClick={() => dispatch(setBetAmount(betAmount + 10))}
+                disabled={betAmount + 10 > balance}
+                className="w-8 h-8 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-gray-400"
+              >
+                <span className="text-xl">+</span>
+              </button>
+            </div>
+
+            {/* Potential Return — directly left of the Bet button, updates live */}
+            <div className="bg-slate-900 rounded-xl px-3 flex flex-col items-center justify-center min-w-[92px]">
+              <div className="text-gray-400 text-[10px] uppercase tracking-wide">Potential Return</div>
+              <div className="font-bold text-green-400 text-lg leading-tight">
+                {potentialReturn.toFixed(2)}
+                <span className="text-xs ml-1 text-green-300">(+{profit.toFixed(2)})</span>
               </div>
             </div>
 
-            <button
-              className="w-full h-full py-4 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold text-lg shadow-lg disabled:opacity-50"
-              onClick={handlePlaceBet}
-              disabled={!canPlaceBet || betAmount <= 0 || betAmount > balance}
-            >
-              <div className="flex flex-col items-center">
-                <span>{isPlacingBet ? 'Placing Bet...' : 'Bet'}</span>
-                <span className="text-sm opacity-90">{betAmount.toFixed(2)} NGN</span>
-              </div>
-            </button>
+            {/* bet/cashout toggle — becomes Cash Out once bet is placed */}
+            {currentBet.active ? (
+              <button
+                className="col-span-2 sm:col-span-1 py-2 px-4 rounded-2xl bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white font-bold text-lg shadow-lg"
+                onClick={() => { if (gameState === 'flying' && !currentBet.cashedOut) dispatch(cashout()); }}
+                disabled={gameState !== 'flying' || currentBet.cashedOut}
+              >
+                <div className="flex flex-col items-center">
+                  <span>{currentBet.cashedOut ? 'Cashed Out' : 'Cash Out'}</span>
+                  <span className="text-sm opacity-90">
+                    {currentBet.cashedOut
+                      ? `+${currentBet.winnings.toFixed(2)}`
+                      : `+${(currentBet.amount * multiplier - currentBet.amount).toFixed(2)} (${multiplier.toFixed(2)}×)`}
+                  </span>
+                </div>
+              </button>
+            ) : (
+              <button
+                className="col-span-2 sm:col-span-1 py-2 px-4 rounded-2xl bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white font-bold text-lg shadow-lg disabled:opacity-50"
+                onClick={handlePlaceBet}
+                disabled={!canPlaceBet || betAmount <= 0 || betAmount > balance}
+              >
+                <div className="flex flex-col items-center">
+                  <span>{isPlacingBet ? 'Placing Bet...' : 'Bet'}</span>
+                  <span className="text-sm opacity-90">{betAmount.toFixed(2)} NGN</span>
+                </div>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {quickBetPresets.map((preset) => (
+              <button
+                key={preset.value}
+                onClick={() => dispatch(setBetAmount(preset.value))}
+                disabled={preset.value > balance}
+                className={`py-2 rounded-lg text-sm font-semibold ${
+                  betAmount === preset.value
+                    ? 'bg-gray-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
 
           {balance > 0 && (
@@ -1032,6 +1013,11 @@ function BettingPanel() {
               className="w-full accent-green-500"
             />
           )}
+
+          {/* GLOBAL RULE 4: Virtual currency disclaimer at bottom of bet area */}
+          <div className="text-center">
+            <span className="text-xs text-slate-500">Virtual currency only. No real money involved.</span>
+          </div>
         </div>
 
         {currentBet.active && (
@@ -1093,7 +1079,8 @@ function HistoryPanel() {
   const { history } = useSelector((state: RootState) => state.crashGame);
   const [isOpen, setIsOpen] = useState(false);
 
-  const visibleHistory = history.slice(-5).reverse();
+  // BIG SIS REQUEST: history is stored newest-first; show newest 5 in order
+  const visibleHistory = history.slice(0, 5);
 
   return (
     <div className="relative">
@@ -1134,19 +1121,10 @@ function HistoryPanel() {
 
                 <div className="max-h-48 overflow-y-auto mb-4">
                   <div className="flex flex-wrap gap-2">
-                    {[...history].reverse().map((item) => (
+                    {history.map((item) => (
                       <CrashHistoryItem key={item.id} item={item} showTime />
                     ))}
                   </div>
-                </div>
-
-                <div className="border-t border-slate-700 pt-3">
-                  <HistoryStats history={history} />
-                </div>
-
-                <div className="flex justify-between mt-3 text-xs text-slate-400">
-                  <div>Min: 1.00×</div>
-                  <div>Max: 50.00×</div>
                 </div>
               </div>
             </motion.div>
@@ -1184,25 +1162,6 @@ function CrashHistoryItem({
   );
 }
 
-function HistoryStats({ history }: { history: Array<{ crashPoint: number }> }) {
-  const avgCrash = history.reduce((sum, item) => sum + item.crashPoint, 0) / history.length;
-  const lowCrashes = history.filter(item => item.crashPoint < 2).length;
-  const lowCrashPercent = Math.round((lowCrashes / history.length) * 100);
-
-  return (
-    <div className="grid grid-cols-2 gap-2 text-sm">
-      <div className="bg-slate-900 p-2 rounded">
-        <div className="text-slate-400">Avg. Crash</div>
-        <div className="font-semibold text-slate-200">{avgCrash.toFixed(2)}×</div>
-      </div>
-      <div className="bg-slate-900 p-2 rounded">
-        <div className="text-slate-400">Below 2×</div>
-        <div className="font-semibold text-slate-200">{lowCrashPercent}%</div>
-      </div>
-    </div>
-  );
-}
-
 // ============================================================================
 // Stats Component
 // ============================================================================
@@ -1210,33 +1169,18 @@ function HistoryStats({ history }: { history: Array<{ crashPoint: number }> }) {
 function Stats() {
   const dispatch = useDispatch<AppDispatch>();
   const { balance, isMuted } = useSelector((state: RootState) => state.crashGame);
-  const [currentTime, setCurrentTime] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
 
   return (
-    <div className="flex items-center gap-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <div className="text-xs text-slate-400">Balance</div>
-          <div className="font-semibold text-green-400">{balance.toFixed(2)}</div>
-        </div>
-
-        <div className="hidden md:block">
-          <div className="text-xs text-slate-400">Time</div>
-          <div className="font-mono text-white">{currentTime.toLocaleTimeString()}</div>
-        </div>
+    <div className="flex items-center gap-3">
+      {/* BIG SIS REQUEST: Balance label and value side by side on the same line */}
+      <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+        <span className="text-xs text-white/60">Balance</span>
+        <span className="font-bold text-green-400">B {balance.toLocaleString()}</span>
       </div>
 
       <button
         onClick={() => dispatch(toggleMute())}
-        className="p-2 hover:bg-slate-700 rounded-lg transition-colors text-white"
+        className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
       >
         {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
       </button>
@@ -1261,6 +1205,32 @@ const CrashGame = () => {
     setIsMounted(true);
   }, []);
 
+  // BIG SIS REQUEST: sync the game balance with the user's auction-table balance (bidding_balance)
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+
+    (async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id;
+      if (!userId) return;
+
+      const { data: profile } = await supabase
+        .from('users')
+        .select('bidding_balance')
+        .eq('id', userId)
+        .single();
+
+      if (!cancelled && profile && typeof profile.bidding_balance === 'number') {
+        dispatch(setBalance(Number(profile.bidding_balance)));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch]);
+
   // Game loop refs
   const gameLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoCashoutCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1277,12 +1247,12 @@ const CrashGame = () => {
     }
   }, [dispatch, isInitialized]);
 
-  // Start the first round after initialization
+  // Start a round after the "Next round in: 5s" countdown elapses (READY -> FLYING)
   useEffect(() => {
     if (isInitialized && gameState === 'betting') {
       startTimeoutRef.current = setTimeout(() => {
         startNextRound();
-      }, 10000);
+      }, 5000);
     }
 
     return () => {
@@ -1303,6 +1273,7 @@ const CrashGame = () => {
     // Start multiplier update loop
     const startTime = Date.now();
     const endTime = startTime + duration;
+    // BIG SIS REQUEST: official Aviator curve — multiplier = 1 + MULTIPLIER_CONST * t^3
 
     gameLoopRef.current = setInterval(() => {
       const now = Date.now();
@@ -1315,12 +1286,7 @@ const CrashGame = () => {
       }
 
       const elapsed = now - startTime;
-      const progress = elapsed / duration;
-      const newMultiplier = Math.min(
-        1 + Math.exp(progress * 2.8) - 1,
-        crashPoint,
-        50
-      );
+      const newMultiplier = 1 + MULTIPLIER_CONST * Math.pow(elapsed, 3);
 
       dispatch(updateMultiplier(newMultiplier));
     }, 33);
@@ -1344,14 +1310,10 @@ const CrashGame = () => {
       dispatch(endRound(crashPoint));
       audioSystem.playHit(isMuted);
 
-      // Schedule reset
+      // Schedule reset — resetGame sets betting + "Next round in: 5s", and the
+      // betting-state effect drives the countdown -> startNextRound transition
       resetTimeoutRef.current = setTimeout(() => {
         dispatch(resetGame());
-
-        // Schedule next round
-        startTimeoutRef.current = setTimeout(() => {
-          startNextRound();
-        }, 5000);
       }, 1500);
     }, duration);
   }, [dispatch, isMuted]);
@@ -1388,41 +1350,46 @@ const CrashGame = () => {
   }, []);
 
   // Helper functions
+  
   function generateCrashPoint(): number {
-    const rand = Math.random();
-    if (rand < 0.3) {
-      return 1 + Math.random() * 0.5; // 30% chance of early crash (1.0-1.5x)
-    } else if (rand < 0.6) {
-      return 1.5 + Math.random() * 3.5; // 30% chance of medium crash (1.5-5x)
+    const r = Math.random();
+    let crashPoint: number;
+    if (r < 0.7) {
+      
+      crashPoint = 1 + Math.random() * 1;
     } else {
-      return 5 + Math.random() * 45; // 40% chance of high crash (5-50x)
+     
+      crashPoint = 1 + Math.pow(Math.random(), -0.8);
     }
+    return Math.min(50, +crashPoint.toFixed(2));
   }
 
+  
   function calculateFlightDuration(crashPoint: number): number {
-    if (crashPoint < 5) {
-      return crashPoint * 2000;
-    }
-    return 10000 + crashPoint * 800;
+    const tMs = Math.pow((crashPoint - 1) / MULTIPLIER_CONST, 1 / 3);
+    return Math.max(1200, Math.round(tMs));
   }
 
   // Prevent SSR hydration mismatch by rendering nothing until client mount
   if (!isMounted) {
     return (
-      <PageLayout pageTitle="Crash Game" className="bg-gradient-to-b from-slate-900 to-slate-800 min-h-screen">
+      <div className="min-h-dvh bg-black">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-white text-xl">Loading...</div>
         </div>
-      </PageLayout>
+      </div>
     );
   }
 
   return (
-    <PageLayout pageTitle="Crash Game" className="bg-gradient-to-b from-slate-900 to-slate-800 min-h-screen">
+    <div className="min-h-dvh bg-black">
       <div className="text-white">
-        <header className="p-2 border-b border-slate-700 flex items-center justify-between mb-4">
+        
+        <header className="bg-black sticky top-0 z-20 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">SkyCrash</h1>
+            <h1 className="text-2xl font-extrabold bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent">
+              Skybound
+            </h1>
             {gameState === 'crashed' && (
               <span className="bg-red-500 text-white text-xs px-2 py-1 rounded animate-pulse">
                 CRASHED
@@ -1434,33 +1401,26 @@ const CrashGame = () => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <Stats />
-          </div>
+          <Stats />
         </header>
 
-        <div className="mb-4">
+        
+        <div className="px-4 pt-3 pb-2 bg-black">
           <HistoryPanel />
         </div>
 
-        <main className="grid gap-4 md:grid-cols-3 md:gap-6">
-          <div className="md:col-span-2 h-[250px] md:h-[350px] relative rounded-lg overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">
+        
+        <main className="px-4">
+          <div className="h-[210px] md:h-[280px] relative rounded-lg overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">
             <GameCanvas />
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 mt-3">
             <BettingPanel />
           </div>
         </main>
-
-        <footer className="mt-6 p-4 pb-20 border-t border-slate-700 text-center text-sm text-slate-400">
-          <p>Virtual currency only. No real money involved.</p>
-          <p className="mt-1 text-xs opacity-60">
-            Max multiplier: 50.00×, Max flight time: 60 seconds
-          </p>
-        </footer>
       </div>
-    </PageLayout>
+    </div>
   );
 };
 
