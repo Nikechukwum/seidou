@@ -184,8 +184,11 @@ export default function VoiceBidButton({
 }: VoiceBidButtonProps) {
     const [phase, setPhase] = useState<Phase>('idle')
     const [label, setLabel] = useState<string | null>(null)
+    // Live recording duration (WhatsApp-style stopwatch) while holding.
+    const [elapsed, setElapsed] = useState(0)
 
     const phaseRef = useRef<Phase>('idle')
+    const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const alwaysOnRef = useRef(alwaysOn)
     alwaysOnRef.current = alwaysOn
     const startTsRef = useRef(0)
@@ -234,17 +237,22 @@ export default function VoiceBidButton({
     const cancelWindowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const cancelFiredRef = useRef(false)
 
+    const stopElapsedTimer = useCallback(() => {
+        if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null }
+    }, [])
+
     const showError = useCallback((msg: string) => {
         phaseRef.current = 'error'
         setPhase('error')
         setLabel(msg)
+        stopElapsedTimer()
         if (errorTimerRef.current) clearTimeout(errorTimerRef.current)
         errorTimerRef.current = setTimeout(() => {
             phaseRef.current = 'idle'
             setPhase('idle')
             setLabel(null)
         }, ERROR_MS)
-    }, [])
+    }, [stopElapsedTimer])
 
     const clearTimers = useCallback(() => {
         if (maxHoldTimerRef.current) { clearTimeout(maxHoldTimerRef.current); maxHoldTimerRef.current = null }
@@ -252,7 +260,19 @@ export default function VoiceBidButton({
         if (checkTimerRef.current) { clearTimeout(checkTimerRef.current); checkTimerRef.current = null }
         if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
         if (cancelWindowTimerRef.current) { clearTimeout(cancelWindowTimerRef.current); cancelWindowTimerRef.current = null }
+        if (elapsedIntervalRef.current) { clearInterval(elapsedIntervalRef.current); elapsedIntervalRef.current = null }
     }, [])
+
+    // WhatsApp-style live recording timer: counts up from 0 every 100ms while
+    // the 'listening' phase is active (only in hold-to-talk mode).
+    const startElapsedTimer = useCallback(() => {
+        stopElapsedTimer()
+        setElapsed(0)
+        const start = Date.now()
+        elapsedIntervalRef.current = setInterval(() => {
+            setElapsed(Date.now() - start)
+        }, 100)
+    }, [stopElapsedTimer])
 
     // stopNative: on iOS Safari, stop() leaves the recognizer's session/audio
     // holding the mic with the speech service, which can lag, swallow results,
@@ -309,6 +329,7 @@ export default function VoiceBidButton({
         phaseRef.current = 'sending'
         setPhase('sending')
         setLabel(null)
+        stopElapsedTimer()
         vibrate(30)
 
         // Optimistic UI FIRST, server call after. Page owns balance/leaderboard.
@@ -337,7 +358,7 @@ export default function VoiceBidButton({
                 if (!alwaysOnRef.current) setLabel(null)
             }
         }, CHECK_MARK_MS)
-    }, [onBid, onBuy, onOptimisticBid])
+    }, [onBid, onBuy, onOptimisticBid, stopElapsedTimer])
 
     const transcribe = useCallback(async (blob: Blob, gen: number, silent = false) => {
         // If a bid was already placed for this gesture (Vosk/native fired
@@ -815,6 +836,10 @@ export default function VoiceBidButton({
     const release = useCallback(() => {
         if (phaseRef.current !== 'listening') return
 
+        // Freeze the recording duration the instant the user releases the mic.
+        // Do NOT keep counting through the transcribe/checking window.
+        stopElapsedTimer()
+
         if (maxHoldTimerRef.current) { clearTimeout(maxHoldTimerRef.current); maxHoldTimerRef.current = null }
         if (nativeRestartTimerRef.current) { clearTimeout(nativeRestartTimerRef.current); nativeRestartTimerRef.current = null }
 
@@ -864,7 +889,7 @@ export default function VoiceBidButton({
         stopNative()
         stopRecorder()
         showError('No speech')
-    }, [placeBid, showError, stopNative, stopRecorder, stopVoskForHold])
+    }, [placeBid, showError, stopElapsedTimer, stopNative, stopRecorder, stopVoskForHold])
 
     const handleDown = useCallback((e: React.PointerEvent | React.TouchEvent) => {
         if (disabled || alwaysOnRef.current || phaseRef.current !== 'idle') return
@@ -881,6 +906,7 @@ export default function VoiceBidButton({
         phaseRef.current = 'listening'
         setPhase('listening')
         setLabel('Listening…')
+        startElapsedTimer()
         vibrate(20)
 
         const gen = ++genRef.current
@@ -905,7 +931,7 @@ export default function VoiceBidButton({
             maxHoldTimerRef.current = null
             if (phaseRef.current === 'listening') release()
         }, maxHoldMs)
-    }, [alwaysOnRef, disabled, maxHoldMs, release, startNative, startRecorder])
+    }, [alwaysOnRef, disabled, maxHoldMs, release, startElapsedTimer, startNative, startRecorder])
 
     const handleMove = useCallback((e: React.PointerEvent | React.TouchEvent) => {
         if (phaseRef.current !== 'listening' && phaseRef.current !== 'sending') return
@@ -979,6 +1005,13 @@ export default function VoiceBidButton({
     const listeningHint = alwaysOn ? 'Say “bid 50000”' : 'Slide left to cancel'
     const sendingHint = alwaysOn ? 'Tap to cancel' : 'Slide left to cancel'
 
+    // WhatsApp-style recording duration ("0:05" format).
+    const formatElapsed = (ms: number) => {
+        const secs = Math.floor(ms / 1000)
+        const tenths = Math.floor((ms % 1000) / 100)
+        return `${secs}.${tenths}s`
+    }
+
     const overlays = (
         <>
             <AnimatePresence>
@@ -990,7 +1023,7 @@ export default function VoiceBidButton({
                         className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2"
                     >
                         <div className="bg-black/80 text-white text-sm font-bold px-4 py-1.5 rounded-full animate-pulse">
-                            {label ?? (alwaysOn ? 'Listening for “bid…”' : 'Listening…')}
+                            {alwaysOn ? (label ?? 'Listening for “bid…”') : formatElapsed(elapsed)}
                         </div>
                         <div className="text-white/50 text-[11px] font-medium">{listeningHint}</div>
                     </motion.div>
