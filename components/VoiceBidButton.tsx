@@ -192,6 +192,10 @@ export default function VoiceBidButton({
     const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
     const genRef = useRef(0)
     const sessionActiveRef = useRef(false)
+    // Set true once a bid is placed for the current gesture, so the recorder's
+    // post-stop transcription can't clobber the 'sending' state back to
+    // 'listening'. Resets on each new hold (pointerdown).
+    const bidPlacedRef = useRef(false)
 
     // --- Native Web Speech engine ---
     const recognitionRef = useRef<any>(null)
@@ -217,6 +221,11 @@ export default function VoiceBidButton({
     const transcribingRef = useRef(false)
     const ringRef = useRef<{ ts: number; blob: Blob }[]>([])
     const speechRef = useRef({ active: false, enter: 0, exit: 0, startedAt: 0, lastTalk: 0 })
+
+    // --- Vosk WASM on-device engine (primary recognition) ---
+    const voskCleanupRef = useRef<(() => void) | null>(null)
+    const voskHoldCleanupRef = useRef<(() => void) | null>(null)
+    const voskHoldTextRef = useRef('')
 
     const maxHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const checkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -281,6 +290,13 @@ export default function VoiceBidButton({
         analyserRef.current = null
         try { audioCtxRef.current?.close() } catch {}
         audioCtxRef.current = null
+        // Vosk WASM cleanup
+        try { voskCleanupRef.current?.() } catch {}
+        voskCleanupRef.current = null
+        try { voskHoldCleanupRef.current?.() } catch {}
+        voskHoldCleanupRef.current = null
+        voskHoldTextRef.current = ''
+        bidPlacedRef.current = false
         ringRef.current = []
         lastTranscriptRef.current = ''
         prevFinalsRef.current = ''
@@ -289,6 +305,7 @@ export default function VoiceBidButton({
 
     const placeBid = useCallback((parsed: Parsed, gen: number) => {
         if (phaseRef.current !== 'listening') return
+        bidPlacedRef.current = true
         phaseRef.current = 'sending'
         setPhase('sending')
         setLabel(null)
@@ -310,8 +327,8 @@ export default function VoiceBidButton({
             cancelWindowRef.current = false
         }, POST_SEND_CANCEL_MS)
 
-        // Green check for 200ms. In always-on the mic stays hot for the next
-        // command; in hold mode we hand back to the idle (held-mic) state.
+        // Green check for 200ms. Always reset afterwards regardless of any
+        // async transcription clobbering the ref — the overlay must never stick.
         if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
         checkTimerRef.current = setTimeout(() => {
             if (phaseRef.current === 'sending') {
@@ -323,6 +340,10 @@ export default function VoiceBidButton({
     }, [onBid, onBuy, onOptimisticBid])
 
     const transcribe = useCallback(async (blob: Blob, gen: number, silent = false) => {
+        // If a bid was already placed for this gesture (Vosk/native fired
+        // mid-hold), don't reset the UI back to 'listening'/'Checking…'.
+        if (bidPlacedRef.current) return
+
         phaseRef.current = 'listening'
         setPhase('listening')
         if (!silent) setLabel('Checking…')
@@ -581,6 +602,40 @@ export default function VoiceBidButton({
                 if (vadTimerRef.current) clearInterval(vadTimerRef.current)
                 vadTimerRef.current = setInterval(vadTick, VAD_INTERVAL_MS)
                 startAlwaysNative(gen)
+
+                // ── Vosk WASM: on-device recognition, zero network latency ──
+                // If the model URL is configured and the model loads, Vosk
+                // becomes the primary path. The VAD+Groq and native paths keep
+                // running as parallel fallbacks.
+                const voskUrl = process.env.NEXT_PUBLIC_VOSK_MODEL_URL
+                if (voskUrl) {
+                    import('@/lib/vosk-engine').then(({ startVoskPipeline }) => {
+                        if (gen !== genRef.current || !sessionActiveRef.current) return
+                        startVoskPipeline(voskUrl, stream, {
+                            onResult: (text) => {
+                                if (gen !== genRef.current || !sessionActiveRef.current) return
+                                const parsed = parseTranscript(text)
+                                if (parsed && Date.now() - lastNativeBidAtRef.current > NATIVE_BID_SUPPRESS_MS) {
+                                    lastNativeBidAtRef.current = Date.now()
+                                    placeBid(parsed, gen)
+                                }
+                            },
+                            onPartial: (partial) => {
+                                // Interim text available if you want to show it
+                                if (gen !== genRef.current) return
+                                void partial
+                            },
+                        }).then((cleanup) => {
+                            if (gen !== genRef.current || !sessionActiveRef.current) {
+                                cleanup.stop()
+                                return
+                            }
+                            voskCleanupRef.current = cleanup.stop
+                        }).catch((err) => {
+                            console.warn('[voice] Vosk unavailable, using fallback paths:', err)
+                        })
+                    })
+                }
             })
             .catch(() => {
                 sessionActiveRef.current = false
@@ -588,14 +643,31 @@ export default function VoiceBidButton({
             })
     }, [showError, startAlwaysNative, vadTick])
 
+    // Start always-on listening once when the component mounts (if enabled).
     useEffect(() => {
         if (alwaysOnRef.current) startAlwaysOn()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
+    // Full cleanup strictly on unmount. NOTE: must NOT re-run on every callback
+    // identity change — if it did, the changing onBid identity (which the page
+    // rebuilds after each bid updates balance/bids) would re-trigger cleanup,
+    // clearing our 200ms post-bid reset timer and leaving the UI stuck.
+    useEffect(() => {
         return () => { teardownAll() }
-    }, [alwaysOn, startAlwaysOn, teardownAll])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     // =====================================================================
     // Hold-to-talk mode (default, when alwaysOn is false)
     // =====================================================================
+
+    // Tear down the per-hold Vosk recognizer + any captured text.
+    const stopVoskForHold = useCallback(() => {
+        try { voskHoldCleanupRef.current?.() } catch {}
+        voskHoldCleanupRef.current = null
+        voskHoldTextRef.current = ''
+    }, [])
 
     // Recording path: capture audio from t=0 so even a dead native engine
     // never loses your speech.
@@ -633,9 +705,46 @@ export default function VoiceBidButton({
                 try { recorder.start(200) } catch {
                     stopRecorder()
                 }
+
+                // Pipe the same mic stream into Vosk (on-device recognition).
+                // With the model URL configured this becomes the primary fast
+                // path on release; native + recorder stay as fallbacks.
+                const voskUrl = process.env.NEXT_PUBLIC_VOSK_MODEL_URL
+                if (voskUrl) {
+                    import('@/lib/vosk-engine').then(({ startVoskPipeline }) => {
+                        if (gen !== genRef.current || phaseRef.current !== 'listening') return
+                        return startVoskPipeline(voskUrl, stream, {
+                            onResult: (text) => {
+                                if (gen !== genRef.current) return
+                                voskHoldTextRef.current = text
+                                // Fire immediately on final utterance if we're
+                                // still holding — beats waiting for release.
+                                const parsed = parseTranscript(text)
+                                if (parsed && phaseRef.current === 'listening') {
+                                    const g = genRef.current
+                                    // Flag before teardown so recorder.onstop
+                                    // -> transcribe() doesn't re-enter 'listening'.
+                                    bidPlacedRef.current = true
+                                    stopNative()
+                                    stopVoskForHold()
+                                    stopRecorder()
+                                    placeBid(parsed, g)
+                                }
+                            },
+                        })
+                    }).then((cleanup) => {
+                        if (gen !== genRef.current) {
+                            cleanup?.stop()
+                            return
+                        }
+                        voskHoldCleanupRef.current = cleanup?.stop ?? null
+                    }).catch((err) => {
+                        console.warn('[voice] Vosk unavailable for hold:', err)
+                    })
+                }
             })
             .catch(() => {})
-    }, [stopRecorder, transcribe])
+    }, [stopRecorder, transcribe, placeBid, stopNative, stopVoskForHold])
 
     const startNative = useCallback((gen: number) => {
         const SpeechRecognition =
@@ -709,12 +818,32 @@ export default function VoiceBidButton({
         if (maxHoldTimerRef.current) { clearTimeout(maxHoldTimerRef.current); maxHoldTimerRef.current = null }
         if (nativeRestartTimerRef.current) { clearTimeout(nativeRestartTimerRef.current); nativeRestartTimerRef.current = null }
 
+        const gen = genRef.current
+
+        // Vosk on-device result is the fastest, most reliable path. Check it
+        // before native/recorder.
+        if (voskHoldTextRef.current) {
+            const voskParsed = parseTranscript(voskHoldTextRef.current)
+            if (voskParsed) {
+                // Flag BEFORE tearing down: stopRecorder() fires recorder.onstop
+                // -> transcribe(), which would otherwise clobber the 'sending'
+                // state we're about to set.
+                bidPlacedRef.current = true
+                stopVoskForHold()
+                stopNative()
+                stopRecorder()
+                placeBid(voskParsed, gen)
+                return
+            }
+        }
+
         // Take the latest transcript NOW and try to send immediately. Do not
         // wait for onend.
         const transcript = lastTranscriptRef.current
         const parsed = parseTranscript(transcript)
         if (parsed) {
-            const gen = genRef.current
+            bidPlacedRef.current = true
+            stopVoskForHold()
             stopNative()
             stopRecorder()
             placeBid(parsed, gen)
@@ -724,17 +853,18 @@ export default function VoiceBidButton({
         // No usable native result. If the recorder has audio from this hold,
         // stop it and transcribe (the reliable path for broken-engine devices).
         if (recorderRef.current && recorderRef.current.state === 'recording') {
+            stopVoskForHold()
             stopNative()
             try { recorderRef.current.stop() } catch {}
             return // recorder.onstop will transcribe for this gen
         }
 
         // Neither source produced anything.
-        const gen = genRef.current
+        stopVoskForHold()
         stopNative()
         stopRecorder()
         showError('No speech')
-    }, [placeBid, showError, stopNative, stopRecorder])
+    }, [placeBid, showError, stopNative, stopRecorder, stopVoskForHold])
 
     const handleDown = useCallback((e: React.PointerEvent | React.TouchEvent) => {
         if (disabled || alwaysOnRef.current || phaseRef.current !== 'idle') return
@@ -757,13 +887,16 @@ export default function VoiceBidButton({
         lastTranscriptRef.current = ''
         prevFinalsRef.current = ''
         sessionFinalRef.current = ''
+        voskHoldTextRef.current = ''
+        bidPlacedRef.current = false
         srLiveRef.current = false
         cancelWindowRef.current = false
         cancelFiredRef.current = false
         startTsRef.current = Date.now()
 
         // Run both in parallel: native engine (instant results where it works)
-        // and the recorder (guaranteed capture where it doesn't).
+        // and the recorder (guaranteed capture where it doesn't). Vosk is
+        // started from within startRecorder once the mic stream is live.
         startRecorder(gen)
         startNative(gen)
 
@@ -796,6 +929,7 @@ export default function VoiceBidButton({
                 setLabel(null)
                 pointerStartRef.current = null
                 const gen = ++genRef.current // invalidate everything
+                stopVoskForHold()
                 stopNative()
                 stopRecorder()
                 vibrate(10)
@@ -807,7 +941,7 @@ export default function VoiceBidButton({
                 vibrate(10)
             }
         }
-    }, [onCancelBid, stopNative, stopRecorder])
+    }, [onCancelBid, stopNative, stopRecorder, stopVoskForHold])
 
     const handleUp = useCallback((_e: React.PointerEvent | React.TouchEvent) => {
         pointerStartRef.current = null

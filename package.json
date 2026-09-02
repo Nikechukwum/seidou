@@ -26,7 +26,8 @@
     "react-infinite-scroll-component": "^6.1.1",
     "react-instantsearch": "^7.29.0",
     "react-paystack": "^6.0.0",
-    "react-redux": "^9.2.0"
+    "react-redux": "^9.2.0",
+    "vosk-browser": "^0.0.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

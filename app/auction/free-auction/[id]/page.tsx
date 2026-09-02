@@ -577,8 +577,6 @@ const LeaderboardPage = () => {
                         key={voiceKey}
                         onBid={handleVoiceBid}
                         onBuy={() => setBuyModal(true)}
-                        disabled={quickBidding || bidding}
-                        alwaysOn
                         renderInline
                     />
                 </div>
