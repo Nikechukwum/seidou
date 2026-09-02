@@ -41,10 +41,12 @@ export default function SignUpPage() {
         if (authData.user) {
           const { error: profileError } = await supabase
             .from('users')
-            .insert({ 
+            .insert({
               id: authData.user.id,
               email: authData.user.email,
-              // display_name: displayName 
+              // Seidou Social renders this on every video card, comment and
+              // channel header, and the column is NOT NULL.
+              display_name: (authData.user.email ?? 'user').split('@')[0],
             });
 
           if (profileError){

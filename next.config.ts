@@ -25,6 +25,24 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Seidou Social: Mux serves video thumbnails and animated previews
+      // straight from the playback id, so they are referenced by URL rather
+      // than copied into our own storage.
+      {
+        protocol: 'https',
+        hostname: 'image.mux.com',
+        port: '',
+        pathname: '/**',
+      },
+      // Seidou Social: custom thumbnails and channel banners in Supabase
+      // Storage. Rendered with unoptimized, but listed so any future
+      // optimized usage does not fail.
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co',
+        port: '',
+        pathname: '/storage/v1/object/public/**',
+      },
     ],
   },
 };

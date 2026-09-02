@@ -22,6 +22,11 @@ export interface UserState {
     bidding_balance: number,
     loyalty_rewards: LoyaltyReward[],
     interests: string[],
+    // Added for Seidou Social. Populated by useAuth's select("*"), so these
+    // are present at runtime for every user.
+    display_name?: string,
+    avatar_url?: string,
+    banner_url?: string | null,
 }
 
 const initialState: {user: UserState | null} = {
