@@ -4,7 +4,7 @@ import { Modal } from "@/components/Modal";
 import { PageLayout } from "@/components/PageLayout";
 import { BuyBiddingCurrencyModal } from "@/components/BuyBiddingCurrencyModal";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useDispatch, useSelector } from "react-redux";
 import { showToast } from "@/redux/toastSlice";
@@ -16,6 +16,8 @@ import useAuth from "@/hooks/useAuth";
 import VoiceBidButton from "@/components/VoiceBidButton";
 import FloatingDelta from "@/components/FloatingDelta";
 import ControlsModal from "@/components/ControlsModal";
+import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
+import { MULTIPLY_FACTOR } from "@/lib/abilityFruits";
 import { useBidControls } from "@/hooks/useBidControls";
 
 type Bid = {
@@ -36,8 +38,10 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
+// DEV NOTE (design): "If the result exceeds the max bid limit, cap at the limit."
+const MAX_BID_LIMIT = 50_000_000
+
 const LeaderboardPage = () => {
-    const [activeTab, setActiveTab] = useState<TabKey>('buy')
     const [controlsModal, setControlsModal] = useState(false)
     const [placeBidModal, setPlaceBidModal] = useState(false)
     const [buyModal, setBuyModal] = useState(false)
@@ -54,6 +58,7 @@ const LeaderboardPage = () => {
     const [pressedIncrement, setPressedIncrement] = useState<number | null>(null)
     const params = useParams()
     const auctionId = params.id as string
+    const router = useRouter()
     const dispatch = useDispatch()
     const user = useSelector((state: RootState) => state.auth.user)
     const { checkSession } = useAuth()
@@ -70,6 +75,11 @@ const LeaderboardPage = () => {
 
     // BIG SIS REQUEST: voice mode key — forces VoiceBidButton remount when switching to voice
     const [voiceKey, setVoiceKey] = useState(0)
+
+    // BIG SIS REQUEST: Ability Fruit MULTIPLY state. The factor comes from the
+    // fruit's level (everyone is level 1 -> x2 for now), so there is nothing to
+    // pick — Activate fires straight away.
+    const [multiplyTarget, setMultiplyTarget] = useState<string | null>(null)
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -310,13 +320,93 @@ const LeaderboardPage = () => {
         }
     }, [quickBidding, user, bids, auctionId, dispatch, fetchProfileBalance, fireDelta])
 
+    // BIG SIS REQUEST: the Ability Fruits tab opens the Ability Fruits page
+    // first — the player picks a fruit there, then comes back here to target.
+    const openAbilityFruits = useCallback(() => {
+        router.push(`/auction/free-auction/${auctionId}/ability-fruits`)
+    }, [router, auctionId])
+
     // BIG SIS REQUEST: Controls tab opens ControlsModal
     const handleTabClick = (tab: TabKey) => {
-        setActiveTab(tab)
+        if (tab === 'fruits') {
+            openAbilityFruits()
+            return
+        }
         if (tab === 'buy') setBuyModal(true)
-        if (tab === 'fruits') setUnderConstructionModal(true)
         if (tab === 'controls') setControlsModal(true)
     }
+
+    // BIG SIS REQUEST: tapping Activate on the Ability Fruits page sends the
+    // player back here with ?fruit=<id> and the ability fires IMMEDIATELY on
+    // their own bid card — no modal, no factor to pick. Waits for the bids to
+    // load so FRAME 2 starts on a card that is actually on screen.
+    const armedFruitRef = useRef<string | null>(null)
+    useEffect(() => {
+        const armed = new URLSearchParams(window.location.search).get('fruit')
+        if (!armed) return
+        window.history.replaceState(null, '', `/auction/free-auction/${auctionId}`)
+        armedFruitRef.current = armed
+    }, [auctionId])
+
+    // BIG SIS REQUEST: Ability Fruit MULTIPLY — optimistic update at FRAME 4 + server commit
+    const handleMultiplyOptimistic = useCallback((id: number | string, newBid: number) => {
+        const userId = String(id)
+        // Update only the target row immediately (optimistic). Other rows keep the
+        // same object reference so only this card re-renders.
+        setBids(prev => prev.map(b => b.userId === userId ? { ...b, bidAmount: newBid } : b))
+
+        // Commit server-side; revert on failure
+        const previousBids = bids
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/multiply-bid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, factor: MULTIPLY_FACTOR }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    setBids(previousBids)
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not multiply the bid.' }))
+                }
+            } catch {
+                setBids(previousBids)
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [auctionId, bids, dispatch])
+
+    // SELF ONLY: Multiply always runs on your own bid — there is no player to
+    // pick. Guard the case where you have not bid on this table yet.
+    const myUserId = currentUserId ?? user?.id ?? null
+    const myBid = useMemo(
+        () => (myUserId ? bids.find(b => b.userId === myUserId) ?? null : null),
+        [bids, myUserId]
+    )
+
+    const handleMultiplySelf = useCallback(() => {
+        if (multiplyTarget) return
+        if (!myUserId || !myBid) {
+            dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
+            return
+        }
+        setMultiplyTarget(myUserId)
+    }, [multiplyTarget, myUserId, myBid, dispatch])
+
+    // Fire the armed fruit as soon as the table has loaded and we know who you
+    // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
+    useEffect(() => {
+        if (loading || armedFruitRef.current !== 'multiply') return
+        armedFruitRef.current = null
+        handleMultiplySelf()
+    }, [loading, handleMultiplySelf])
+
+    // FRAME 5 (settled): the overlay is gone — float "+X,XXX,XXX ↑" next to the
+    // target's new bid, the same green delta a normal bid raise shows.
+    const handleMultiplyComplete = useCallback((id: number | string, delta: number) => {
+        setMultiplyTarget(null)
+        if (delta > 0) fireDelta(String(id), delta)
+    }, [fireDelta])
 
     // BIG SIS REQUEST: ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
@@ -462,40 +552,51 @@ const LeaderboardPage = () => {
                         return (
                             <div
                                 key={bid.id}
-                                className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100"
+                                className="bg-white rounded-3xl shadow-sm border border-gray-100"
                             >
-                                <div className="flex items-start gap-4">
-                                    <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
-                                        {index + 1}
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="relative inline-block max-w-full align-top">
-                                            <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
-                                                <span
-                                                    className="inline-block transition-all duration-200 rounded-md"
-                                                    style={{
-                                                        transform: scalePop[bid.userId] ? 'scale(1.08)' : 'scale(1)',
-                                                        boxShadow: glowPop[bid.userId] ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
-                                                    }}
-                                                >
-                                                    B {Number(bid.bidAmount).toLocaleString()}
-                                                </span>
-                                            </h2>
-                                            {deltaTriggers[bid.userId] && (
-                                                <FloatingDelta
-                                                    amount={deltaTriggers[bid.userId].amount}
-                                                    type="increase"
-                                                    trigger={deltaTriggers[bid.userId].trigger}
-                                                />
-                                            )}
+                                {/* BIG SIS REQUEST: each card wraps in the Multiply fruit overlay */}
+                                <MultiplyFruitAbility
+                                    tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
+                                    targetPlayerId={multiplyTarget}
+                                    playerId={bid.userId}
+                                    factor={MULTIPLY_FACTOR}
+                                    maxBidLimit={MAX_BID_LIMIT}
+                                    onBidUpdated={handleMultiplyOptimistic}
+                                    onComplete={handleMultiplyComplete}
+                                >
+                                    <div className="flex items-start gap-4 p-6">
+                                        <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
+                                            {index + 1}
                                         </div>
-                                        <p className="text-gray-500 text-sm mt-1 truncate">
-                                            {isYou
-                                                ? (bid.username || user?.username || 'You')
-                                                : (bid.username || 'Unknown')}
-                                        </p>
+                                        <div className="min-w-0">
+                                            <div className="relative inline-block max-w-full align-top">
+                                                <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
+                                                    <span
+                                                        className="inline-block transition-all duration-200 rounded-md"
+                                                        style={{
+                                                            transform: scalePop[bid.userId] ? 'scale(1.08)' : 'scale(1)',
+                                                            boxShadow: glowPop[bid.userId] ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
+                                                        }}
+                                                    >
+                                                        B {Number(bid.bidAmount).toLocaleString()}
+                                                    </span>
+                                                </h2>
+                                                {deltaTriggers[bid.userId] && (
+                                                    <FloatingDelta
+                                                        amount={deltaTriggers[bid.userId].amount}
+                                                        type="increase"
+                                                        trigger={deltaTriggers[bid.userId].trigger}
+                                                    />
+                                                )}
+                                            </div>
+                                            <p className="text-gray-500 text-sm mt-1 truncate">
+                                                {isYou
+                                                    ? (bid.username || user?.username || 'You')
+                                                    : (bid.username || 'Unknown')}
+                                            </p>
+                                        </div>
                                     </div>
-                                </div>
+                                </MultiplyFruitAbility>
                             </div>
                         )
                     })}
@@ -577,6 +678,7 @@ const LeaderboardPage = () => {
                         key={voiceKey}
                         onBid={handleVoiceBid}
                         onBuy={() => setBuyModal(true)}
+                        onAbilityFruits={openAbilityFruits}
                         renderInline
                     />
                 </div>

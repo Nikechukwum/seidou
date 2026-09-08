@@ -10,6 +10,10 @@ type Phase = 'idle' | 'listening' | 'sending' | 'error'
 interface VoiceBidButtonProps {
     onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
+    // BIG SIS REQUEST: "activate ability fruit" / "open ability fruits" is a
+    // navigation command, not a bid — it takes the player to the Ability
+    // Fruits page first, where they pick which fruit to activate.
+    onAbilityFruits?: () => void
     // Fire the optimistic UI (balance drop, leaderboard bump, "Bid Placed" toast)
     // the instant we parse an amount. Do NOT wait for the server.
     onOptimisticBid?: (amount: number) => void
@@ -121,13 +125,23 @@ function tryNumber(text: string): number | null {
 }
 
 interface Parsed {
-    action: 'BID' | 'BUY'
+    action: 'BID' | 'BUY' | 'FRUITS'
     amount: number
+}
+
+// BIG SIS REQUEST: "activate ability fruit", "open ability fruits", "use my
+// fruit" — anything that names a fruit alongside an ability/open verb. Carries
+// no amount, so it has to be matched before the number parse bails out.
+function isAbilityFruitCommand(text: string): boolean {
+    if (!/\bfruits?\b/.test(text)) return false
+    return /\babilit(?:y|ies)\b/.test(text) || /\b(?:activate|open|show|use|go to)\b/.test(text)
 }
 
 function parseTranscript(transcript: string): Parsed | null {
     const cleaned = transcript.toLowerCase().replace(/[₦$]/g, '').replace(/\s+/g, ' ').trim()
     if (!cleaned) return null
+
+    if (isAbilityFruitCommand(cleaned)) return { action: 'FRUITS', amount: 0 }
 
     const amount = tryNumber(cleaned)
     if (amount === null) return null
@@ -174,6 +188,7 @@ const VOICE_DEFAULTS: MediaTrackConstraints = {
 export default function VoiceBidButton({
     onBid,
     onBuy,
+    onAbilityFruits,
     onOptimisticBid,
     onCancelBid,
     disabled,
@@ -332,6 +347,21 @@ export default function VoiceBidButton({
         stopElapsedTimer()
         vibrate(30)
 
+        // BIG SIS REQUEST: navigation command — no bid, no balance change. Just
+        // take the player to the Ability Fruits page and close out the gesture.
+        if (parsed.action === 'FRUITS') {
+            onAbilityFruits?.()
+            if (checkTimerRef.current) clearTimeout(checkTimerRef.current)
+            checkTimerRef.current = setTimeout(() => {
+                if (phaseRef.current === 'sending') {
+                    phaseRef.current = alwaysOnRef.current ? 'listening' : 'idle'
+                    setPhase(phaseRef.current)
+                    if (!alwaysOnRef.current) setLabel(null)
+                }
+            }, CHECK_MARK_MS)
+            return
+        }
+
         // Optimistic UI FIRST, server call after. Page owns balance/leaderboard.
         onOptimisticBid?.(parsed.amount)
         void onBid(parsed.amount)
@@ -358,7 +388,7 @@ export default function VoiceBidButton({
                 if (!alwaysOnRef.current) setLabel(null)
             }
         }, CHECK_MARK_MS)
-    }, [onBid, onBuy, onOptimisticBid, stopElapsedTimer])
+    }, [onBid, onBuy, onAbilityFruits, onOptimisticBid, stopElapsedTimer])
 
     const transcribe = useCallback(async (blob: Blob, gen: number, silent = false) => {
         // If a bid was already placed for this gesture (Vosk/native fired
