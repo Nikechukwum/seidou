@@ -72,12 +72,12 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     {
         id: 'divide',
         name: 'Divide Divide Fruit',
-        tagline: "Cuts the target player's bid down by the selected divisor.",
+        tagline: "Cuts the #1 player's bid down by the selected divisor — it always hits first position.",
         description:
-            "The mirror of Multiply. Select a player and their bid is divided, dropping them down the table. Only the target player's bid is affected.",
+            "Activate and the fruit appears on your card, then travels across the table and lands on whoever currently holds first position. Their bid is split by the divisor (÷2, ÷3, ÷4) and rounded down, dropping them down the table. Only the #1 player's bid is affected.",
         image: '/ability-fruits/divide.png',
-        accent: { base: '#94a3b8', spark: '#e9d5ff', deep: '#475569' },
-        available: false,
+        accent: { base: '#a855f7', spark: '#e9d5ff', deep: '#6d28d9' },
+        available: true,
     },
     {
         id: 'swap',
@@ -187,3 +187,20 @@ export function multiplyFactorForLevel(level: number): MultiplyFactor {
 
 /** The factor Activate fires with right now. */
 export const MULTIPLY_FACTOR = multiplyFactorForLevel(CURRENT_FRUIT_LEVEL)
+
+// ----------------------------------------------------------------------------
+// DIVIDE LEVELS
+// ----------------------------------------------------------------------------
+// Same levelling idea as Multiply, but the level controls the DIVISOR:
+// ÷2 at level 1 (default), rising to ÷3 and ÷4 as the fruit levels up.
+export const DIVIDE_LEVEL_FACTORS = [2, 3, 4] as const
+
+export type DivideFactor = (typeof DIVIDE_LEVEL_FACTORS)[number]
+
+export function divideFactorForLevel(level: number): DivideFactor {
+    const idx = Math.min(Math.max(level, 1), DIVIDE_LEVEL_FACTORS.length) - 1
+    return DIVIDE_LEVEL_FACTORS[idx]
+}
+
+/** The divisor Activate fires with right now. */
+export const DIVIDE_FACTOR = divideFactorForLevel(CURRENT_FRUIT_LEVEL)

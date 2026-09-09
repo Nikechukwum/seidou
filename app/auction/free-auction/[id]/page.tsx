@@ -17,7 +17,10 @@ import VoiceBidButton from "@/components/VoiceBidButton";
 import FloatingDelta from "@/components/FloatingDelta";
 import ControlsModal from "@/components/ControlsModal";
 import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
-import { MULTIPLY_FACTOR } from "@/lib/abilityFruits";
+import DivideFruitAbility, { DivideFruitBadge, DivideStatusPill } from "@/components/DivideFruitAbility";
+import { MULTIPLY_FACTOR, DIVIDE_FACTOR } from "@/lib/abilityFruits";
+import { motion } from "motion/react";
+import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
 
 type Bid = {
@@ -80,6 +83,20 @@ const LeaderboardPage = () => {
     // fruit's level (everyone is level 1 -> x2 for now), so there is nothing to
     // pick — Activate fires straight away.
     const [multiplyTarget, setMultiplyTarget] = useState<string | null>(null)
+
+    // BIG SIS REQUEST: Ability Fruit DIVIDE state. The fruit appears on YOUR
+    // card, travels to whoever holds FIRST POSITION and divides their bid.
+    type DivideStage = 'idle' | 'appear' | 'travel' | 'covering' | 'explode' | 'settle'
+    const [divideStage, setDivideStage] = useState<DivideStage>('idle')
+    const [divideTarget, setDivideTarget] = useState<string | null>(null)
+    const [divideFlight, setDivideFlight] = useState<{ sx: number; sy: number; tx: number; ty: number } | null>(null)
+    const divideTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+    // clear any in-flight divide timers when the page unmounts
+    useEffect(() => () => {
+        divideTimeoutsRef.current.forEach(clearTimeout)
+        divideTimeoutsRef.current = []
+    }, [])
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -393,20 +410,127 @@ const LeaderboardPage = () => {
         setMultiplyTarget(myUserId)
     }, [multiplyTarget, myUserId, myBid, dispatch])
 
-    // Fire the armed fruit as soon as the table has loaded and we know who you
-    // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
-    useEffect(() => {
-        if (loading || armedFruitRef.current !== 'multiply') return
-        armedFruitRef.current = null
-        handleMultiplySelf()
-    }, [loading, handleMultiplySelf])
-
     // FRAME 5 (settled): the overlay is gone — float "+X,XXX,XXX ↑" next to the
     // target's new bid, the same green delta a normal bid raise shows.
     const handleMultiplyComplete = useCallback((id: number | string, delta: number) => {
         setMultiplyTarget(null)
         if (delta > 0) fireDelta(String(id), delta)
     }, [fireDelta])
+
+    // BIG SIS REQUEST: Ability Fruit DIVIDE — the fruit ALWAYS hits whoever
+    // holds FIRST POSITION. It appears on YOUR card and travels across to rest
+    // on the #1 card (FRAME 2), their bid splits old -> reduced (FRAME 3), the
+    // red "-X,XXX,XXX ↓" floats off (FRAME 4), then it settles (FRAME 5).
+    const handleDivideOptimistic = useCallback((userId: string) => {
+        const previousBids = bids
+        const oldBid = Number(previousBids.find(b => b.userId === userId)?.bidAmount ?? 0)
+        const divided = Math.max(1, Math.floor(oldBid / DIVIDE_FACTOR))
+        setBids(prev => prev.map(b => b.userId === userId ? { ...b, bidAmount: divided } : b))
+
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/divide-bid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, factor: DIVIDE_FACTOR }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    setBids(previousBids)
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not divide the bid.' }))
+                } else if (data && data.target_user_id && String(data.target_user_id) !== userId) {
+                    // the server divided whoever is #1 NOW — if that is not the
+                    // card we animated, reconcile so client and server agree.
+                    setBids(prev => prev.map(b =>
+                        b.userId === userId
+                            ? { ...b, bidAmount: oldBid }
+                            : String(b.userId) === String(data.target_user_id)
+                                ? { ...b, bidAmount: Number(data.bidAmount) }
+                                : b
+                    ))
+                    dispatch(showToast({ type: 'error', message: 'The #1 player changed mid-animation.' }))
+                }
+            } catch {
+                setBids(previousBids)
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [auctionId, bids, dispatch])
+
+    // Separately timed frames for the divide sequence. The fruit rests on your
+    // card, flies to first position, covers it, then the reduction lands.
+    const handleDivideSelf = useCallback(() => {
+        if (divideTarget || divideStage !== 'idle') return
+        if (!myUserId) {
+            dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
+            return
+        }
+        const rank1 = [...bids].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))[0]
+        if (!rank1) {
+            dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
+            return
+        }
+
+        const APP_MS = 800
+        const TRAVEL_MS = 850
+        // long enough to read the old amount strike through before it lifts away
+        const SPLIT_MS = 700
+        const IMPACT_MS = 950
+        const SETTLE_MS = 300
+
+        setDivideTarget(rank1.userId)
+        setDivideStage('appear')
+
+        const t1 = setTimeout(() => setDivideStage('travel'), APP_MS)
+        divideTimeoutsRef.current.push(t1)
+        const t2 = setTimeout(() => setDivideStage('covering'), APP_MS + TRAVEL_MS)
+        divideTimeoutsRef.current.push(t2)
+        const t3 = setTimeout(() => {
+            handleDivideOptimistic(rank1.userId)
+            setDivideStage('explode')
+        }, APP_MS + TRAVEL_MS + SPLIT_MS)
+        divideTimeoutsRef.current.push(t3)
+        const t4 = setTimeout(() => setDivideStage('settle'), APP_MS + TRAVEL_MS + SPLIT_MS + IMPACT_MS)
+        divideTimeoutsRef.current.push(t4)
+        const t5 = setTimeout(() => {
+            setDivideStage('idle')
+            setDivideTarget(null)
+            setDivideFlight(null)
+        }, APP_MS + TRAVEL_MS + SPLIT_MS + IMPACT_MS + SETTLE_MS)
+        divideTimeoutsRef.current.push(t5)
+    }, [divideTarget, divideStage, myUserId, bids, handleDivideOptimistic, dispatch])
+
+    // while the fruit is in flight, capture the source card (mine) and the #1
+    // card positions so the page-level overlay can fly between them.
+    useEffect(() => {
+        if (divideStage !== 'travel') return
+        const rectOf = (userId: string | null) =>
+            userId
+                ? document.querySelector<HTMLElement>(`[data-divide-card="${userId}"]`)?.getBoundingClientRect() ?? null
+                : null
+        const s = rectOf(myUserId)
+        const t = rectOf(divideTarget)
+        if (!t) return
+        setDivideFlight({
+            sx: s ? s.right - 8 : t.left + t.width / 2,
+            sy: s ? s.top + s.height / 2 : t.top - 130,
+            // land where the fruit comes to REST on the #1 card (right edge,
+            // vertically centred) so the flight and the parked fruit are one move
+            tx: t.right - 42,
+            ty: t.top + t.height / 2,
+        })
+    }, [divideStage, myUserId, divideTarget])
+
+    // Fire the armed fruit as soon as the table has loaded and we know who you
+    // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
+    useEffect(() => {
+        if (loading) return
+        const armed = armedFruitRef.current
+        if (!armed) return
+        armedFruitRef.current = null
+        if (armed === 'multiply') handleMultiplySelf()
+        if (armed === 'divide') handleDivideSelf()
+    }, [loading, handleMultiplySelf, handleDivideSelf])
 
     // BIG SIS REQUEST: ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
@@ -552,18 +676,27 @@ const LeaderboardPage = () => {
                         return (
                             <div
                                 key={bid.id}
+                                data-divide-card={bid.userId}
                                 className="bg-white rounded-3xl shadow-sm border border-gray-100"
                             >
-                                {/* BIG SIS REQUEST: each card wraps in the Multiply fruit overlay */}
-                                <MultiplyFruitAbility
+                                {/* BIG SIS REQUEST: each card wraps in the Multiply + Divide fruit overlays */}
+                                <DivideFruitAbility
                                     tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
-                                    targetPlayerId={multiplyTarget}
+                                    sourcePlayerId={myUserId}
+                                    targetPlayerId={divideTarget}
+                                    stage={divideStage}
                                     playerId={bid.userId}
-                                    factor={MULTIPLY_FACTOR}
-                                    maxBidLimit={MAX_BID_LIMIT}
-                                    onBidUpdated={handleMultiplyOptimistic}
-                                    onComplete={handleMultiplyComplete}
+                                    factor={DIVIDE_FACTOR}
                                 >
+                                    <MultiplyFruitAbility
+                                        tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
+                                        targetPlayerId={multiplyTarget}
+                                        playerId={bid.userId}
+                                        factor={MULTIPLY_FACTOR}
+                                        maxBidLimit={MAX_BID_LIMIT}
+                                        onBidUpdated={handleMultiplyOptimistic}
+                                        onComplete={handleMultiplyComplete}
+                                    >
                                     <div className="flex items-start gap-4 p-6">
                                         <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
                                             {index + 1}
@@ -597,9 +730,46 @@ const LeaderboardPage = () => {
                                         </div>
                                     </div>
                                 </MultiplyFruitAbility>
+                                </DivideFruitAbility>
                             </div>
                         )
                     })}
+                </div>
+            )}
+
+            {/* BIG SIS REQUEST: DIVIDE FRAME 2 — the status pill under the table:
+                "÷N  Dividing <name>'s bid by N". Clears once the cut lands. */}
+            <DivideStatusPill
+                stage={divideStage}
+                targetName={bids.find(b => b.userId === divideTarget)?.username}
+                factor={DIVIDE_FACTOR}
+            />
+
+            {/* BIG SIS REQUEST: DIVIDE — the fruit flying from MY card to the
+                holder of first position while the divide sequence is live. */}
+            {divideStage === 'travel' && divideFlight && (
+                <div className="pointer-events-none fixed inset-0 z-[70]">
+                    {/* comet trail catching up behind the travelling fruit */}
+                    {[1, 2, 3].map((i) => (
+                        <motion.span
+                            key={`trail-${i}`}
+                            className="absolute left-0 top-0 rounded-full bg-violet-400"
+                            style={{ width: 12 - i * 3, height: 12 - i * 3 }}
+                            initial={{ x: divideFlight.sx - i * 18, y: divideFlight.sy - i * 18, opacity: 0.85 }}
+                            animate={{ x: divideFlight.tx - i * 18, y: divideFlight.ty - i * 18, opacity: 0 }}
+                            transition={{ duration: 0.85, ease: 'easeInOut', delay: (i - 1) * 0.06 }}
+                        />
+                    ))}
+
+                    {/* the fruit itself — spins as it flies, ÷ badge riding along */}
+                    <motion.div
+                        className="absolute left-0 top-0"
+                        initial={{ x: divideFlight.sx - 28, y: divideFlight.sy - 28, rotate: 0, scale: 0.5, opacity: 0 }}
+                        animate={{ x: divideFlight.tx - 28, y: divideFlight.ty - 28, rotate: 540, scale: 1, opacity: [0, 1, 1, 1] }}
+                        transition={{ duration: 0.85, ease: 'easeInOut', times: [0, 0.15, 0.8, 1] }}
+                    >
+                        <DivideFruitBadge size={56} factor={DIVIDE_FACTOR} />
+                    </motion.div>
                 </div>
             )}
 
