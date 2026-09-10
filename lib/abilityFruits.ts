@@ -131,13 +131,13 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     },
     {
         id: 'thief',
-        name: 'Thief Thief Fruit',
-        tagline: "Steals a slice of a rival's bid and adds it to yours.",
+        name: 'Steal Bidding Currency',
+        tagline: 'Steals 10,000 BC from every other player on the table.',
         description:
-            "Lifts a percentage of one player's bid and moves it onto your own. Blocked outright by the Shield Shield Fruit, so check the table before you reach.",
+            "Steals a fixed amount of bidding currency from EVERY other player on the table — no aiming needed. The fruit locks on automatically, runs a 60-second countdown, then slams all the stolen BC straight onto your bid. Players with less than the steal amount are skipped automatically.",
         image: '/ability-fruits/thief.png',
-        accent: { base: '#dc2626', spark: '#fecaca', deep: '#7f1d1d' },
-        available: false,
+        accent: { base: '#a855f7', spark: '#f5f3ff', deep: '#6b21a8' },
+        available: true,
     },
     {
         id: 'mirror',
@@ -204,3 +204,12 @@ export function divideFactorForLevel(level: number): DivideFactor {
 
 /** The divisor Activate fires with right now. */
 export const DIVIDE_FACTOR = divideFactorForLevel(CURRENT_FRUIT_LEVEL)
+
+// ----------------------------------------------------------------------------
+// STEAL (BIDDING CURRENCY) SETTINGS
+// ----------------------------------------------------------------------------
+// Each eligible player is drained of this amount; the total lands on the
+// activator's bid after a STEAL_FRUIT_DURATION_S-second countdown. Players
+// whose bid is below the steal amount are left alone.
+export const STEAL_FRUIT_AMOUNT = 10_000
+export const STEAL_FRUIT_DURATION_S = 60
