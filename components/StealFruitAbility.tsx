@@ -3,37 +3,44 @@
 // ============================================================================
 // ABILITY FRUIT: STEAL BIDDING CURRENCY
 // ----------------------------------------------------------------------------
-// Steals a fixed amount of bidding currency (BC) from EVERY other player on
-// the table and gives it to the activator.
+// Drains 1,000 BC per second out of EVERY other player on the table and gives
+// the pooled total to the activator when the 60s countdown ends.
 //
 //   FRAME 1  BEFORE STEAL       Current leaderboard before the ability is used.
 //   FRAME 2  FRUIT ACTIVATED    The fruit appears on the RIGHT of the
-//                               ACTIVATOR'S OWN card with a live countdown
-//                               timer pill beneath it (60 -> 0).
-//   FRAME 3  STEAL IN PROGRESS  The fruit locks onto every other player (the
-//                               page draws purple connector lines) and each
-//                               target card shows a pulsing red "-10,000".
-//                               The timer ticks down over 60 seconds.
+//                               ACTIVATOR'S OWN card with the live countdown
+//                               timer pill at the BOTTOM of the fruit (60 -> 0).
+//   FRAME 3  STEAL IN PROGRESS  Every other player's card gets a LIGHT RED
+//                               border while their balance is being drained and
+//                               shows a pulsing red "-1,000/s" badge. Anyone who
+//                               runs out before the countdown hits zero loses
+//                               their border. The timer drains 1,000 BC per
+//                               second over 60 seconds.
 //   FRAME 4  BC GATHERED        At 0 the fruit SLIDES LEFT over the activator's
 //                               card (same slide as Multiply) and explodes with
-//                               purple energy.
+//                               purple energy; all red borders are removed.
 //   FRAME 5  INCREMENT FEEDBACK The card goes green-ringed and
 //                               "+ B X,XXX,XXX" floats up on the activator's
 //                               card — all stolen BC lands on it (~800ms).
 //   FRAME 6  AFTERMATH          New balances stand, each row carrying its
-//                               compact delta: red "v 180K" on every target,
-//                               green "^ 370K" on the activator.
+//                               compact delta: red "v 60K"/"v 180K" on every
+//                               target (their actual loss), green "^ 370K" on
+//                               the activator.
 //
 // DEV RULES (from design):
 //   - No target selection UI — targets are automatic (every other bidder).
-//   - Steal amount: 10,000 BC per eligible player (fixed, not % based).
-//   - Players whose bid is below the steal amount are not touched.
+//   - Drain rate: 1,000 BC per second, over a 60s countdown.
+//   - The timer pill sits at the BOTTOM of the fruit.
+//   - Every other player's card gets a LIGHT RED border while being drained;
+//     a player whose balance runs out before the countdown hits zero loses the
+//     border. When the timer hits zero all borders are removed.
+//   - The pulse ring around the fruit is RED, not purple.
 //   - Ease-out curve: cubic-bezier(0.22, 1, 0.36, 1).
 //   - Explosion ~400-600ms, with particles AND a card shake.
 //   - BC increment feedback shows for ~800ms, then fades out.
 //
-// The page drives the stage machine + countdown and draws the connector
-// lines; this wrapper only draws ON-CARD frames.
+// The page drives the stage machine + countdown + the red card borders and
+// draws no connector lines; this wrapper only draws ON-CARD frames.
 // ============================================================================
 
 import { ReactNode, useEffect, useRef, useState } from 'react'
@@ -85,7 +92,7 @@ function compactBc(value: number) {
 /** The fruit with the live countdown timer pill mounted beneath it. */
 function FruitWithTimer({ size, secondsLeft }: { size: number; secondsLeft: number }) {
     return (
-        <div className="relative" style={{ width: size, height: size + 34 }}>
+        <div className="relative" style={{ width: size, height: size + 28 }}>
             <Image
                 src={FRUIT_SRC}
                 alt="Steal Bidding Currency Fruit"
@@ -94,9 +101,10 @@ function FruitWithTimer({ size, secondsLeft }: { size: number; secondsLeft: numb
                 sizes={`${size}px`}
                 className="h-full w-full object-contain drop-shadow-lg"
             />
+            {/* timer pill hangs at the BOTTOM of the fruit, not over its middle */}
             <span
                 className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center gap-0.5 rounded-full bg-purple-700 px-2 py-0.5 font-extrabold text-white shadow-md tabular-nums"
-                style={{ top: size - 14, fontSize: 12 }}
+                style={{ top: size + 2, fontSize: 12 }}
             >
                 {secondsLeft}s
             </span>
@@ -117,10 +125,13 @@ interface StealFruitAbilityProps {
     secondsLeft: number
     /** This card's own player id. */
     playerId: number | string
-    /** Fixed amount stolen from each eligible player. */
+    /** Fixed amount drained each second — shown on the badge as "-X,XXX/s". */
     stealAmount: number
-    /** Total stolen — the green "+X" floated on the activator card. */
+    /** Total stolen by the activator — the green "+X" floated on their card. */
     gain: number
+    /** Exact amount each target actually lost (may be capped by their balance
+     *  if they ran out before the timer hit zero). Drives the aftermath delta. */
+    lossByPlayer?: Record<string, number>
     /** The player card content these effects overlay. */
     children?: ReactNode
 }
@@ -134,10 +145,12 @@ export default function StealFruitAbility({
     playerId,
     stealAmount,
     gain,
+    lossByPlayer,
     children,
 }: StealFruitAbilityProps) {
     const isActivator = activatorId === playerId
     const isTarget = targetIds.includes(String(playerId))
+    const playerLoss = lossByPlayer?.[String(playerId)]
 
     // Activator's explode runs internally: cover-slide, then particle burst.
     const [explodePhase, setExplodePhase] = useState<'idle' | 'cover' | 'burst'>('idle')
@@ -214,9 +227,9 @@ export default function StealFruitAbility({
                     >
                         <FruitWithTimer size={56} secondsLeft={secondsLeft} />
 
-                        {/* faint purple pulse ring while the steal is running */}
+                        {/* red pulse ring while the steal is running */}
                         <motion.span
-                            className="absolute -top-3 -right-3 -z-10 rounded-full border-2 border-purple-500"
+                            className="absolute -top-3 -right-3 -z-10 rounded-full border-2 border-red-500"
                             initial={{ opacity: 0, width: 56, height: 56 }}
                             animate={{ opacity: [0, 0.9, 0], width: [56, 120], height: [56, 120] }}
                             transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
@@ -243,7 +256,7 @@ export default function StealFruitAbility({
                             }}
                         >
                             <span className="text-xs font-extrabold text-red-600 tabular-nums">
-                                -{stealAmount.toLocaleString()}
+                                -{stealAmount.toLocaleString()}/s
                             </span>
                             <BcToken size={16} />
                         </motion.div>
@@ -405,7 +418,7 @@ export default function StealFruitAbility({
                 red down-arrow on every target, green up-arrow on the activator.
                ================================================================ */}
             <AnimatePresence>
-                {stage === 'settle' && settlePhase === 'after' && (isTarget || (isActivator && gain > 0)) && (
+                {stage === 'settle' && settlePhase === 'after' && (playerLoss !== undefined || (isActivator && gain > 0)) && (
                     <motion.div
                         className="pointer-events-none absolute top-1/2 right-4 z-30 -translate-y-1/2"
                         initial={{ opacity: 0, x: 10 }}
@@ -426,7 +439,7 @@ export default function StealFruitAbility({
                             >
                                 <path d="M12 4a1 1 0 0 1 .7.29l6 6a1 1 0 0 1-1.4 1.42L13 7.41V19a1 1 0 1 1-2 0V7.41l-4.3 4.3a1 1 0 1 1-1.4-1.42l6-6A1 1 0 0 1 12 4Z" />
                             </svg>
-                            {compactBc(isActivator ? gain : stealAmount)}
+                            {compactBc(isActivator ? gain : (playerLoss ?? 0))}
                         </span>
                     </motion.div>
                 )}
