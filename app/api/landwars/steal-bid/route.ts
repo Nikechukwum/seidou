@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
 // Ability Fruit: STEAL BIDDING CURRENCY — commit the pooled steal.
-// The UI runs the 60s countdown + visuals, then reconciles with this endpoint
-// once the timer hits zero. The RPC derives everyone to drain itself; it never
-// reads a target list from the request, so it cannot be aimed at anyone.
+// The UI runs the 60s countdown + drains 1,000 BC/sec, then reconciles with
+// this endpoint once the timer hits zero. The RPC derives everyone to drain
+// itself; it never reads a target list from the request, so it cannot be
+// aimed at anyone.
 export async function POST(request: NextRequest) {
     try {
-        let body: { auctionId?: unknown; stealAmount?: unknown }
+        let body: { auctionId?: unknown; perSecond?: unknown; seconds?: unknown }
         try {
             body = await request.json()
         } catch {
@@ -15,13 +16,17 @@ export async function POST(request: NextRequest) {
         }
 
         const auctionId = String(body?.auctionId ?? '').trim()
-        const stealAmount = Number(body?.stealAmount ?? 10000)
+        const perSecond = Number(body?.perSecond ?? 1000)
+        const seconds = Number(body?.seconds ?? 60)
 
         if (!auctionId) {
             return NextResponse.json({ error: 'auctionId is required.' }, { status: 400 })
         }
-        if (!Number.isFinite(stealAmount) || stealAmount <= 0) {
-            return NextResponse.json({ error: 'stealAmount must be a positive number.' }, { status: 400 })
+        if (!Number.isFinite(perSecond) || perSecond <= 0) {
+            return NextResponse.json({ error: 'perSecond must be a positive number.' }, { status: 400 })
+        }
+        if (!Number.isInteger(seconds) || seconds <= 0 || seconds > 120) {
+            return NextResponse.json({ error: 'seconds must be a whole number between 1 and 120.' }, { status: 400 })
         }
 
         const supabase = await createClient()
@@ -44,7 +49,8 @@ export async function POST(request: NextRequest) {
 
         const { data, error } = await supabase.rpc('steal_bids', {
             p_auction_id: auctionId,
-            p_steal_amount: stealAmount,
+            p_per_second: perSecond,
+            p_seconds: seconds,
         })
 
         if (error) {

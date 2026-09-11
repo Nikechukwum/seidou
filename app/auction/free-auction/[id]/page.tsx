@@ -19,7 +19,7 @@ import ControlsModal from "@/components/ControlsModal";
 import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
 import DivideFruitAbility, { DivideFruitBadge, DivideStatusPill } from "@/components/DivideFruitAbility";
 import StealFruitAbility from "@/components/StealFruitAbility";
-import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S } from "@/lib/abilityFruits";
+import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S } from "@/lib/abilityFruits";
 import { motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
@@ -100,15 +100,21 @@ const LeaderboardPage = () => {
     }, [])
 
     // BIG SIS REQUEST: Ability Fruit STEAL BIDDING CURRENCY state. Auto-targets
-    // every other player with a bid, runs a 60s countdown, then pools all the
-    // stolen BC onto my bid in one explosion.
+    // every other player with a bid, drains 1,000 BC/sec over a 60s countdown,
+    // then pools all the stolen BC onto my bid in one explosion.
     type StealStage = 'idle' | 'active' | 'explode' | 'settle'
     const [stealStage, setStealStage] = useState<StealStage>('idle')
     const [stealSeconds, setStealSeconds] = useState(STEAL_FRUIT_DURATION_S)
     const [stealGain, setStealGain] = useState(0)
     const [stealTargets, setStealTargets] = useState<string[]>([])
-    const [stealLines, setStealLines] = useState<{ from: { x: number; y: number }; tos: { x: number; y: number }[] } | null>(null)
     const stealCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    // Per-target starting balances (the ground truth for every drain tick).
+    const stealBasisRef = useRef<Map<string, number>>(new Map())
+    // Full table snapshot taken at activation — fallback if the commit RPC fails.
+    const stealSnapshotRef = useRef<typeof bids>([])
+    // Latest resolved loss per target (drives the aftermath deltas).
+    const [stealLossByPlayer, setStealLossByPlayer] = useState<Record<string, number>>({})
+    const myUserIdRef = useRef<string | null>(null)
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -413,6 +419,12 @@ const LeaderboardPage = () => {
         [bids, myUserId]
     )
 
+    // keep a ref of who I am so the steal countdown/commit never need to be
+    // re-created when the balance array changes.
+    useEffect(() => {
+        myUserIdRef.current = myUserId
+    }, [myUserId])
+
     const handleMultiplySelf = useCallback(() => {
         if (multiplyTarget || stealStage !== 'idle') return
         if (!myUserId || !myBid) {
@@ -534,7 +546,8 @@ const LeaderboardPage = () => {
     }, [divideStage, myUserId, divideTarget])
 
     // BIG SIS REQUEST: Ability Fruit STEAL BIDDING CURRENCY.
-    // Auto-targets every other player whose bid can afford the steal amount.
+    // Auto-targets every other player who holds any bidding currency, then
+    // drains 1,000 BC per second from each for 60 seconds.
     const handleStealSelf = useCallback(() => {
         if (stealStage !== 'idle' || divideTarget || multiplyTarget) return
         if (!myUserId) {
@@ -546,29 +559,50 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
             return
         }
-        const targets = bids.filter(b => b.userId !== myUserId && Number(b.bidAmount) >= STEAL_FRUIT_AMOUNT)
+        const targets = bids.filter(b => b.userId !== myUserId && Number(b.bidAmount) > 0)
         if (targets.length === 0) {
-            dispatch(showToast({ type: 'error', message: 'No one to steal from — every other bid is below 10,000.' }))
+            dispatch(showToast({ type: 'error', message: 'No one else on the table has bidding currency to take.' }))
             return
         }
 
-        setStealTargets(targets.map(t => t.userId))
-        setStealGain(targets.length * STEAL_FRUIT_AMOUNT)
+        const basis = new Map<string, number>()
+        targets.forEach(t => basis.set(String(t.userId), Number(t.bidAmount)))
+        stealBasisRef.current = basis
+        stealSnapshotRef.current = bids
+        setStealTargets(targets.map(t => String(t.userId)))
+        setStealLossByPlayer({})
+        setStealGain(0)
         setStealSeconds(STEAL_FRUIT_DURATION_S)
         setStealStage('active')
     }, [stealStage, divideTarget, multiplyTarget, myUserId, bids, dispatch])
 
-    // The 60s countdown. At zero: commit the steal + explode + settle.
+    // The 60s countdown: every second, each still-eligible target loses 1,000
+    // BC. Anyone who runs out before zero loses their red border and badge. At
+    // zero: commit the steal + explode + settle.
     const handleStealCommit = useCallback(() => {
-        const previousBids = bids
-        const targets = bids.filter(b => b.userId !== myUserId && Number(b.bidAmount) >= STEAL_FRUIT_AMOUNT)
-        const targetIds = new Set(targets.map(t => t.userId))
-        const gain = targets.length * STEAL_FRUIT_AMOUNT
+        const myId = myUserIdRef.current
+        if (!myId) return
+        const basis = stealBasisRef.current
+        const snapshot = stealSnapshotRef.current
+
+        // Each target loses min(their starting balance, one full 60s drain).
+        const lossByPlayer: Record<string, number> = {}
+        let gain = 0
+        basis.forEach((bid, id) => {
+            const loss = Math.min(bid, STEAL_FRUIT_AMOUNT)
+            if (loss > 0) {
+                lossByPlayer[id] = loss
+                gain += loss
+            }
+        })
+        setStealLossByPlayer(lossByPlayer)
         setStealGain(gain)
+
         setBids(prev => prev.map(b => {
-            if (b.userId === myUserId) return { ...b, bidAmount: Number(b.bidAmount) + gain }
-            if (targetIds.has(b.userId)) return { ...b, bidAmount: Number(b.bidAmount) - STEAL_FRUIT_AMOUNT }
-            return b
+            if (b.userId === myId) return { ...b, bidAmount: Number(b.bidAmount) + gain }
+            const base = basis.get(String(b.userId))
+            if (base === undefined) return b
+            return { ...b, bidAmount: Math.max(0, base - Math.min(base, STEAL_FRUIT_AMOUNT)) }
         }))
 
         void (async () => {
@@ -576,72 +610,67 @@ const LeaderboardPage = () => {
                 const res = await fetch('/api/landwars/steal-bid', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auctionId, stealAmount: STEAL_FRUIT_AMOUNT }),
+                    body: JSON.stringify({ auctionId, perSecond: STEAL_PER_SECOND, seconds: STEAL_FRUIT_DURATION_S }),
                 })
                 const data = await res.json()
                 if (!res.ok) {
-                    setBids(previousBids)
+                    setBids(snapshot)
                     dispatch(showToast({ type: 'error', message: data.error || 'Could not steal the bidding currency.' }))
                 }
             } catch {
-                setBids(previousBids)
+                setBids(snapshot)
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [auctionId, bids, myUserId, dispatch])
+    }, [auctionId, dispatch])
 
     useEffect(() => {
         if (stealStage !== 'active') return
+        let elapsed = 0
         stealCountdownRef.current = setInterval(() => {
-            setStealSeconds(prev => {
-                if (prev <= 1) {
-                    if (stealCountdownRef.current) clearInterval(stealCountdownRef.current)
-                    stealCountdownRef.current = null
-                    handleStealCommit()
-                    // FRAME 4: slide (420ms) + explosion (~560ms, per design).
-                    setStealStage('explode')
+            elapsed += 1
+            const sec = elapsed
+            const myId = myUserIdRef.current
+            const basis = stealBasisRef.current
+
+            // Drain step: recompute each target's balance from its starting
+            // value so realtime refreshes can never clobber the countdown.
+            setBids(prev => prev.map(b => {
+                if (b.userId === myId) return b
+                const base = basis.get(String(b.userId))
+                if (base === undefined) return b
+                return { ...b, bidAmount: Math.max(0, base - STEAL_PER_SECOND * sec) }
+            }))
+            // Remove the red border + badge of anyone who has fully run out.
+            setStealTargets(prev => prev.filter(id => (basis.get(id) ?? 0) > STEAL_PER_SECOND * sec))
+
+            setStealSeconds(STEAL_FRUIT_DURATION_S - sec)
+
+            if (sec >= STEAL_FRUIT_DURATION_S) {
+                if (stealCountdownRef.current) clearInterval(stealCountdownRef.current)
+                stealCountdownRef.current = null
+                handleStealCommit()
+                // FRAME 4: slide (420ms) + explosion (~560ms, per design).
+                setStealStage('explode')
+                setTimeout(() => {
+                    // FRAME 5 (+X for ~800ms) then FRAME 6 (aftermath deltas).
+                    setStealStage('settle')
                     setTimeout(() => {
-                        // FRAME 5 (+X for ~800ms) then FRAME 6 (aftermath deltas).
-                        setStealStage('settle')
-                        setTimeout(() => {
-                            setStealStage('idle')
-                            setStealTargets([])
-                            setStealGain(0)
-                            setStealLines(null)
-                        }, 2000)
-                    }, 1000)
-                    return 0
-                }
-                return prev - 1
-            })
+                        setStealStage('idle')
+                        setStealTargets([])
+                        setStealGain(0)
+                        setStealLossByPlayer({})
+                        stealBasisRef.current = new Map()
+                        stealSnapshotRef.current = []
+                    }, 2000)
+                }, 1000)
+            }
         }, 1000)
         return () => {
             if (stealCountdownRef.current) clearInterval(stealCountdownRef.current)
             stealCountdownRef.current = null
         }
     }, [stealStage, handleStealCommit])
-
-    // while the steal is running, keep the purple connector lines in sync with
-    // the activator and target cards (re-checked as the page may scroll).
-    useEffect(() => {
-        if (stealStage !== 'active') return
-        const compute = () => {
-            const aRect = myUserId
-                ? document.querySelector<HTMLElement>(`[data-steal-card="${myUserId}"]`)?.getBoundingClientRect() ?? null
-                : null
-            if (!aRect) return
-            const from = { x: aRect.right - 30, y: aRect.top + aRect.height / 2 }
-            const tos: { x: number; y: number }[] = []
-            document.querySelectorAll('[data-steal-target]').forEach((el) => {
-                const r = el.getBoundingClientRect()
-                tos.push({ x: r.right - 30, y: r.top + r.height / 2 })
-            })
-            setStealLines({ from, tos })
-        }
-        compute()
-        const id = setInterval(compute, 2000)
-        return () => clearInterval(id)
-    }, [stealStage, myUserId, stealTargets])
 
     // Fire the armed fruit as soon as the table has loaded and we know who you
     // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
@@ -796,13 +825,20 @@ const LeaderboardPage = () => {
                 <div className="flex flex-col gap-4.5">
                     {bids.map((bid, index) => {
                         const isYou = bid.userId === currentUserId || bid.userId === user?.id
+                        // light red border on every target while it is being
+                        // drained; disappears at the explode (timer hit zero)
+                        // and for anyone who ran out mid-countdown.
+                        const isStealLiveTarget =
+                            stealStage === 'active' && stealTargets.includes(String(bid.userId))
                         return (
                             <div
                                 key={bid.id}
                                 data-divide-card={bid.userId}
                                 data-steal-card={bid.userId}
-                                data-steal-target={stealTargets.includes(bid.userId) ? 'true' : undefined}
-                                className="bg-white rounded-3xl shadow-sm border border-gray-100"
+                                data-steal-target={stealTargets.includes(String(bid.userId)) ? 'true' : undefined}
+                                className={`bg-white rounded-3xl shadow-sm border transition-colors duration-300 ${
+                                    isStealLiveTarget ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-100'
+                                }`}
                             >
                                 {/* BIG SIS REQUEST: each card wraps in the Steal + Multiply + Divide fruit overlays */}
                                 <StealFruitAbility
@@ -812,8 +848,9 @@ const LeaderboardPage = () => {
                                     stage={stealStage}
                                     secondsLeft={stealSeconds}
                                     playerId={bid.userId}
-                                    stealAmount={STEAL_FRUIT_AMOUNT}
+                                    stealAmount={STEAL_PER_SECOND}
                                     gain={stealGain}
+                                    lossByPlayer={stealLossByPlayer}
                                 >
                                     <DivideFruitAbility
                                         tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
@@ -909,45 +946,7 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: STEAL — purple connector lines from my card to each
-                target card while the countdown runs. */}
-            {stealStage === 'active' && stealLines && stealLines.tos.length > 0 && (
-                <svg
-                    className="pointer-events-none fixed inset-0 z-[65]"
-                    width="100%"
-                    height="100%"
-                    style={{ overflow: 'visible' }}
-                >
-                    {stealLines.tos.map((t, i) => (
-                        <g key={`steal-line-${i}`}>
-                            {/* curved tendril bowing out to the right, as designed */}
-                            <motion.path
-                                d={`M ${stealLines.from.x} ${stealLines.from.y} Q ${
-                                    Math.max(stealLines.from.x, t.x) + 46
-                                } ${(stealLines.from.y + t.y) / 2} ${t.x} ${t.y}`}
-                                fill="none"
-                                stroke="#a855f7"
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeDasharray="6 6"
-                                style={{ filter: 'drop-shadow(0 0 4px rgba(168,85,247,0.6))' }}
-                                animate={{ strokeDashoffset: [0, -24] }}
-                                transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
-                            />
-                            <motion.circle
-                                cx={t.x}
-                                cy={t.y}
-                                r={3}
-                                fill="#d8b4fe"
-                                animate={{ r: [3, 6, 3], opacity: [1, 0.4, 1] }}
-                                transition={{ duration: 1.2, repeat: Infinity }}
-                            />
-                        </g>
-                    ))}
-                </svg>
-            )}
-
-            {/* BIG SIS REQUEST: Slider overlay — dims page, shows value + swipe text, submits on release, swipe up to cancel */}
+            {/* Slider overlay — dims page, shows value + swipe text, submits on release, swipe up to cancel */}
             {sliderDragging && (
                 <>
                     <div className="fixed inset-0 z-50 bg-black/50 pointer-events-none" />

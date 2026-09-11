@@ -132,9 +132,9 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     {
         id: 'thief',
         name: 'Steal Bidding Currency',
-        tagline: 'Steals 10,000 BC from every other player on the table.',
+        tagline: 'Drains 1,000 BC per second from every other player on the table.',
         description:
-            "Steals a fixed amount of bidding currency from EVERY other player on the table — no aiming needed. The fruit locks on automatically, runs a 60-second countdown, then slams all the stolen BC straight onto your bid. Players with less than the steal amount are skipped automatically.",
+            "Steals 1,000 bidding currency per second from EVERY other player on the table — no aiming needed. The fruit locks on automatically and runs a 60-second countdown, then slams all the stolen BC straight onto your bid. Players whose balance runs out mid-countdown stop being drained, and anyone left at zero keeps no take.",
         image: '/ability-fruits/thief.png',
         accent: { base: '#a855f7', spark: '#f5f3ff', deep: '#6b21a8' },
         available: true,
@@ -208,8 +208,10 @@ export const DIVIDE_FACTOR = divideFactorForLevel(CURRENT_FRUIT_LEVEL)
 // ----------------------------------------------------------------------------
 // STEAL (BIDDING CURRENCY) SETTINGS
 // ----------------------------------------------------------------------------
-// Each eligible player is drained of this amount; the total lands on the
-// activator's bid after a STEAL_FRUIT_DURATION_S-second countdown. Players
-// whose bid is below the steal amount are left alone.
-export const STEAL_FRUIT_AMOUNT = 10_000
+// While the fruit's 60-second countdown runs, EVERY other player on the table
+// is drained STEAL_PER_SECOND per second. STEAL_FRUIT_AMOUNT is the most any
+// single player can lose (the full 60 seconds). Players whose balance runs out
+// before the timer hits zero stop being drained and lose their red border.
+export const STEAL_PER_SECOND = 1_000
 export const STEAL_FRUIT_DURATION_S = 60
+export const STEAL_FRUIT_AMOUNT = STEAL_FRUIT_DURATION_S * STEAL_PER_SECOND
