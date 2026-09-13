@@ -9,10 +9,17 @@ interface VideoPlayerProps {
   thumbnailUrl?: string | null;
   autoPlay?: boolean;
   onPlay?: () => void;
+  // Playback-state events for the watch-time reward (use-watch-reward.ts).
+  // `playing` fires once frames actually render, unlike `play`.
+  onPlaying?: () => void;
+  onPause?: () => void;
+  onEnded?: () => void;
+  onWaiting?: () => void;
+  onSeeking?: () => void;
 }
 
 export const VideoPlayerSkeleton = () => {
-  return <div className="aspect-video bg-black rounded-xl" />;
+  return <div className="aspect-video bg-black" />;
 };
 
 export const VideoPlayer = ({
@@ -20,6 +27,11 @@ export const VideoPlayer = ({
   thumbnailUrl,
   autoPlay,
   onPlay,
+  onPlaying,
+  onPause,
+  onEnded,
+  onWaiting,
+  onSeeking,
 }: VideoPlayerProps) => {
   return (
     <MuxPlayer
@@ -31,6 +43,11 @@ export const VideoPlayer = ({
       className="w-full h-full object-contain"
       accentColor="#202020"
       onPlay={onPlay}
+      onPlaying={onPlaying}
+      onPause={onPause}
+      onEnded={onEnded}
+      onWaiting={onWaiting}
+      onSeeking={onSeeking}
     />
   );
 };

@@ -10,7 +10,7 @@ import superjson from 'superjson';
 
 import { makeQueryClient } from './query-client';
 import type { AppRouter } from './routers/_app';
-import { APP_URL } from '@/social/constants';
+import { getAppUrl } from '@/social/constants';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -26,7 +26,7 @@ function getQueryClient() {
 }
 
 function getUrl() {
-  const base = typeof window !== 'undefined' ? '' : APP_URL;
+  const base = typeof window !== 'undefined' ? '' : getAppUrl();
   // Namespaced under /api/social so it cannot collide with Seidou's own
   // commerce API routes.
   return `${base}/api/social/trpc`;

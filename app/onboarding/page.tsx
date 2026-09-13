@@ -160,7 +160,8 @@ function OnboardingContent() {
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-white px-6 py-8">
+    // pb-32 keeps the last category clear of the fixed Continue bar
+    <div className="flex min-h-full flex-col bg-white px-6 pt-8 pb-32">
       <FullScreenLoader isActive={saving} />
 
       {/* Back Button */}
@@ -234,11 +235,9 @@ function OnboardingContent() {
         })}
       </div>
 
-      {/* Spacer to push sticky footer to bottom on short pages */}
-      <div className="grow" />
-
-      {/* Footer */}
-      <div className="sticky bottom-0 -mx-6 mt-10 bg-white px-6 py-4">
+      {/* Footer: fixed to the bottom of the screen, centred to the same
+          max-w-md column as the app shell (like the global footer) */}
+      <div className="fixed inset-x-0 bottom-0 z-10 mx-auto w-full max-w-md border-t border-t-[#0000001A] bg-white px-6 py-4">
         <button
           disabled={!canContinue || saving}
           onClick={handleContinue}
