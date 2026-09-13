@@ -3,7 +3,6 @@
 import { Suspense, useEffect } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
-import { cn } from "@/social/lib/utils";
 import { trpc } from "@/social/trpc/client";
 import { useViewer } from "@/social/hooks/use-viewer";
 import { useWatchReward } from "@/social/modules/watch-rewards/hooks/use-watch-reward";
@@ -42,7 +41,9 @@ const VideoSectionSkeleton = () => {
   return (
     <>
       <VideoPlayerSkeleton />
-      <VideoTopRowSkeleton />
+      <div className="px-4">
+        <VideoTopRowSkeleton />
+      </div>
     </>
   );
 };
@@ -91,21 +92,22 @@ const VideoSectionSuspense = ({ videoId }: VideoSectionProps) => {
 
   return (
     <>
-      <div
-        className={cn(
-          "aspect-video bg-black rounded-xl overflow-hidden relative",
-          video.muxStatus !== "ready" && "rounded-b-none"
-        )}
-      >
-        <VideoPlayer
-          playbackId={video.muxPlaybackId}
-          thumbnailUrl={video.thumbnailUrl}
-          onPlay={handlePlay}
-          {...watchRewardHandlers}
-        />
+      {/* Edge to edge with no rounding: the player is the top of the page
+          (see VideoView). The processing banner stays attached beneath it. */}
+      <div>
+        <div className="aspect-video bg-black overflow-hidden relative">
+          <VideoPlayer
+            playbackId={video.muxPlaybackId}
+            thumbnailUrl={video.thumbnailUrl}
+            onPlay={handlePlay}
+            {...watchRewardHandlers}
+          />
+        </div>
+        <VideoBanner status={video.muxStatus} />
       </div>
-      <VideoBanner status={video.muxStatus} />
-      <VideoTopRow video={video} />
+      <div className="px-4">
+        <VideoTopRow video={video} />
+      </div>
     </>
   );
 };
