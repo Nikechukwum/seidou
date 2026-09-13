@@ -9,6 +9,11 @@ const handler = (req: Request) =>
     req,
     router: appRouter,
     createContext: createTRPCContext,
+    // Without this a server failure reaches the browser only as
+    // INTERNAL_SERVER_ERROR and its real cause is never printed anywhere.
+    onError: ({ path, error }) => {
+      console.error(`[trpc] ${path ?? '<unknown>'} failed:`, error.cause ?? error);
+    },
   });
 
 export { handler as GET, handler as POST };

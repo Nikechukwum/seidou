@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { cn } from "@/social/lib/utils";
 import { trpc } from "@/social/trpc/client";
 import { useViewer } from "@/social/hooks/use-viewer";
+import { useWatchReward } from "@/social/modules/watch-rewards/hooks/use-watch-reward";
 
 import { VideoPlayer, VideoPlayerSkeleton } from "../components/video-player";
 import { VideoBanner } from "../components/video-banner";
@@ -47,9 +48,32 @@ const VideoSectionSkeleton = () => {
 };
 
 const VideoSectionSuspense = ({ videoId }: VideoSectionProps) => {
-  const { isSignedIn } = useViewer();
+  const { isSignedIn, isLoaded, viewerId } = useViewer();
   const utils = trpc.useUtils();
   const [video] = trpc.videos.getOne.useSuspenseQuery({ id: videoId });
+
+  // Loyalty reward for watch time. These conditions only avoid pointless
+  // requests — the server re-checks every one of them.
+  const watchRewardHandlers = useWatchReward({
+    videoId,
+    enabled:
+      isLoaded &&
+      isSignedIn &&
+      viewerId !== video.userId &&
+      video.visibility === "public" &&
+      video.muxStatus === "ready",
+  });
+
+  // Dev-only: shows which condition makes a video (in)eligible while testing.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development" || !isLoaded) return;
+    console.log("[watch-rewards] eligibility", {
+      signedIn: isSignedIn,
+      ownVideo: viewerId === video.userId,
+      visibility: video.visibility,
+      muxStatus: video.muxStatus,
+    });
+  }, [isLoaded, isSignedIn, viewerId, video.userId, video.visibility, video.muxStatus]);
 
   const createView = trpc.videoViews.create.useMutation({
     onSuccess: () => {
@@ -77,6 +101,7 @@ const VideoSectionSuspense = ({ videoId }: VideoSectionProps) => {
           playbackId={video.muxPlaybackId}
           thumbnailUrl={video.thumbnailUrl}
           onPlay={handlePlay}
+          {...watchRewardHandlers}
         />
       </div>
       <VideoBanner status={video.muxStatus} />

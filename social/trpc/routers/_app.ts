@@ -10,6 +10,7 @@ import { suggestionsRouter } from '@/social/modules/suggestions/server/procedure
 import { subscriptionsRouter } from '@/social/modules/subscriptions/server/procedures';
 import { videoReactionsRouter } from '@/social/modules/video-reactions/server/procedures';
 import { commentReactionsRouter } from '@/social/modules/comment-reactions/server/procedures';
+import { watchRewardsRouter } from '@/social/modules/watch-rewards/server/procedures';
 
 import { createTRPCRouter } from '../init';
 
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
   subscriptions: subscriptionsRouter,
   videoReactions: videoReactionsRouter,
   commentReactions: commentReactionsRouter,
+  watchRewards: watchRewardsRouter,
 });
 
 export type AppRouter = typeof appRouter;
