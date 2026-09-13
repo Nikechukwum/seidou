@@ -185,6 +185,14 @@ const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
     update.mutate({ ...values, id: videoId });
   };
 
+  // The full address is filled in after mounting: during server rendering
+  // the page's own address is unknown, and guessing it would make the server
+  // and the browser render different text.
+  const [videoUrl, setVideoUrl] = useState("");
+  useEffect(() => {
+    setVideoUrl(socialUrl(`/videos/${videoId}`));
+  }, [videoId]);
+
   const onCopy = async () => {
     await navigator.clipboard.writeText(socialUrl(`/videos/${videoId}`));
     setCopied(true);
@@ -232,7 +240,7 @@ const FormSectionSuspense = ({ videoId }: FormSectionProps) => {
           href={socialPath(`/videos/${videoId}`)}
           className="min-w-0 flex-1 truncate text-xs text-blue-600"
         >
-          {socialUrl(`/videos/${videoId}`)}
+          {videoUrl || socialPath(`/videos/${videoId}`)}
         </Link>
         <button type="button" onClick={onCopy} aria-label="Copy link">
           {copied ? (

@@ -268,7 +268,12 @@ app/api/social/                      tRPC handler + Mux webhook
 | `DATABASE_URL` | Everything | Supabase → Connect → Transaction pooler |
 | `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Upload + playback | Mux → Access Tokens |
 | `MUX_WEBHOOK_SECRET` | Instant processing updates | Mux → Webhooks (optional, see below) |
-| `NEXT_PUBLIC_APP_URL` | Share links, upload CORS | Your origin |
+| `NEXT_PUBLIC_APP_URL` | Optional. Pins the site address used when the server has no page to read it from | Your origin |
+
+Share links and upload CORS use the address the page was actually opened on,
+so they are correct on localhost, Vercel previews and custom domains without
+`NEXT_PUBLIC_APP_URL`. On Vercel the server falls back to the production
+domain it sets automatically.
 
 `DATABASE_URL` is a Postgres connection string, **not** the
 `NEXT_PUBLIC_SUPABASE_URL` gateway — different host, port and protocol:
