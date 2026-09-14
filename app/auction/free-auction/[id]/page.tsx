@@ -16,6 +16,7 @@ import useAuth from "@/hooks/useAuth";
 import VoiceBidButton from "@/components/VoiceBidButton";
 import FloatingDelta from "@/components/FloatingDelta";
 import ControlsModal from "@/components/ControlsModal";
+import BidSlider from "@/components/BidSlider";
 import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
 import DivideFruitAbility, { DivideFruitBadge, DivideStatusPill } from "@/components/DivideFruitAbility";
 import StealFruitAbility from "@/components/StealFruitAbility";
@@ -70,13 +71,8 @@ const LeaderboardPage = () => {
     const usernameCacheRef = useRef<Map<string, string | null>>(new Map())
 
     // BIG SIS REQUEST: bid controls (increment / slider / voice)
-    const { bidMode, setBidMode, incrementAmounts, sliderConfig, getSliderValueFromPosition } = useBidControls()
+    const { bidMode, setBidMode, incrementAmounts, sliderConfig } = useBidControls()
 
-    // BIG SIS REQUEST: slider states
-    const [sliderDragging, setSliderDragging] = useState(false)
-    const [sliderValue, setSliderValue] = useState(sliderConfig.min)
-    const [sliderCancelled, setSliderCancelled] = useState(false)
-    const sliderTrackRef = useRef<HTMLDivElement>(null)
 
     // BIG SIS REQUEST: voice mode key — forces VoiceBidButton remount when switching to voice
     const [voiceKey, setVoiceKey] = useState(0)
@@ -831,57 +827,9 @@ const LeaderboardPage = () => {
     // BIG SIS REQUEST: ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
         setBidMode(mode)
-        setSliderDragging(false)
         if (mode === 'voice') setVoiceKey(k => k + 1)
     }, [setBidMode])
 
-    // BIG SIS REQUEST: slider drag handlers
-    const getSliderPositionFromEvent = useCallback((e: React.PointerEvent | PointerEvent): number => {
-        const track = sliderTrackRef.current
-        if (!track) return 0
-        const rect = track.getBoundingClientRect()
-        const x = e.clientX - rect.left
-        return Math.max(0, Math.min(100, (x / rect.width) * 100))
-    }, [])
-
-    // BIG SIS REQUEST: track pointer start Y for swipe-up detection
-    const sliderDragStartYRef = useRef(0)
-
-    const handleSliderPointerDown = useCallback((e: React.PointerEvent) => {
-        if (quickBidding || bidding) return
-        e.preventDefault()
-        ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-        sliderDragStartYRef.current = e.clientY
-        const pos = getSliderPositionFromEvent(e)
-        const val = getSliderValueFromPosition(pos)
-        setSliderValue(val)
-        setSliderDragging(true)
-        setSliderCancelled(false)
-    }, [quickBidding, bidding, getSliderPositionFromEvent, getSliderValueFromPosition])
-
-    const handleSliderPointerMove = useCallback((e: React.PointerEvent) => {
-        if (!sliderDragging) return
-        const pos = getSliderPositionFromEvent(e)
-        const val = getSliderValueFromPosition(pos)
-        setSliderValue(val)
-        // BIG SIS REQUEST: detect upward swipe → show "Release to cancel"
-        const dy = sliderDragStartYRef.current - e.clientY
-        setSliderCancelled(dy > 80)
-    }, [sliderDragging, getSliderPositionFromEvent, getSliderValueFromPosition])
-
-    // BIG SIS REQUEST: on release, swipe up cancels bid (like voice cancel), otherwise submit
-    const handleSliderPointerUp = useCallback((e: React.PointerEvent) => {
-        if (!sliderDragging) return
-        setSliderDragging(false)
-        const dy = sliderDragStartYRef.current - e.clientY
-        if (dy > 80) {
-            setSliderCancelled(false)
-            dispatch(showToast({ type: 'success', message: 'Bid cancelled' }))
-            return
-        }
-        setSliderCancelled(false)
-        void handleQuickBid(sliderValue)
-    }, [sliderDragging, sliderValue, handleQuickBid, dispatch])
 
     // BIG SIS REQUEST: bid controls footer always present → always use extended padding
     const bottomPadding = 'pb-[11rem]'
@@ -1117,75 +1065,6 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: SWAP FRAME 3 — the fruit flying from the RIGHT
-                side of MY card to the leader's card. Per the design sheet it
-                starts small and grows as it travels, on the ease-out curve
-                cubic-bezier(0.22, 1, 0.36, 1), leaving a trail of green dots
-                that grow along the path behind it. */}
-            {swapStage === 'travel' && swapFlight && (
-                <div className="pointer-events-none fixed inset-0 z-[70]">
-                    {/* the green dot trail: each dot is bigger and lags a little
-                        further behind, so the path reads small -> large */}
-                    {[1, 2, 3, 4, 5, 6].map((i) => {
-                        const size = 4 + i * 1.6
-                        const lag = i * 0.045
-                        return (
-                            <motion.span
-                                key={`swap-trail-${i}`}
-                                className="absolute left-0 top-0 rounded-full"
-                                style={{
-                                    width: size,
-                                    height: size,
-                                    backgroundColor: '#22c55e',
-                                    boxShadow: '0 0 8px #16a34a',
-                                }}
-                                initial={{ x: swapFlight.sx - size / 2, y: swapFlight.sy - size / 2, opacity: 0 }}
-                                animate={{
-                                    x: swapFlight.tx - size / 2,
-                                    y: swapFlight.ty - size / 2,
-                                    opacity: [0, 0.9, 0],
-                                }}
-                                transition={{ duration: 0.85 - lag, ease: SWAP_EASE_OUT, delay: lag, times: [0, 0.25, 1] }}
-                            />
-                        )
-                    })}
-
-                    {/* the fruit itself — starts small on the right of my card
-                        and grows as it closes in on the leader */}
-                    <motion.div
-                        className="absolute left-0 top-0"
-                        initial={{ x: swapFlight.sx - 27, y: swapFlight.sy - 27, scale: 0.35, opacity: 0, rotate: 0 }}
-                        animate={{
-                            x: swapFlight.tx - 27,
-                            y: swapFlight.ty - 27,
-                            scale: [0.35, 0.75, 1.4],
-                            opacity: [0, 1, 1],
-                            rotate: 360,
-                        }}
-                        transition={{ duration: 0.85, ease: SWAP_EASE_OUT, times: [0, 0.45, 1] }}
-                    >
-                        <SwapFruitBadge size={54} />
-                    </motion.div>
-                </div>
-            )}
-
-            {/* Slider overlay — dims page, shows value + swipe text, submits on release, swipe up to cancel */}
-            {sliderDragging && (
-                <>
-                    <div className="fixed inset-0 z-50 bg-black/50 pointer-events-none" />
-                    <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center pointer-events-none">
-                        <div className="bg-black/80 text-white text-5xl font-bold px-10 py-6 rounded-3xl">
-                            B {sliderValue.toLocaleString()}
-                        </div>
-                        <p className={`mt-3 text-sm font-medium transition-colors ${
-                            sliderCancelled ? 'text-red-400' : 'text-white/70'
-                        }`}>
-                            {sliderCancelled ? 'Release to cancel' : 'Swipe up to cancel'}
-                        </p>
-                    </div>
-                </>
-            )}
-
             {/* BIG SIS REQUEST: Increment buttons in footer (default mode) */}
             {bidMode === 'increment' && (
                 <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-4 py-4 flex justify-center items-center gap-3 max-w-md mx-auto">
@@ -1207,39 +1086,18 @@ const LeaderboardPage = () => {
             {/* BIG SIS REQUEST: Slider in footer */}
             {bidMode === 'slider' && (
                 <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-6 py-5 max-w-md mx-auto">
-                    <div className="relative w-full">
-                        <div
-                            ref={sliderTrackRef}
-                            className="relative w-full h-2 bg-gray-200 rounded-full cursor-pointer"
-                            onPointerDown={handleSliderPointerDown}
-                            onPointerMove={handleSliderPointerMove}
-                            onPointerUp={handleSliderPointerUp}
-                            style={{ touchAction: 'none' }}
-                        >
-                            <div
-                                className="absolute inset-y-0 left-0 bg-blue-500 rounded-full"
-                                style={{
-                                    width: `${((sliderValue - sliderConfig.min) / (sliderConfig.max - sliderConfig.min)) * 100}%`,
-                                }}
-                            />
-                            <div
-                                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-6 bg-white border-2 border-blue-500 rounded-full shadow-md transition-none"
-                                style={{
-                                    left: `${((sliderValue - sliderConfig.min) / (sliderConfig.max - sliderConfig.min)) * 100}%`,
-                                }}
-                            />
-                        </div>
-                        <div className="flex justify-between mt-2 text-xs text-gray-400">
-                            <span>10,000</span>
-                            <span>500,000</span>
-                        </div>
-                    </div>
+                    <BidSlider
+                        steps={sliderConfig.steps}
+                        disabled={quickBidding || bidding}
+                        onBid={(amount) => void handleQuickBid(amount)}
+                        onCancel={() => dispatch(showToast({ type: 'success', message: 'Bid cancelled' }))}
+                    />
                 </div>
             )}
 
             {/* BIG SIS REQUEST: Voice mode — only mic icon centered in footer, no background */}
             {bidMode === 'voice' && (
-                <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center max-w-md mx-auto">
+                <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center max-w-md mx-auto pb-[10px]">
                     <VoiceBidButton
                         key={voiceKey}
                         onBid={handleVoiceBid}

@@ -27,7 +27,8 @@ import {
   createTRPCRouter,
   protectedProcedure,
 } from "@/social/trpc/init";
-import { APP_URL } from "@/social/constants";
+import { headers } from "next/headers";
+import { getAppUrl } from "@/social/constants";
 
 /**
  * Videos: the feeds, the watch page, and the studio's write operations.
@@ -114,6 +115,21 @@ export const videosRouter = createTRPCRouter({
   create: protectedProcedure.mutation(async ({ ctx }) => {
     const { id: userId } = ctx.user;
 
+    // Mux accepts the browser's direct upload only from this origin. Taken
+    // from the request itself, so it is right on every deployment (localhost,
+    // previews, custom domains) with nothing to configure. Trusting it is
+    // fine: the upload URL goes back only to this same signed-in request,
+    // whose response a page on another site cannot read.
+    let uploadOrigin = getAppUrl();
+    const requestOrigin = (await headers()).get("origin");
+    if (requestOrigin) {
+      try {
+        uploadOrigin = new URL(requestOrigin).origin;
+      } catch {
+        // Malformed header: keep the configured fallback.
+      }
+    }
+
     const upload = await getMux().video.uploads.create({
       new_asset_settings: {
         passthrough: userId,
@@ -126,7 +142,7 @@ export const videosRouter = createTRPCRouter({
       },
       // Upstream used "*". Scoped to this app's origin so an arbitrary site
       // cannot use a leaked upload URL from a browser.
-      cors_origin: APP_URL,
+      cors_origin: uploadOrigin,
     });
 
     const [video] = await db

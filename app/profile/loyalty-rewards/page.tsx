@@ -6,22 +6,15 @@ import { PageLayout } from "@/components/PageLayout";
 import { InformationCircleIcon } from "@heroicons/react/24/solid";
 import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
-import { LoyaltyReward, PartialUpdateUser } from "@/redux/authSlice";
-import { showToast } from "@/redux/toastSlice";
-import { createClient } from "@/lib/supabase/client";
 import useAuth from "@/hooks/useAuth";
-
-// Bidding currency credited when a loyalty reward is claimed
-const REWARD_CLAIM_VALUE = 30000;
+import useClaimLoyaltyReward from "@/hooks/useClaimLoyaltyReward";
 
 const LoyaltyRewardsPage = () => {
     const [featureModal, setFeatureModal] = useState(false)
-    const [claimingId, setClaimingId] = useState<number | null>(null)
-    const dispatch = useDispatch()
-    const supabase = createClient()
     const { checkSession } = useAuth()
+    const { claim, claimingId } = useClaimLoyaltyReward()
     const { user } = useSelector((state: RootState) => state.auth)
 
     const rewards = user?.loyalty_rewards ?? []
@@ -29,33 +22,6 @@ const LoyaltyRewardsPage = () => {
     useEffect(() => {
         checkSession(false)
     }, [])
-
-    // Claim a reward: credit the bidding balance and remove it from the list
-    const handleClaim = async (reward: LoyaltyReward) => {
-        if (claimingId !== null) return
-        if (!user?.id) {
-            dispatch(showToast({ type: "error", message: "Please sign in to claim your reward." }))
-            return
-        }
-
-        setClaimingId(reward.id)
-        const newBalance = (user.bidding_balance ?? 0) + REWARD_CLAIM_VALUE
-        const updatedRewards = rewards.filter((r) => r.id !== reward.id)
-
-        const { error } = await supabase
-            .from("users")
-            .update({ bidding_balance: newBalance, loyalty_rewards: updatedRewards })
-            .eq("id", user.id)
-        setClaimingId(null)
-
-        if (error) {
-            dispatch(showToast({ type: "error", message: "Could not claim your reward. Please try again." }))
-            return
-        }
-
-        dispatch(PartialUpdateUser({ bidding_balance: newBalance, loyalty_rewards: updatedRewards }))
-        dispatch(showToast({ type: "success", message: `B ${REWARD_CLAIM_VALUE.toLocaleString()} added to your bidding balance.` }))
-    }
 
     return (
         <PageLayout pageTitle="Loyalty Rewards" className="px-4 bg-[#f5f5f5]">
@@ -105,7 +71,7 @@ const LoyaltyRewardsPage = () => {
                                 />
                                 <button
                                     className="bg-[#60A5FA] hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-bold py-2 px-4 rounded-full transition-colors"
-                                    onClick={() => handleClaim(reward)}
+                                    onClick={() => claim(reward)}
                                     disabled={claimingId !== null}
                                 >
                                     {claimingId === reward.id ? "Claiming..." : "Claim"}

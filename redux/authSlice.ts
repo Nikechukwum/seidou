@@ -1,10 +1,8 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import type { LoyaltyReward } from '@/lib/loyalty-rewards';
 
-
-export interface LoyaltyReward {
-    id: number,
-    amount: string
-}
+// Defined in lib/loyalty-rewards; re-exported so existing imports keep working
+export type { LoyaltyReward };
 
 export interface UserState {
     id: string,

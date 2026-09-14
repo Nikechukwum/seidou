@@ -39,9 +39,38 @@ declared-vs-actual and can propose dropping commerce columns from
 | `0000_seidou_social.sql` | 7 social tables, users columns, RLS | ✅ |
 | `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ✅ |
 | `0002_storage.sql` | `social` storage bucket + policies | ✅ |
+| `0003_watch_rewards.sql` | `watch_reward_progress`, `watch_reward_grants`, RLS | ✅ |
 
-All applied. Add future migrations here rather than running
-`drizzle-kit push`.
+Also run `supabase/loyalty_rewards_claim.sql` (the `claim_loyalty_reward`
+RPC) — it lives with the commerce SQL because the claim pages use it. ✅
+
+Add future migrations here rather than running `drizzle-kit push`.
+
+---
+
+## Watch rewards
+
+Signed-in viewers earn a **B 30,000** loyalty reward for every 5 minutes they
+watch someone else's public video, up to **5 rewards per window**. A window
+opens with the viewer's first reward and fully resets 24 hours later — no
+midnight, so it works the same in every timezone.
+
+- While a video is actually playing in a visible tab, the player sends a
+  heartbeat every 15s (`social/modules/watch-rewards/hooks/use-watch-reward.ts`).
+- The server credits the time since the previous heartbeat using Postgres
+  `now()` — at most 20s per beat, nothing after a gap over 45s. There is one
+  clock per user, so extra tabs or 2x speed earn nothing extra.
+- Watching while capped is not banked.
+- Rewards are appended to `users.loyalty_rewards` with `source: "video"`, a
+  toast points at the Land Wars Wallet, and each grant is logged in
+  `watch_reward_grants`.
+- Claiming goes through `POST /api/loyalty-rewards/claim` →
+  `claim_loyalty_reward`, which decides the amount server-side. All three
+  claim pages use `hooks/useClaimLoyaltyReward.ts`.
+
+**Testing locally.** Set `WATCH_REWARD_DEV_SECONDS_PER_REWARD` (min 30)
+and/or `WATCH_REWARD_DEV_CAP` (min 1) in `.env.local`. They are read only
+under `npm run dev`; a production build ignores them.
 
 ---
 
@@ -170,8 +199,14 @@ Social does not get its own user table. Seidou's existing `public.users` was
 extended, because `users.id` is already the Supabase auth id and every social
 table keys off it. Two things to know before touching `social/db/schema.ts`:
 
-1. **Every commerce column is declared there**, even though social never reads
-   them, so `drizzle-kit` cannot propose dropping them.
+1. **Every column of the real table is declared there, with its real type,
+   nullability and default**, even though social never reads most of them.
+   A missing column lets `drizzle-kit` propose dropping it; a wrong type
+   misleads anyone writing SQL (`loyalty_rewards` and `cart_items` are
+   `jsonb[]`, not `jsonb` — assuming otherwise broke the first watch-reward
+   grant). When the commerce app adds or changes a `users` column, update the
+   declaration too, then run `drizzle-kit generate`: it should report
+   "No schema changes".
 2. **Only `socialUserColumns` may be sent to the browser.** Procedures spread
    the user row into their responses; the full row carries `email`, `phone`,
    `dob` and `cash_balance`.
@@ -233,7 +268,12 @@ app/api/social/                      tRPC handler + Mux webhook
 | `DATABASE_URL` | Everything | Supabase → Connect → Transaction pooler |
 | `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Upload + playback | Mux → Access Tokens |
 | `MUX_WEBHOOK_SECRET` | Instant processing updates | Mux → Webhooks (optional, see below) |
-| `NEXT_PUBLIC_APP_URL` | Share links, upload CORS | Your origin |
+| `NEXT_PUBLIC_APP_URL` | Optional. Pins the site address used when the server has no page to read it from | Your origin |
+
+Share links and upload CORS use the address the page was actually opened on,
+so they are correct on localhost, Vercel previews and custom domains without
+`NEXT_PUBLIC_APP_URL`. On Vercel the server falls back to the production
+domain it sets automatically.
 
 `DATABASE_URL` is a Postgres connection string, **not** the
 `NEXT_PUBLIC_SUPABASE_URL` gateway — different host, port and protocol:

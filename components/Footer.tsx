@@ -9,8 +9,10 @@ export const Footer = ({}: Props) => {
 
    // Hide footer navigation on table pages and the crash game page
    const hiddenFooterPaths = [
-      '/signin', 
-      '/signup'
+      '/signin',
+      '/signup',
+      // Has its own sticky Continue button, which the footer would cover
+      '/onboarding'
    ]
    // Matches any /auction/free-auction/<something> (table page) — robust to quirks
    const isTablePage = /^\/auction\/free-auction\//.test(pathname) && !pathname.endsWith('/free-auction')

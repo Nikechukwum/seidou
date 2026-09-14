@@ -1,9 +1,13 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+  bigint,
+  check,
+  date,
+  doublePrecision,
   foreignKey,
+  index,
   integer,
   jsonb,
-  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -37,48 +41,57 @@ export const videoVisibility = pgEnum("video_visibility", [
 /**
  * Seidou's EXISTING users table — shared with the commerce app.
  *
- * Two things about this declaration are deliberate and load-bearing:
+ * Three things about this declaration are deliberate and load-bearing:
  *
- * 1. Every commerce column is declared even though social never reads them.
- *    drizzle-kit diffs the declared schema against the live database, so a
- *    partial declaration would make it generate
- *      ALTER TABLE users DROP COLUMN cash_balance, cart_items, ...
- *    and silently destroy commerce data on the next push.
+ * 1. Every column of the real table is declared, with its real type,
+ *    nullability and default, even though social never reads most of them.
+ *    drizzle-kit diffs the declared schema against the database, so a missing
+ *    column would make it propose
+ *      ALTER TABLE users DROP COLUMN interests, username, ...
+ *    and silently destroy commerce data. A wrong type misleads anyone writing
+ *    SQL against it: loyalty_rewards is jsonb[], not jsonb, and assuming
+ *    otherwise broke the watch-reward grant. When the commerce app adds or
+ *    changes a users column, update it here too.
  *
  * 2. The social columns keep the JS property names the ported code already
  *    uses (`name`, `imageUrl`) while pointing at Seidou-style column names
  *    (display_name, avatar_url). That keeps ~40 ported components unchanged.
  *
- * `id` has no defaultRandom(): it is the Supabase auth user id
- * (auth.users.id), assigned at signup, not generated here. That is also why
- * the clone's `clerk_id` column is gone entirely — id IS the identity.
+ * 3. `id` is the Supabase auth user id (auth.users.id), always supplied at
+ *    signup. The gen_random_uuid() default is declared only because the
+ *    column has it; nothing relies on it. That is also why the clone's
+ *    `clerk_id` column is gone entirely — id IS the identity.
  */
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey(),
+  id: uuid("id").primaryKey().defaultRandom(),
 
   // --- social ---
-  name: text("display_name").notNull(),
-  imageUrl: text("avatar_url").notNull(),
+  name: text("display_name").default("").notNull(),
+  imageUrl: text("avatar_url").default("").notNull(),
   bannerUrl: text("banner_url"),
   bannerKey: text("banner_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  // Nullable in the database, unlike created_at.
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 
-  // --- commerce: declared only so drizzle-kit never proposes dropping them ---
+  // --- commerce: declared so drizzle-kit never proposes dropping or altering them ---
   firstname: text("firstname"),
   lastname: text("lastname"),
+  username: text("username"),
   email: text("email"),
   gender: text("gender"),
   phone: text("phone"),
-  dob: text("dob"),
-  addressLine1: text("address_line1"),
-  addressLine2: text("address_line2"),
-  state: text("state"),
-  cashBalance: numeric("cash_balance"),
-  biddingBalance: numeric("bidding_balance"),
-  loyaltyRewards: jsonb("loyalty_rewards"),
-  cartItems: jsonb("cart_items"),
+  dob: date("dob"),
+  addressLine1: text("address_line1").default(""),
+  addressLine2: text("address_line2").default(""),
+  state: text("state").default("Lagos"),
+  cashBalance: doublePrecision("cash_balance").default(0).notNull(),
+  biddingBalance: doublePrecision("bidding_balance").default(0).notNull(),
+  // Postgres arrays of jsonb values (jsonb[]), not single jsonb documents.
+  loyaltyRewards: jsonb("loyalty_rewards").array().default(sql`'{}'::jsonb[]`),
+  cartItems: jsonb("cart_items").array(),
   lastAwardedLoyaltyRewardTime: jsonb("last_awarded_loyalty_reward_time"),
+  interests: text("interests").array().default(sql`'{}'::text[]`),
 });
 
 /**
@@ -112,6 +125,7 @@ export const userRelations = relations(users, ({ many }) => ({
   comments: many(comments),
   commentReactions: many(commentReactions),
   playlists: many(playlists),
+  watchRewardGrants: many(watchRewardGrants),
 }));
 
 export const categories = pgTable("categories", {
@@ -354,5 +368,56 @@ export const playlistVideoRelations = relations(playlistVideos, ({ one }) => ({
   video: one(videos, {
     fields: [playlistVideos.videoId],
     references: [videos.id],
+  }),
+}));
+
+/**
+ * Watch-time loyalty rewards — see social/modules/watch-rewards and
+ * migrations/0003_watch_rewards.sql.
+ *
+ * One progress row per user: the heartbeat clock, watched time toward the
+ * next reward, and the current reward window (opened by the first reward,
+ * fully reset 24 hours later). Only the server writes it, so accrual never
+ * trusts the browser.
+ */
+export const watchRewardProgress = pgTable("watch_reward_progress", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  progressMs: integer("progress_ms").default(0).notNull(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }),
+  windowGrants: integer("window_grants").default(0).notNull(),
+  lastHeartbeatAt: timestamp("last_heartbeat_at", { withTimezone: true }),
+  // Diagnostic only; no FK so deleting a video never touches reward state.
+  lastVideoId: uuid("last_video_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  check("watch_reward_progress_progress_ms_nonneg", sql`${t.progressMs} >= 0`),
+  check("watch_reward_progress_window_grants_nonneg", sql`${t.windowGrants} >= 0`),
+]);
+
+export const watchRewardProgressRelations = relations(watchRewardProgress, ({ one }) => ({
+  user: one(users, {
+    fields: [watchRewardProgress.userId],
+    references: [users.id],
+  }),
+}));
+
+/** One row per reward granted. An audit log — the cap is enforced from watchRewardProgress. */
+export const watchRewardGrants = pgTable("watch_reward_grants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // The id of the users.loyalty_rewards entry this grant created.
+  rewardId: bigint("reward_id", { mode: "number" }).notNull(),
+  amount: integer("amount").notNull(),
+  videoId: uuid("video_id"),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("watch_reward_grants_user_granted_at_idx").on(t.userId, t.grantedAt),
+]);
+
+export const watchRewardGrantRelations = relations(watchRewardGrants, ({ one }) => ({
+  user: one(users, {
+    fields: [watchRewardGrants.userId],
+    references: [users.id],
   }),
 }));

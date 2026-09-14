@@ -29,8 +29,17 @@ export default function LoginPage() {
       if (error) {
         setError(error.message)
       } else {
+        // Onboarding is only for new accounts (see signup). Return to the page
+        // that sent the user here — useAuth and the social pages save it as a
+        // plain path — or home. The explore pages store a JSON list under the
+        // same key, which the startsWith('/') check skips.
+        const savedPath = sessionStorage.getItem('userNav')
         sessionStorage.removeItem('userNav')
-        router.replace('/onboarding?from=signin')
+        const returnTo =
+          savedPath?.startsWith('/') && !/^\/(signin|signup|onboarding)\b/.test(savedPath)
+            ? savedPath
+            : '/'
+        router.replace(returnTo)
       }
       setLoading(false);
   }
