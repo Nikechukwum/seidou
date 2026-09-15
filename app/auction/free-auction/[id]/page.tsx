@@ -20,6 +20,7 @@ import BidSlider from "@/components/BidSlider";
 import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
 import DivideFruitAbility, { DivideFruitBadge, DivideStatusPill } from "@/components/DivideFruitAbility";
 import StealFruitAbility from "@/components/StealFruitAbility";
+import SwapFruitAbility, { SwapFruitBadge, SwapStatusPill, SWAP_EASE_OUT, SWAP_BURST_MS } from "@/components/SwapFruitAbility";
 import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S } from "@/lib/abilityFruits";
 import { motion } from "motion/react";
 import Image from "next/image";
@@ -93,6 +94,9 @@ const LeaderboardPage = () => {
     useEffect(() => () => {
         divideTimeoutsRef.current.forEach(clearTimeout)
         divideTimeoutsRef.current = []
+        // clear any in-flight swap timers when the page unmounts
+        swapTimeoutsRef.current.forEach(clearTimeout)
+        swapTimeoutsRef.current = []
     }, [])
 
     // BIG SIS REQUEST: Ability Fruit STEAL BIDDING CURRENCY state. Auto-targets
@@ -111,6 +115,17 @@ const LeaderboardPage = () => {
     // Latest resolved loss per target (drives the aftermath deltas).
     const [stealLossByPlayer, setStealLossByPlayer] = useState<Record<string, number>>({})
     const myUserIdRef = useRef<string | null>(null)
+
+    // BIG SIS REQUEST: Ability Fruit POSITION SWAP state. Auto-targets the
+    // highest bidder, swaps the two bid amounts, plays the 5-frame animation.
+    type SwapStage = 'idle' | 'active' | 'travel' | 'explode' | 'settle'
+    const [swapStage, setSwapStage] = useState<SwapStage>('idle')
+    const [swapTargetId, setSwapTargetId] = useState<string | null>(null)
+    const [swapFlight, setSwapFlight] = useState<{ sx: number; sy: number; tx: number; ty: number } | null>(null)
+    // Places GAINED per user in the settled frame: +1 renders the green
+    // "↑ 1", -1 the red "↓ 1".
+    const [swapDeltas, setSwapDeltas] = useState<Record<string, number>>({})
+    const swapTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -422,7 +437,7 @@ const LeaderboardPage = () => {
     }, [myUserId])
 
     const handleMultiplySelf = useCallback(() => {
-        if (multiplyTarget || stealStage !== 'idle') return
+        if (multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle') return
         if (!myUserId || !myBid) {
             dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
             return
@@ -480,7 +495,7 @@ const LeaderboardPage = () => {
     // Separately timed frames for the divide sequence. The fruit rests on your
     // card, flies to first position, covers it, then the reduction lands.
     const handleDivideSelf = useCallback(() => {
-        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle') return
+        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -545,7 +560,7 @@ const LeaderboardPage = () => {
     // Auto-targets every other player who holds any bidding currency, then
     // drains 1,000 BC per second from each for 60 seconds.
     const handleStealSelf = useCallback(() => {
-        if (stealStage !== 'idle' || divideTarget || multiplyTarget) return
+        if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -668,6 +683,134 @@ const LeaderboardPage = () => {
         }
     }, [stealStage, handleStealCommit])
 
+    // BIG SIS REQUEST: Ability Fruit POSITION SWAP.
+    // The fruit ALWAYS swaps with the highest bidder: the two bid amounts
+    // change hands, so the activator walks away holding the top bid. A player
+    // who already holds (or ties for) first place cannot swap.
+    const handleSwapOptimistic = useCallback((meId: string, targetId: string, myAmount: number, leaderAmount: number) => {
+        const previousBids = bids
+        setBids(prev => prev.map(b => {
+            if (String(b.userId) === meId) return { ...b, bidAmount: leaderAmount }
+            if (String(b.userId) === targetId) return { ...b, bidAmount: myAmount }
+            return b
+        }))
+
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/swap-bid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    setBids(previousBids)
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not swap positions.' }))
+                }
+            } catch {
+                setBids(previousBids)
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [auctionId, bids, dispatch])
+
+    const handleSwapSelf = useCallback(() => {
+        if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget) return
+        if (!myUserId) {
+            dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
+            return
+        }
+        const ranked = [...bids].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))
+        const myBidEntry = bids.find(b => String(b.userId) === myUserId)
+        if (!myBidEntry) {
+            dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
+            return
+        }
+        const leader = ranked[0]
+        if (!leader) {
+            dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
+            return
+        }
+        const myAmount = Number(myBidEntry.bidAmount)
+        const leaderAmount = Number(leader.bidAmount)
+        if (String(leader.userId) === myUserId || leaderAmount === myAmount) {
+            dispatch(showToast({ type: 'error', message: "You're already in first position — there's nothing to swap for." }))
+            return
+        }
+        const target = String(leader.userId)
+
+        // Position deltas: rank before (by amount) vs rank after (amounts swapped).
+        const rankBefore: Record<string, number> = {}
+        ranked.forEach((b, i) => { rankBefore[String(b.userId)] = i + 1 })
+        const post = bids.map(b => {
+            if (String(b.userId) === myUserId) return { ...b, bidAmount: leaderAmount }
+            if (String(b.userId) === target) return { ...b, bidAmount: myAmount }
+            return b
+        })
+        const rankAfter: Record<string, number> = {}
+        ;[...post].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))
+            .forEach((b, i) => { rankAfter[String(b.userId)] = i + 1 })
+        // Stored as PLACES GAINED (before - after), so climbing 2nd -> 1st is
+        // +1 and reads as the green "↑ 1" of FRAME 5, while the leader dropping
+        // 1st -> 2nd is -1 and reads as the red "↓ 1".
+        setSwapDeltas({
+            [myUserId]: (rankBefore[myUserId] ?? 0) - (rankAfter[myUserId] ?? 0),
+            [target]: (rankBefore[target] ?? 0) - (rankAfter[target] ?? 0),
+        })
+        setSwapTargetId(target)
+
+        // FRAME timings: activated -> travel -> explode -> settled -> reset.
+        // The explosion and the settled indicators follow the design sheet:
+        // ~400-600ms for the burst, ~800ms for the ↑/↓ badges before they fade.
+        const APP_MS = 650
+        const TRAVEL_MS = 850
+        const EXPLODE_MS = SWAP_BURST_MS
+        const SETTLE_MS = 800
+
+        setSwapStage('active')
+        const at = (fn: () => void, ms: number) => {
+            const t = setTimeout(fn, ms)
+            swapTimeoutsRef.current.push(t)
+        }
+        at(() => setSwapStage('travel'), APP_MS)
+        // The fruit lands: the two amounts trade hands and the DB commits.
+        at(() => {
+            setSwapStage('explode')
+            handleSwapOptimistic(myUserId, target, myAmount, leaderAmount)
+        }, APP_MS + TRAVEL_MS)
+        at(() => setSwapStage('settle'), APP_MS + TRAVEL_MS + EXPLODE_MS)
+        at(() => {
+            setSwapStage('idle')
+            setSwapTargetId(null)
+            setSwapFlight(null)
+            setSwapDeltas({})
+        }, APP_MS + TRAVEL_MS + EXPLODE_MS + SETTLE_MS)
+    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, handleSwapOptimistic, dispatch])
+
+    // while the fruit is in flight, capture the source card (mine) and the
+    // leader's card positions so the page-level overlay can fly between them.
+    useEffect(() => {
+        if (swapStage !== 'travel' || !swapTargetId) return
+        const rectOf = (userId: string | null) =>
+            userId
+                ? document.querySelector<HTMLElement>(`[data-swap-card="${userId}"]`)?.getBoundingClientRect() ?? null
+                : null
+        const s = rectOf(myUserId)
+        const t = rectOf(swapTargetId)
+        if (!s || !t) return
+        setSwapFlight({
+            // FRAME 3 starts exactly where FRAME 2 left the fruit: the RIGHT
+            // side of the activator's own card, vertically centered.
+            sx: s.right - 25,
+            sy: s.top + s.height / 2,
+            // ...and lands on the middle of the leader's card, which is where
+            // the FRAME 4 burst is centred, so flight + explosion read as one
+            // continuous move.
+            tx: t.left + t.width / 2,
+            ty: t.top + t.height / 2,
+        })
+    }, [swapStage, swapTargetId, myUserId])
+
     // Fire the armed fruit as soon as the table has loaded and we know who you
     // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
     useEffect(() => {
@@ -678,7 +821,8 @@ const LeaderboardPage = () => {
         if (armed === 'multiply') handleMultiplySelf()
         if (armed === 'divide') handleDivideSelf()
         if (armed === 'thief') handleStealSelf()
-    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf])
+        if (armed === 'swap') handleSwapSelf()
+    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf])
 
     // BIG SIS REQUEST: ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
@@ -778,17 +922,27 @@ const LeaderboardPage = () => {
                         // and for anyone who ran out mid-countdown.
                         const isStealLiveTarget =
                             stealStage === 'active' && stealTargets.includes(String(bid.userId))
+                        // SWAP FRAME 4: the whole card shakes while the fruit
+                        // bursts on it, per the design sheet's explosion note.
+                        const isSwapBursting = swapStage === 'explode' && String(bid.userId) === swapTargetId
                         return (
-                            <div
+                            <motion.div
                                 key={bid.id}
                                 data-divide-card={bid.userId}
+                                data-swap-card={bid.userId}
                                 data-steal-card={bid.userId}
                                 data-steal-target={stealTargets.includes(String(bid.userId)) ? 'true' : undefined}
+                                animate={isSwapBursting
+                                    ? { x: [0, -7, 6, -5, 4, -2, 0], y: [0, 3, -3, 2, -1, 0, 0] }
+                                    : { x: 0, y: 0 }}
+                                transition={isSwapBursting
+                                    ? { duration: SWAP_BURST_MS / 1000, ease: 'easeOut' }
+                                    : { duration: 0.2 }}
                                 className={`bg-white rounded-3xl shadow-sm border transition-colors duration-300 ${
                                     isStealLiveTarget ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-100'
                                 }`}
                             >
-                                {/* BIG SIS REQUEST: each card wraps in the Steal + Multiply + Divide fruit overlays */}
+                                {/* BIG SIS REQUEST: each card wraps in the Steal + Swap + Divide + Multiply fruit overlays */}
                                 <StealFruitAbility
                                     tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
                                     activatorId={myUserId}
@@ -800,6 +954,14 @@ const LeaderboardPage = () => {
                                     gain={stealGain}
                                     lossByPlayer={stealLossByPlayer}
                                 >
+                                    <SwapFruitAbility
+                                        tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
+                                        activatorId={myUserId}
+                                        targetPlayerId={swapTargetId}
+                                        stage={swapStage}
+                                        playerId={bid.userId}
+                                        positionDelta={swapDeltas[String(bid.userId)]}
+                                    >
                                     <DivideFruitAbility
                                         tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
                                         sourcePlayerId={myUserId}
@@ -851,8 +1013,9 @@ const LeaderboardPage = () => {
                                     </div>
                                 </MultiplyFruitAbility>
                                 </DivideFruitAbility>
+                                </SwapFruitAbility>
                                 </StealFruitAbility>
-                            </div>
+                            </motion.div>
                         )
                     })}
                 </div>
@@ -864,6 +1027,14 @@ const LeaderboardPage = () => {
                 stage={divideStage}
                 targetName={bids.find(b => b.userId === divideTarget)?.username}
                 factor={DIVIDE_FACTOR}
+            />
+
+            {/* BIG SIS REQUEST: SWAP FRAMES 2-3 — the green caption bar under the
+                table while the fruit is out and in flight, mirroring the
+                narration strip on the design sheet. */}
+            <SwapStatusPill
+                stage={swapStage}
+                targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
             />
 
             {/* BIG SIS REQUEST: DIVIDE — the fruit flying from MY card to the

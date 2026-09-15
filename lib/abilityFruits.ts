@@ -81,13 +81,13 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     },
     {
         id: 'swap',
-        name: 'Swap-Swap Fruit',
-        tagline: 'Allows you to swap your position with another player.',
+        name: 'Position Swap',
+        tagline: 'Swaps you straight into the #1 spot by trading bids with the highest bidder.',
         description:
-            'Trade places on the leaderboard with any player you target. Your bid and theirs change hands, so a well-timed swap can take you straight to the top of the table.',
+            "Activate and the fruit automatically locks onto whoever currently holds first position. Your two bids change hands — you take their top bid, they take yours — so you leap to the top of the table the moment it explodes. Only you and the holder of first place are affected, and if you already hold first position there is nothing to swap for.",
         image: '/ability-fruits/swap.png',
-        accent: { base: '#14b8a6', spark: '#fcd34d', deep: '#0f766e' },
-        available: false,
+        accent: { base: '#16a34a', spark: '#bbf7d0', deep: '#14532d' },
+        available: true,
     },
     {
         id: 'shield',
