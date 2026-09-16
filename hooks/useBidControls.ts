@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 
-// BIG SIS REQUEST: Controls modal + persistent bid mode
+//  Controls modal + persistent bid mode
 
 export type BidMode = 'increment' | 'slider' | 'voice'
 
 const STORAGE_KEY = 'seidou_bid_mode'
 const DEFAULT_MODE: BidMode = 'increment'
 
-// BIG SIS REQUEST: max slider value reduced to 500,000
+//  max slider value reduced to 500,000
 const SLIDER_STEPS = [
     10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000,
     100000, 200000, 300000, 400000, 500000,

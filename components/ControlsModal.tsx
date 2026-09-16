@@ -5,7 +5,7 @@ import { Modal } from '@/components/Modal'
 import { Button } from '@/components/Button'
 import type { BidMode } from '@/hooks/useBidControls'
 
-// BIG SIS REQUEST: Controls modal — select how to bid
+//  Controls modal — select how to bid
 
 interface ControlsModalProps {
     isActive: boolean

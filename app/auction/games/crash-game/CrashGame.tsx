@@ -7,7 +7,7 @@ import { Volume2, VolumeX, ChevronDown } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import type { RootState, AppDispatch } from '@/redux/store';
 
-// BIG SIS REQUEST: official Aviator-style cubic multiplier curve:
+//  official Aviator-style cubic multiplier curve:
 //   multiplier = 1 + MULTIPLIER_CONST * t^3  (t in ms)
 // Constant tuned so rounds feel snappy: ~6s to 2x, ~12.5s to 10x, ~17s to 25x.
 const MULTIPLIER_CONST = 4.6e-12;
@@ -351,7 +351,7 @@ function Plane({
   cashoutMultiplier: number;
 }) {
   const controls = useAnimationControls();
-  // BIG SIS REQUEST: Aviator-style flight — duck starts bottom-left, climbs diagonally up-right.
+  //  Aviator-style flight — duck starts bottom-left, climbs diagonally up-right.
   // Position maps to multiplier progress (which follows the cubic curve), so speed always syncs
   // with the multiplier and the duck naturally accelerates toward the crash point.
   const [style, setStyle] = useState({ x: 4, y: 88, angle: 0 });
@@ -371,7 +371,7 @@ function Plane({
 
   useEffect(() => {
     if (gameState === 'crashed') {
-      // BIG SIS REQUEST: no delay — duck flies off-screen fast and instantly disappears.
+      //  no delay — duck flies off-screen fast and instantly disappears.
       controls.start({
         x: 240,
         y: -160,
@@ -402,14 +402,14 @@ function Plane({
             opacity: visible ? 1 : 0,
           }}
         >
-          {/* BIG SIS REQUEST: motion-blur trail behind the duck, opposite flight direction */}
+          {/*  motion-blur trail behind the duck, opposite flight direction */}
           <div className="absolute top-1/2 right-3 -translate-y-1/2 w-24 md:w-36 h-4 bg-gradient-to-l from-yellow-300/50 via-yellow-300/20 to-transparent rounded-full blur-md translate-x-full" />
 
           <motion.div
             className={`w-20 h-20 md:w-28 md:h-28 flex items-center justify-center -mt-10 -ml-10 md:-mt-14 md:-ml-14
               ${cashoutMultiplier > 0 ? 'text-green-500' : 'text-yellow-300'}`}
             style={{ transform: `rotate(${style.angle}deg)`, transition: 'transform 0.08s linear' }}
-            // BIG SIS REQUEST: subtle wing flap + wobble so it feels alive, not a straight line
+            //  subtle wing flap + wobble so it feels alive, not a straight line
             animate={
               visible
                 ? { scale: [1, 1.12, 1, 0.92, 1], rotate: [style.angle, style.angle + 3, style.angle - 3, style.angle] }
@@ -532,7 +532,7 @@ function MultiplierDisplay({ multiplier, gameState }: { multiplier: number; game
         {displayMultiplier}×
       </div>
 
-      {/* BIG SIS REQUEST: progress bar below multiplier */}
+      {/* progress bar below multiplier */}
       <div className="flex items-center space-x-1 mt-2">
         <div className="flex items-center justify-between w-full max-w-[200px] h-2 bg-slate-800/50 rounded-full overflow-hidden">
           <motion.div
@@ -587,7 +587,7 @@ function GameCanvas() {
     (state: RootState) => state.crashGame
   );
 
-  // BIG SIS REQUEST: cashout winnings display on game board
+  //  cashout winnings display on game board
   const currentBetWinningsView = useMemo(() => {
     if (currentBet.cashedOut) {
       return currentBet.winnings.toFixed(2);
@@ -625,11 +625,11 @@ function GameCanvas() {
         <Background gameState={gameState} />
         <Plane gameState={gameState} multiplier={multiplier} crashPoint={crashPoint} cashoutMultiplier={cashoutMultiplier} />
 
-        {/* BIG SIS REQUEST: Row 3 content — multiplier centered upper area */}
+        {/*  Row 3 content — multiplier centered upper area */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <MultiplierDisplay multiplier={multiplier} gameState={gameState} />
 
-          {/* BIG SIS REQUEST: cashout amount displayed on the game board */}
+          {/*  cashout amount displayed on the game board */}
           {cashoutMultiplier > 0 && (
             <div className="mt-3 bg-emerald-600/90 px-5 py-2 rounded-full text-white text-lg font-bold shadow-lg">
               +{currentBetWinningsView} ({cashoutMultiplier.toFixed(2)}×)
@@ -645,7 +645,7 @@ function GameCanvas() {
           </div>
         )}
 
-        {/* BIG SIS REQUEST: Row 4 — timer raised up, above the bottom edge */}
+        {/*  Row 4 — timer raised up, above the bottom edge */}
         {gameState === 'betting' && nextGameTimestamp && (
           <div className="absolute top-6 left-1/2 transform -translate-x-1/2">
             <CountdownTimer />
@@ -1079,7 +1079,7 @@ function HistoryPanel() {
   const { history } = useSelector((state: RootState) => state.crashGame);
   const [isOpen, setIsOpen] = useState(false);
 
-  // BIG SIS REQUEST: history is stored newest-first; show newest 5 in order
+  //  history is stored newest-first; show newest 5 in order
   const visibleHistory = history.slice(0, 5);
 
   return (
@@ -1172,7 +1172,7 @@ function Stats() {
 
   return (
     <div className="flex items-center gap-3">
-      {/* BIG SIS REQUEST: Balance label and value side by side on the same line */}
+      {/*  Balance label and value side by side on the same line */}
       <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
         <span className="text-xs text-white/60">Balance</span>
         <span className="font-bold text-green-400">B {balance.toLocaleString()}</span>
@@ -1205,7 +1205,7 @@ const CrashGame = () => {
     setIsMounted(true);
   }, []);
 
-  // BIG SIS REQUEST: sync the game balance with the user's auction-table balance (bidding_balance)
+  //  sync the game balance with the user's auction-table balance (bidding_balance)
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -1273,7 +1273,7 @@ const CrashGame = () => {
     // Start multiplier update loop
     const startTime = Date.now();
     const endTime = startTime + duration;
-    // BIG SIS REQUEST: official Aviator curve — multiplier = 1 + MULTIPLIER_CONST * t^3
+    //  official Aviator curve — multiplier = 1 + MULTIPLIER_CONST * t^3
 
     gameLoopRef.current = setInterval(() => {
       const now = Date.now();
