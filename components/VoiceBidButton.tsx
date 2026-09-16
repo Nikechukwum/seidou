@@ -10,7 +10,7 @@ type Phase = 'idle' | 'listening' | 'sending' | 'error'
 interface VoiceBidButtonProps {
     onBid: (amount: number) => Promise<boolean>
     onBuy?: (amount: number) => void
-    // BIG SIS REQUEST: "activate ability fruit" / "open ability fruits" is a
+    //  "activate ability fruit" / "open ability fruits" is a
     // navigation command, not a bid — it takes the player to the Ability
     // Fruits page first, where they pick which fruit to activate.
     onAbilityFruits?: () => void
@@ -129,7 +129,7 @@ interface Parsed {
     amount: number
 }
 
-// BIG SIS REQUEST: "activate ability fruit", "open ability fruits", "use my
+//  "activate ability fruit", "open ability fruits", "use my
 // fruit" — anything that names a fruit alongside an ability/open verb. Carries
 // no amount, so it has to be matched before the number parse bails out.
 function isAbilityFruitCommand(text: string): boolean {
@@ -347,7 +347,7 @@ export default function VoiceBidButton({
         stopElapsedTimer()
         vibrate(30)
 
-        // BIG SIS REQUEST: navigation command — no bid, no balance change. Just
+        //  navigation command — no bid, no balance change. Just
         // take the player to the Ability Fruits page and close out the gesture.
         if (parsed.action === 'FRUITS') {
             onAbilityFruits?.()

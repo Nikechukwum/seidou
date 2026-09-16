@@ -1,12 +1,12 @@
 // ============================================================================
 // ABILITY FRUITS CATALOG
 // ----------------------------------------------------------------------------
-// BIG SIS REQUEST: tapping the "Ability Fruits" tab (or saying "activate
+//  tapping the "Ability Fruits" tab (or saying "activate
 // ability fruit" in voice mode) opens the Ability Fruits page first. This is
 // the single source of truth for what that page lists.
 //
 // Artwork lives in /public/ability-fruits — the original icons, background cut
-// out. Two more are shipped but unassigned: unassigned-pink-flame.png and
+// out. Two are shipped but unassigned: unassigned-pink-flame.png and
 // unassigned-pink-flower.png.
 //
 // Only fruits with `available: true` are wired to real gameplay; the rest show
@@ -24,6 +24,7 @@ export type AbilityFruitId =
     | 'thief'
     | 'mirror'
     | 'time'
+    | 'restore'
 
 export type AbilityFruit = {
     id: AbilityFruitId
@@ -52,7 +53,7 @@ export type AbilityFruit = {
     available: boolean
 }
 
-// BIG SIS REQUEST: during the testing phase every user holds all 10 fruits,
+//  during the testing phase every user holds all 10 fruits,
 // 10 uses each. Swap this for the real inventory once fruits are purchasable.
 export const TESTING_PHASE_FRUIT_COUNT = 10
 
@@ -158,6 +159,19 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         image: '/ability-fruits/time.png',
         accent: { base: '#eab308', spark: '#fef9c3', deep: '#a16207' },
         available: false,
+    },
+    {
+        id: 'restore',
+        name: 'Restore Fruit',
+        tagline: 'Gives back the ability fruits you used and the bidding currency you spent.',
+        description:
+            "Activate and the fruit explodes on your card, rewinding your own recent moves: every ability fruit you have used in this auction returns to your inventory, and the bidding currency you committed is paid back into your wallet (your bid leaves the table). A summary shows exactly what came back. It affects nobody else — no other player's bid changes — and it cannot be used when you have nothing to restore.",
+        image: '/ability-fruits/restore.png',
+        // The sequence frames show the fruit as a teal energy orb, so the
+        // animation swaps to the teal treatment the way Multiply does.
+        animationImage: '/ability-fruits/restore-teal.png',
+        accent: { base: '#14b8a6', spark: '#ccfbf1', deep: '#134e4a' },
+        available: true,
     },
 ]
 
