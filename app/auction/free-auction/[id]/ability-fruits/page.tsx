@@ -3,25 +3,21 @@
 // ============================================================================
 // ABILITY FRUITS PAGE
 // ----------------------------------------------------------------------------
-// BIG SIS REQUEST: tapping the "Ability Fruits" tab on the table — or saying
+//  tapping the "Ability Fruits" tab on the table — or saying
 // "activate ability fruit" while in voice mode — lands here FIRST. The player
 // picks a fruit here, then Activate takes them back to the table to choose a
 // target.
 //
-// Testing phase: every user holds all 10 fruits, 10 uses each. What is left
-// of that comes from the per-auction usage ledger (lib/fruitUsage) — the same
-// ledger the Restore Fruit hands back from, so a restore visibly refills these
-// counts.
+// Testing phase: every user holds all 10 fruits, 10 uses each.
 // ============================================================================
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { PageLayout } from '@/components/PageLayout'
 import { Modal } from '@/components/Modal'
 import { Button } from '@/components/Button'
 import AbilityFruitOrb from '@/components/AbilityFruitOrb'
 import { ABILITY_FRUITS, AbilityFruit, TESTING_PHASE_FRUIT_COUNT } from '@/lib/abilityFruits'
-import { FruitUsage, getFruitUsage, remainingUses } from '@/lib/fruitUsage'
 
 const AbilityFruitsPage = () => {
     const params = useParams()
@@ -30,19 +26,12 @@ const AbilityFruitsPage = () => {
 
     const [learnMore, setLearnMore] = useState<AbilityFruit | null>(null)
     const [comingSoon, setComingSoon] = useState<AbilityFruit | null>(null)
-    // Read after mount: sessionStorage is not there during SSR, and starting
-    // from an empty ledger keeps the first paint identical on both sides.
-    const [usage, setUsage] = useState<FruitUsage>({})
-    useEffect(() => {
-        setUsage(getFruitUsage(auctionId))
-    }, [auctionId])
 
     const handleActivate = (fruit: AbilityFruit) => {
         if (!fruit.available) {
             setComingSoon(fruit)
             return
         }
-        if (remainingUses(usage, fruit.id) <= 0) return
         // Back to the table with the fruit armed — the table drops straight into
         // "tap a player" targeting mode.
         router.push(`/auction/free-auction/${auctionId}?fruit=${fruit.id}`)
@@ -53,28 +42,20 @@ const AbilityFruitsPage = () => {
             <div className="mb-4 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3">
                 <p className="text-sm font-semibold text-purple-900">Testing phase</p>
                 <p className="mt-0.5 text-xs text-purple-700">
-                    All {ABILITY_FRUITS.length} ability fruits are unlocked, {TESTING_PHASE_FRUIT_COUNT} uses each on this
-                    table. The Restore Fruit gives back the ones you have used.
+                    All {ABILITY_FRUITS.length} ability fruits are unlocked, {TESTING_PHASE_FRUIT_COUNT} uses each.
                 </p>
             </div>
 
             <div className="flex flex-col gap-4">
-                {ABILITY_FRUITS.map((fruit) => {
-                    const left = remainingUses(usage, fruit.id)
-                    const spent = left <= 0
-                    return (
+                {ABILITY_FRUITS.map((fruit) => (
                     <div
                         key={fruit.id}
                         className="flex gap-4 rounded-3xl border border-gray-100 bg-white p-4 shadow-sm"
                     >
                         <div className="flex shrink-0 flex-col items-center gap-2 pt-1">
-                            <AbilityFruitOrb fruit={fruit} size={64} glow className={spent ? 'opacity-40' : ''} />
-                            <span
-                                className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                                    spent ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-600'
-                                }`}
-                            >
-                                x{left}
+                            <AbilityFruitOrb fruit={fruit} size={64} glow />
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-600">
+                                x{TESTING_PHASE_FRUIT_COUNT}
                             </span>
                         </div>
 
@@ -91,9 +72,9 @@ const AbilityFruitsPage = () => {
 
                             <div className="mt-3 flex gap-2">
                                 <Button
-                                    text={spent ? 'None left' : 'Activate'}
+                                    text="Activate"
                                     size="xs"
-                                    classname={`flex-1 ${spent ? 'opacity-40' : ''}`}
+                                    classname="flex-1"
                                     onClick={() => handleActivate(fruit)}
                                 />
                                 <Button
@@ -106,8 +87,7 @@ const AbilityFruitsPage = () => {
                             </div>
                         </div>
                     </div>
-                    )
-                })}
+                ))}
             </div>
 
             <Modal isActive={!!learnMore} setIsActive={() => setLearnMore(null)}>
