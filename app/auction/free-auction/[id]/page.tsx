@@ -21,18 +21,7 @@ import MultiplyFruitAbility from "@/components/MultiplyFruitAbility";
 import DivideFruitAbility, { DivideFruitBadge, DivideStatusPill } from "@/components/DivideFruitAbility";
 import StealFruitAbility from "@/components/StealFruitAbility";
 import SwapFruitAbility, { SwapFruitBadge, SwapStatusPill, SWAP_EASE_OUT, SWAP_BURST_MS } from "@/components/SwapFruitAbility";
-import RestoreFruitAbility, {
-    RestoreStatusPill,
-    RestoreSummaryModal,
-    RestoredFruit,
-    RestoreStage,
-    RESTORE_APPEAR_MS,
-    RESTORE_BURST_MS,
-    RESTORE_RESTORING_MIN_MS,
-    RESTORE_COMPLETE_MS,
-} from "@/components/RestoreFruitAbility";
-import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, getAbilityFruit, AbilityFruitId } from "@/lib/abilityFruits";
-import { getFruitUsage, recordFruitUse, clearFruitUsage } from "@/lib/fruitUsage";
+import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S } from "@/lib/abilityFruits";
 import { motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
@@ -46,7 +35,7 @@ type Bid = {
     username?: string | null;
 }
 
-// BIG SIS REQUEST: "Increase Bid" renamed to "Controls"
+//  "Increase Bid" renamed to "Controls"
 const TABS = [
     { key: 'buy', label: 'Buy Bidding Currency' },
     { key: 'fruits', label: 'Ability Fruits' },
@@ -81,19 +70,19 @@ const LeaderboardPage = () => {
     const { checkSession } = useAuth()
     const usernameCacheRef = useRef<Map<string, string | null>>(new Map())
 
-    // BIG SIS REQUEST: bid controls (increment / slider / voice)
+    //  bid controls (increment / slider / voice)
     const { bidMode, setBidMode, incrementAmounts, sliderConfig } = useBidControls()
 
 
-    // BIG SIS REQUEST: voice mode key — forces VoiceBidButton remount when switching to voice
+    //  voice mode key — forces VoiceBidButton remount when switching to voice
     const [voiceKey, setVoiceKey] = useState(0)
 
-    // BIG SIS REQUEST: Ability Fruit MULTIPLY state. The factor comes from the
+    // Ability Fruit MULTIPLY state. The factor comes from the
     // fruit's level (everyone is level 1 -> x2 for now), so there is nothing to
     // pick — Activate fires straight away.
     const [multiplyTarget, setMultiplyTarget] = useState<string | null>(null)
 
-    // BIG SIS REQUEST: Ability Fruit DIVIDE state. The fruit appears on YOUR
+    // Ability Fruit DIVIDE state. The fruit appears on YOUR
     // card, travels to whoever holds FIRST POSITION and divides their bid.
     type DivideStage = 'idle' | 'appear' | 'travel' | 'covering' | 'explode' | 'settle'
     const [divideStage, setDivideStage] = useState<DivideStage>('idle')
@@ -108,12 +97,9 @@ const LeaderboardPage = () => {
         // clear any in-flight swap timers when the page unmounts
         swapTimeoutsRef.current.forEach(clearTimeout)
         swapTimeoutsRef.current = []
-        // clear any in-flight restore timers when the page unmounts
-        restoreTimeoutsRef.current.forEach(clearTimeout)
-        restoreTimeoutsRef.current = []
     }, [])
 
-    // BIG SIS REQUEST: Ability Fruit STEAL BIDDING CURRENCY state. Auto-targets
+    //  Ability Fruit STEAL BIDDING CURRENCY state. Auto-targets
     // every other player with a bid, drains 1,000 BC/sec over a 60s countdown,
     // then pools all the stolen BC onto my bid in one explosion.
     type StealStage = 'idle' | 'active' | 'explode' | 'settle'
@@ -130,7 +116,7 @@ const LeaderboardPage = () => {
     const [stealLossByPlayer, setStealLossByPlayer] = useState<Record<string, number>>({})
     const myUserIdRef = useRef<string | null>(null)
 
-    // BIG SIS REQUEST: Ability Fruit POSITION SWAP state. Auto-targets the
+    //  Ability Fruit POSITION SWAP state. Auto-targets the
     // highest bidder, swaps the two bid amounts, plays the 5-frame animation.
     type SwapStage = 'idle' | 'active' | 'travel' | 'explode' | 'settle'
     const [swapStage, setSwapStage] = useState<SwapStage>('idle')
@@ -140,17 +126,6 @@ const LeaderboardPage = () => {
     // "↑ 1", -1 the red "↓ 1".
     const [swapDeltas, setSwapDeltas] = useState<Record<string, number>>({})
     const swapTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
-
-    // BIG SIS REQUEST: Ability Fruit RESTORE state. Gives the activator back
-    // what THEY used on this table — the ability fruits they spent and the
-    // bidding currency they committed — and plays the sheet's six frames:
-    // appear → explode → restoring... → summary (Continue) → complete.
-    const [restoreStage, setRestoreStage] = useState<RestoreStage>('idle')
-    const [restoreRefund, setRestoreRefund] = useState(0)
-    // The ability fruits coming back, with their counts — the top half of the
-    // FRAME 5 summary. Read from the per-auction usage ledger (lib/fruitUsage).
-    const [restoreFruits, setRestoreFruits] = useState<RestoredFruit[]>([])
-    const restoreTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -391,13 +366,13 @@ const LeaderboardPage = () => {
         }
     }, [quickBidding, user, bids, auctionId, dispatch, fetchProfileBalance, fireDelta])
 
-    // BIG SIS REQUEST: the Ability Fruits tab opens the Ability Fruits page
+    // the Ability Fruits tab opens the Ability Fruits page
     // first — the player picks a fruit there, then comes back here to target.
     const openAbilityFruits = useCallback(() => {
         router.push(`/auction/free-auction/${auctionId}/ability-fruits`)
     }, [router, auctionId])
 
-    // BIG SIS REQUEST: Controls tab opens ControlsModal
+    //  Controls tab opens ControlsModal
     const handleTabClick = (tab: TabKey) => {
         if (tab === 'fruits') {
             openAbilityFruits()
@@ -407,7 +382,7 @@ const LeaderboardPage = () => {
         if (tab === 'controls') setControlsModal(true)
     }
 
-    // BIG SIS REQUEST: tapping Activate on the Ability Fruits page sends the
+    //  tapping Activate on the Ability Fruits page sends the
     // player back here with ?fruit=<id> and the ability fires IMMEDIATELY on
     // their own bid card — no modal, no factor to pick. Waits for the bids to
     // load so FRAME 2 starts on a card that is actually on screen.
@@ -419,7 +394,7 @@ const LeaderboardPage = () => {
         armedFruitRef.current = armed
     }, [auctionId])
 
-    // BIG SIS REQUEST: Ability Fruit MULTIPLY — optimistic update at FRAME 4 + server commit
+    //  Ability Fruit MULTIPLY — optimistic update at FRAME 4 + server commit
     const handleMultiplyOptimistic = useCallback((id: number | string, newBid: number) => {
         const userId = String(id)
         // Update only the target row immediately (optimistic). Other rows keep the
@@ -462,14 +437,13 @@ const LeaderboardPage = () => {
     }, [myUserId])
 
     const handleMultiplySelf = useCallback(() => {
-        if (multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle') return
         if (!myUserId || !myBid) {
             dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
             return
         }
-        recordFruitUse(auctionId, 'multiply')
         setMultiplyTarget(myUserId)
-    }, [multiplyTarget, myUserId, myBid, dispatch, stealStage, swapStage, restoreStage])
+    }, [multiplyTarget, myUserId, myBid, dispatch])
 
     // FRAME 5 (settled): the overlay is gone — float "+X,XXX,XXX ↑" next to the
     // target's new bid, the same green delta a normal bid raise shows.
@@ -478,7 +452,7 @@ const LeaderboardPage = () => {
         if (delta > 0) fireDelta(String(id), delta)
     }, [fireDelta])
 
-    // BIG SIS REQUEST: Ability Fruit DIVIDE — the fruit ALWAYS hits whoever
+    //  Ability Fruit DIVIDE — the fruit ALWAYS hits whoever
     // holds FIRST POSITION. It appears on YOUR card and travels across to rest
     // on the #1 card (FRAME 2), their bid splits old -> reduced (FRAME 3), the
     // red "-X,XXX,XXX ↓" floats off (FRAME 4), then it settles (FRAME 5).
@@ -521,7 +495,7 @@ const LeaderboardPage = () => {
     // Separately timed frames for the divide sequence. The fruit rests on your
     // card, flies to first position, covers it, then the reduction lands.
     const handleDivideSelf = useCallback(() => {
-        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -531,7 +505,6 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
             return
         }
-        recordFruitUse(auctionId, 'divide')
 
         const APP_MS = 800
         const TRAVEL_MS = 850
@@ -583,11 +556,11 @@ const LeaderboardPage = () => {
         })
     }, [divideStage, myUserId, divideTarget])
 
-    // BIG SIS REQUEST: Ability Fruit STEAL BIDDING CURRENCY.
+    //  Ability Fruit STEAL BIDDING CURRENCY.
     // Auto-targets every other player who holds any bidding currency, then
     // drains 1,000 BC per second from each for 60 seconds.
     const handleStealSelf = useCallback(() => {
-        if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -602,7 +575,6 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'No one else on the table has bidding currency to take.' }))
             return
         }
-        recordFruitUse(auctionId, 'thief')
 
         const basis = new Map<string, number>()
         targets.forEach(t => basis.set(String(t.userId), Number(t.bidAmount)))
@@ -711,7 +683,7 @@ const LeaderboardPage = () => {
         }
     }, [stealStage, handleStealCommit])
 
-    // BIG SIS REQUEST: Ability Fruit POSITION SWAP.
+    //  Ability Fruit POSITION SWAP.
     // The fruit ALWAYS swaps with the highest bidder: the two bid amounts
     // change hands, so the activator walks away holding the top bid. A player
     // who already holds (or ties for) first place cannot swap.
@@ -743,7 +715,7 @@ const LeaderboardPage = () => {
     }, [auctionId, bids, dispatch])
 
     const handleSwapSelf = useCallback(() => {
-        if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget || restoreStage !== 'idle') return
+        if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget) return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -759,7 +731,6 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
             return
         }
-        recordFruitUse(auctionId, 'swap')
         const myAmount = Number(myBidEntry.bidAmount)
         const leaderAmount = Number(leader.bidAmount)
         if (String(leader.userId) === myUserId || leaderAmount === myAmount) {
@@ -840,123 +811,6 @@ const LeaderboardPage = () => {
         })
     }, [swapStage, swapTargetId, myUserId])
 
-    // BIG SIS REQUEST: Ability Fruit RESTORE — the commit. This runs UNDER
-    // FRAME 4 ("Restoring... your resources are being restored in the
-    // background"), and that frame is held until the server has actually paid
-    // the stake back. Nothing is shown as restored before it lands: on a
-    // failure the sequence is dropped and the table is left exactly as it was.
-    const commitRestore = useCallback(async (refund: number) => {
-        const startedAt = Date.now()
-        // FRAME 4 has to be readable even when the server answers instantly.
-        const holdRestoringFrame = async () => {
-            const elapsed = Date.now() - startedAt
-            if (elapsed < RESTORE_RESTORING_MIN_MS) {
-                await new Promise(resolve => setTimeout(resolve, RESTORE_RESTORING_MIN_MS - elapsed))
-            }
-        }
-        const abandon = (message: string) => {
-            dispatch(showToast({ type: 'error', message }))
-            setRestoreStage('idle')
-            setRestoreRefund(0)
-            setRestoreFruits([])
-        }
-
-        try {
-            const res = await fetch('/api/landwars/restore-bid', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ auctionId }),
-            })
-            const data = await res.json()
-            await holdRestoringFrame()
-
-            if (!res.ok) {
-                abandon(data.error || 'Could not restore your resources.')
-                return
-            }
-
-            // My stake comes off the table and lands back in my wallet. No other
-            // row is touched — restore is not an attack.
-            const refunded = Number(data?.refunded ?? refund)
-            setBids(prev => prev.map(b =>
-                String(b.userId) === myUserId ? { ...b, bidAmount: Number(data?.bidAmount ?? 0) } : b
-            ))
-            if (Number.isFinite(Number(data?.bidding_balance))) {
-                dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
-            }
-            // The used fruits go back into the inventory. The Restore fruit is
-            // only counted as eaten now that the restore has actually landed —
-            // a failed commit must not cost the player a fruit — and it never
-            // restores itself.
-            clearFruitUsage(auctionId, { restore: (getFruitUsage(auctionId).restore ?? 0) + 1 })
-            setRestoreRefund(refunded)
-            setRestoreStage('summary')
-        } catch {
-            await holdRestoringFrame()
-            abandon('Something went wrong. Please try again.')
-        }
-    }, [auctionId, myUserId, dispatch])
-
-    // FRAMES 2-4: the fruit appears on the right of my card (appear) → it
-    // explodes there (explode) → "Restoring..." holds while the commit runs.
-    // FRAME 5 (the summary) and FRAME 6 (complete) are driven by commitRestore
-    // and by Continue, because the sheet dismisses the summary by hand.
-    const handleRestoreSelf = useCallback(() => {
-        if (restoreStage !== 'idle' || stealStage !== 'idle' || swapStage !== 'idle' || divideTarget || multiplyTarget) return
-        if (!myUserId) {
-            dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
-            return
-        }
-
-        // What there is to give back: the fruits used on this table so far, and
-        // the bidding currency committed to it. Both come from what the player
-        // actually SPENT — never from their current wallet balance.
-        const usage = getFruitUsage(auctionId)
-        const usedFruits = (Object.entries(usage) as [AbilityFruitId, number][])
-            .filter(([id, count]) => id !== 'restore' && count > 0)
-            .map(([id, count]): RestoredFruit | null => {
-                const fruit = getAbilityFruit(id)
-                return fruit ? { id, name: fruit.name, image: fruit.image, count } : null
-            })
-            .filter((f): f is RestoredFruit => f !== null)
-        const spent = Number(bids.find(b => String(b.userId) === myUserId)?.bidAmount ?? 0)
-
-        // DEV NOTE (design): "Restore cannot be used if there is nothing to
-        // restore" — no fruits used AND nothing staked on this table.
-        if (spent <= 0 && usedFruits.length === 0) {
-            dispatch(showToast({ type: 'error', message: 'No resources to restore.' }))
-            return
-        }
-
-        setRestoreFruits(usedFruits)
-        setRestoreRefund(spent)
-
-        // schedule helper — tracked so the cleanup effect can cancel the frames
-        const at = (fn: () => void, ms: number) => {
-            const t = setTimeout(fn, ms)
-            restoreTimeoutsRef.current.push(t)
-        }
-
-        setRestoreStage('appear')
-        at(() => setRestoreStage('explode'), RESTORE_APPEAR_MS)
-        at(() => {
-            setRestoreStage('restoring')
-            void commitRestore(spent)
-        }, RESTORE_APPEAR_MS + RESTORE_BURST_MS)
-    }, [restoreStage, stealStage, swapStage, divideTarget, multiplyTarget, myUserId, bids, auctionId, commitRestore, dispatch])
-
-    // FRAME 6 — Continue on the summary: the green "restored" marker rides the
-    // card for a beat, then the sequence is done.
-    const handleRestoreContinue = useCallback(() => {
-        setRestoreStage('complete')
-        const t = setTimeout(() => {
-            setRestoreStage('idle')
-            setRestoreRefund(0)
-            setRestoreFruits([])
-        }, RESTORE_COMPLETE_MS)
-        restoreTimeoutsRef.current.push(t)
-    }, [])
-
     // Fire the armed fruit as soon as the table has loaded and we know who you
     // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
     useEffect(() => {
@@ -968,17 +822,16 @@ const LeaderboardPage = () => {
         if (armed === 'divide') handleDivideSelf()
         if (armed === 'thief') handleStealSelf()
         if (armed === 'swap') handleSwapSelf()
-        if (armed === 'restore') handleRestoreSelf()
-    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf])
+    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf])
 
-    // BIG SIS REQUEST: ControlsModal save handler
+    //  ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
         setBidMode(mode)
         if (mode === 'voice') setVoiceKey(k => k + 1)
     }, [setBidMode])
 
 
-    // BIG SIS REQUEST: bid controls footer always present → always use extended padding
+    //  bid controls footer always present → always use extended padding
     const bottomPadding = 'pb-[11rem]'
 
     return (
@@ -1043,7 +896,7 @@ const LeaderboardPage = () => {
                 </div>
             </Modal>
 
-            {/* BIG SIS REQUEST: Controls modal */}
+            {/*  Controls modal */}
             <ControlsModal
                 isActive={controlsModal}
                 setIsActive={setControlsModal}
@@ -1072,9 +925,6 @@ const LeaderboardPage = () => {
                         // SWAP FRAME 4: the whole card shakes while the fruit
                         // bursts on it, per the design sheet's explosion note.
                         const isSwapBursting = swapStage === 'explode' && String(bid.userId) === swapTargetId
-                        // RESTORE FRAME 3: the same shake, on my own card, while
-                        // the Restore Fruit explodes on it.
-                        const isRestoreBursting = restoreStage === 'explode' && String(bid.userId) === String(myUserId)
                         return (
                             <motion.div
                                 key={bid.id}
@@ -1082,26 +932,17 @@ const LeaderboardPage = () => {
                                 data-swap-card={bid.userId}
                                 data-steal-card={bid.userId}
                                 data-steal-target={stealTargets.includes(String(bid.userId)) ? 'true' : undefined}
-                                animate={isSwapBursting || isRestoreBursting
+                                animate={isSwapBursting
                                     ? { x: [0, -7, 6, -5, 4, -2, 0], y: [0, 3, -3, 2, -1, 0, 0] }
                                     : { x: 0, y: 0 }}
                                 transition={isSwapBursting
                                     ? { duration: SWAP_BURST_MS / 1000, ease: 'easeOut' }
-                                    : isRestoreBursting
-                                        ? { duration: RESTORE_BURST_MS / 1000, ease: 'easeOut' }
-                                        : { duration: 0.2 }}
+                                    : { duration: 0.2 }}
                                 className={`bg-white rounded-3xl shadow-sm border transition-colors duration-300 ${
                                     isStealLiveTarget ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-100'
                                 }`}
                             >
-                                {/* BIG SIS REQUEST: each card wraps in the Restore + Steal + Swap + Divide + Multiply fruit overlays */}
-                                <RestoreFruitAbility
-                                    tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
-                                    activatorId={myUserId}
-                                    stage={restoreStage}
-                                    playerId={bid.userId}
-                                    refundAmount={restoreRefund}
-                                >
+                                {/*  each card wraps in the Steal + Swap + Divide + Multiply fruit overlays */}
                                 <StealFruitAbility
                                     tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
                                     activatorId={myUserId}
@@ -1174,14 +1015,13 @@ const LeaderboardPage = () => {
                                 </DivideFruitAbility>
                                 </SwapFruitAbility>
                                 </StealFruitAbility>
-                                </RestoreFruitAbility>
                             </motion.div>
                         )
                     })}
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: DIVIDE FRAME 2 — the status pill under the table:
+            {/*  DIVIDE FRAME 2 — the status pill under the table:
                 "÷N  Dividing <name>'s bid by N". Clears once the cut lands. */}
             <DivideStatusPill
                 stage={divideStage}
@@ -1189,7 +1029,7 @@ const LeaderboardPage = () => {
                 factor={DIVIDE_FACTOR}
             />
 
-            {/* BIG SIS REQUEST: SWAP FRAMES 2-3 — the green caption bar under the
+            {/*  SWAP FRAMES 2-3 — the green caption bar under the
                 table while the fruit is out and in flight, mirroring the
                 narration strip on the design sheet. */}
             <SwapStatusPill
@@ -1197,20 +1037,7 @@ const LeaderboardPage = () => {
                 targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
             />
 
-            {/* BIG SIS REQUEST: RESTORE FRAMES 2-4 — the teal caption bar under
-                the table, ending on the "Restoring your resources..." spinner. */}
-            <RestoreStatusPill stage={restoreStage} />
-
-            {/* BIG SIS REQUEST: RESTORE FRAME 5 — the summary of exactly what
-                came back. Closed by Continue, never on a timer. */}
-            <RestoreSummaryModal
-                open={restoreStage === 'summary'}
-                fruits={restoreFruits}
-                refundAmount={restoreRefund}
-                onContinue={handleRestoreContinue}
-            />
-
-            {/* BIG SIS REQUEST: DIVIDE — the fruit flying from MY card to the
+            {/*  DIVIDE — the fruit flying from MY card to the
                 holder of first position while the divide sequence is live. */}
             {divideStage === 'travel' && divideFlight && (
                 <div className="pointer-events-none fixed inset-0 z-[70]">
@@ -1238,7 +1065,7 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: Increment buttons in footer (default mode) */}
+            {/*  Increment buttons in footer (default mode) */}
             {bidMode === 'increment' && (
                 <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-4 py-4 flex justify-center items-center gap-3 max-w-md mx-auto">
                     {incrementAmounts.map((amount) => (
@@ -1256,7 +1083,7 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: Slider in footer */}
+            {/*  Slider in footer */}
             {bidMode === 'slider' && (
                 <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-200 px-6 py-5 max-w-md mx-auto">
                     <BidSlider
@@ -1268,7 +1095,7 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/* BIG SIS REQUEST: Voice mode — only mic icon centered in footer, no background */}
+            {/*  Voice mode — only mic icon centered in footer, no background */}
             {bidMode === 'voice' && (
                 <div className="fixed bottom-0 left-0 right-0 z-30 flex justify-center items-center max-w-md mx-auto pb-[10px]">
                     <VoiceBidButton
