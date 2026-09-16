@@ -1,6 +1,6 @@
 'use client'
 
-// BIG SIS REQUEST: the fruit artwork used on the Ability Fruits page, in the
+//  the fruit artwork used on the Ability Fruits page, in the
 // Learn More sheet and in the ability animations. Renders the original icon
 // (background already cut out) with an optional coloured glow behind it.
 

@@ -3,7 +3,7 @@
 // ============================================================================
 // ABILITY FRUITS PAGE
 // ----------------------------------------------------------------------------
-// BIG SIS REQUEST: tapping the "Ability Fruits" tab on the table — or saying
+//  tapping the "Ability Fruits" tab on the table — or saying
 // "activate ability fruit" while in voice mode — lands here FIRST. The player
 // picks a fruit here, then Activate takes them back to the table to choose a
 // target.
