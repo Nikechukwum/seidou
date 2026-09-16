@@ -47,6 +47,7 @@ type Bid = {
 }
 
 //  "Increase Bid" renamed to "Controls"
+//  "Increase Bid" renamed to "Controls"
 const TABS = [
     { key: 'buy', label: 'Buy Bidding Currency' },
     { key: 'fruits', label: 'Ability Fruits' },
