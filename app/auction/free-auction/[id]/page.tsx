@@ -31,9 +31,10 @@ import RestoreFruitAbility, {
     RESTORE_RESTORING_MIN_MS,
     RESTORE_COMPLETE_MS,
 } from "@/components/RestoreFruitAbility";
+import AdaptiveLeaderboard from "@/components/AdaptiveLeaderboard";
 import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, getAbilityFruit, AbilityFruitId } from "@/lib/abilityFruits";
 import { getFruitUsage, recordFruitUse, clearFruitUsage } from "@/lib/fruitUsage";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
 
@@ -1062,8 +1063,11 @@ const LeaderboardPage = () => {
                     <p className="text-sm mt-1">Be the first to place a bid on this auction.</p>
                 </div>
             ) : (
-                <div className="flex flex-col gap-4.5">
-                    {bids.map((bid, index) => {
+                <AdaptiveLeaderboard
+                    rows={bids}
+                    myUserId={myUserId}
+                    renderCard={(row, rank, anim) => {
+                        const bid = row as (typeof bids)[number]
                         const isYou = bid.userId === currentUserId || bid.userId === user?.id
                         // light red border on every target while it is being
                         // drained; disappears at the explode (timer hit zero)
@@ -1078,7 +1082,6 @@ const LeaderboardPage = () => {
                         const isRestoreBursting = restoreStage === 'explode' && String(bid.userId) === String(myUserId)
                         return (
                             <motion.div
-                                key={bid.id}
                                 data-divide-card={bid.userId}
                                 data-swap-card={bid.userId}
                                 data-steal-card={bid.userId}
@@ -1140,21 +1143,37 @@ const LeaderboardPage = () => {
                                         onComplete={handleMultiplyComplete}
                                     >
                                     <div className="flex items-start gap-4 p-6">
-                                        <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm">
-                                            {index + 1}
+                                        <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
+                                            <AnimatePresence mode="popLayout" initial={false}>
+                                                <motion.span
+                                                    key={anim.flipKey}
+                                                    initial={{ opacity: 0, y: 10 * anim.dir }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    exit={{ opacity: 0, y: -10 * anim.dir }}
+                                                    transition={{ duration: 0.16, ease: 'easeOut' }}
+                                                >
+                                                    {rank}
+                                                </motion.span>
+                                            </AnimatePresence>
                                         </div>
                                         <div className="min-w-0">
                                             <div className="relative inline-block max-w-full align-top">
                                                 <h2 className="text-xl font-bold text-gray-900 leading-tight truncate">
-                                                    <span
-                                                        className="inline-block transition-all duration-200 rounded-md"
-                                                        style={{
-                                                            transform: scalePop[bid.userId] ? 'scale(1.08)' : 'scale(1)',
-                                                            boxShadow: glowPop[bid.userId] ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
-                                                        }}
-                                                    >
-                                                        B {Number(bid.bidAmount).toLocaleString()}
-                                                    </span>
+                                                    <AnimatePresence mode="popLayout" initial={false}>
+                                                        <motion.span
+                                                            key={anim.flipKey}
+                                                            initial={{ opacity: 0, y: 10 * anim.dir }}
+                                                            animate={{ opacity: 1, y: 0, scale: scalePop[bid.userId] ? 1.08 : 1 }}
+                                                            exit={{ opacity: 0, y: -10 * anim.dir }}
+                                                            transition={{ duration: 0.16, ease: 'easeOut' }}
+                                                            className="inline-block rounded-md"
+                                                            style={{
+                                                                boxShadow: glowPop[bid.userId] ? '0 0 12px rgba(34,197,94,0.3)' : 'none',
+                                                            }}
+                                                        >
+                                                            B {Number(bid.bidAmount).toLocaleString()}
+                                                        </motion.span>
+                                                    </AnimatePresence>
                                                 </h2>
                                                 {deltaTriggers[bid.userId] && (
                                                     <FloatingDelta
@@ -1164,10 +1183,21 @@ const LeaderboardPage = () => {
                                                     />
                                                 )}
                                             </div>
-                                            <p className="text-gray-500 text-sm mt-1 truncate">
-                                                {isYou
-                                                    ? (bid.username || user?.username || 'You')
-                                                    : (bid.username || 'Unknown')}
+<p className={`text-sm mt-1 truncate ${isYou ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
+                                                <AnimatePresence mode="popLayout" initial={false}>
+                                                    <motion.span
+                                                        key={anim.flipKey}
+                                                        initial={{ opacity: 0, y: 10 * anim.dir }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        exit={{ opacity: 0, y: -10 * anim.dir }}
+                                                        transition={{ duration: 0.16, ease: 'easeOut' }}
+                                                        className="inline-block"
+                                                    >
+                                                        {isYou
+                                                            ? (bid.username || user?.username || 'You')
+                                                            : (bid.username || 'Unknown')}
+                                                    </motion.span>
+                                                </AnimatePresence>
                                             </p>
                                         </div>
                                     </div>
@@ -1178,8 +1208,8 @@ const LeaderboardPage = () => {
                                 </RestoreFruitAbility>
                             </motion.div>
                         )
-                    })}
-                </div>
+                    }}
+                />
             )}
 
             {/*  DIVIDE FRAME 2 — the status pill under the table:
