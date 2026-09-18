@@ -129,13 +129,22 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
 
     // Four static slots, always ordered by rank: the pins plus the window.
     const slots = useMemo(() => {
-        if (total === 0) return [] as { row: LeaderboardRow; rank: number }[]
+        if (total === 0) return [] as { row: LeaderboardRow; rank: number; key: string }[]
         const start = clamp(restStart + offset, 0, maxStart)
         const ranks = [...pinnedRanks, ...freeRanks.slice(start, start + windowSize)]
             .filter((r) => r <= total)
             .sort((a, b) => a - b)
-        return ranks.map((rank) => ({ row: rankedRows[rank - 1], rank }))
-    }, [total, restStart, offset, maxStart, pinnedRanks, freeRanks, windowSize, rankedRows])
+        // Stable frame keys: the player's frame and #1's frame keep their
+        // identity even when a bid change moves them to another slot, so any
+        // effect running inside the player's card (e.g. a fruit animation) is
+        // never torn down and restarted mid-way.
+        let free = 0
+        return ranks.map((rank) => ({
+            row: rankedRows[rank - 1],
+            rank,
+            key: rank === playerRank ? 'me' : rank === 1 ? 'first' : `free-${free++}`,
+        }))
+    }, [total, restStart, offset, maxStart, pinnedRanks, freeRanks, windowSize, rankedRows, playerRank])
 
     const scrollable = maxStart > 0
 
@@ -212,10 +221,10 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
         <div className="relative flex items-stretch gap-1">
             <div ref={setContainerEl} className={`min-w-0 flex-1 ${scrollable ? 'touch-none select-none' : 'touch-pan-y'}`}>
                 <div className="flex flex-col gap-3.5">
-                    {slots.map((slot, i) => (
-                        // The frame stays mounted forever — the data inside it
+                    {slots.map((slot) => (
+                        // The frame stays mounted — the data inside it
                         // changes, never the frame itself.
-                        <div key={i} className="relative">
+                        <div key={slot.key} className="relative">
                             {renderCard(slot.row, slot.rank, animFor(slot.row))}
                         </div>
                     ))}
