@@ -11,14 +11,14 @@
 // Layout when the player sits at #45, for example:
 //
 //        [ 1 ]        first place — always pinned
-//        [ 43 ]       the scrolling window between the two pins
+//        [ 43 ]       the two free cards — they page through everyone else
 //        [ 44 ]
 //        [ 45 ]       the player — always pinned
 //
-// Scrolling (wheel / drag / rail) NEVER moves #1 or the player. It only slides
-// the two middle cards through everyone who sits between them:
-//   scroll up   -> 1, 42, 43, 45 -> 1, 41, 42, 45 -> ... -> 1, 2, 3, 45
-//   scroll down -> back to the default 1, 43, 44, 45
+// Scrolling (mouse wheel / finger drag) NEVER moves #1 or the player. Each step
+// pages the two free cards through every OTHER user, above or below the player.
+// Cards are always shown in rank order. E.g. the player at #2:
+//   1, 2, 3, 4 -> 1, 2, 5, 6 -> 1, 2, 7, 8 -> ... and back up again.
 //
 // The four card FRAMES stay perfectly still — a scroll only swaps the DATA in
 // the middle slots, and only the rank number, the bid amount and the player's
@@ -70,7 +70,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     const [offset, setOffset] = useState(0)
     const dirRef = useRef<1 | -1>(1)
 
-    const containerRef = useRef<HTMLDivElement>(null)
+    const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null)
     const scrollLockRef = useRef(0)
 
     // Ranks come from a stable sort: highest bid first, ties broken by row id.
@@ -93,52 +93,63 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
         return idx === -1 ? null : idx + 1
     }, [myUserId, rankedRows])
 
-    // The pins only leave if the player has no bid yet, or their true position
-    // already fits inside the natural top-4 window (then it is simply visible).
-    const playerPinnedBelow = playerRank !== null && playerRank > VIEWPORT
+    // Pinned cards: #1 and the player (just #1 if the player has no bid yet,
+    // or when the player IS #1). Every other rank is "free" and scrolls
+    // through the remaining slots, a page at a time.
+    const pinnedRanks = useMemo(() => {
+        const set = new Set<number>([1])
+        if (playerRank !== null) set.add(playerRank)
+        return set
+    }, [playerRank])
 
-    // A live bid change can move the player. Snap the middle window back to its
-    // resting place (1, P-2, P-1, P) so the pinned view always "re-finds" them.
+    const freeRanks = useMemo(() => {
+        const list: number[] = []
+        for (let r = 1; r <= total; r++) if (!pinnedRanks.has(r)) list.push(r)
+        return list
+    }, [total, pinnedRanks])
+
+    const windowSize = Math.max(0, Math.min(VIEWPORT, total) - pinnedRanks.size)
+    const maxStart = Math.max(0, freeRanks.length - windowSize)
+
+    // Resting window: the natural top 4 when the player is inside it,
+    // otherwise the users right above the player (1, P-2, P-1, P).
+    const restStart = playerRank !== null && playerRank > VIEWPORT
+        ? clamp(freeRanks.indexOf(playerRank - 1) - (windowSize - 1), 0, maxStart)
+        : 0
+
+    // Scroll offset from the resting window. Negative = toward first place.
+    const minOff = -restStart
+    const maxOff = maxStart - restStart
+
+    // A live bid change can move the player. Snap back to the resting window
+    // so the pinned view always "re-finds" them.
     useEffect(() => {
         setOffset(0)
     }, [playerRank])
 
-    // Four static slots:
-    //   [0] = #1 (always)        [1], [2] = the sliding middle window
-    //   [3] = the player (always, when pinned below)
+    // Four static slots, always ordered by rank: the pins plus the window.
     const slots = useMemo(() => {
         if (total === 0) return [] as { row: LeaderboardRow; rank: number }[]
-        if (!playerPinnedBelow) {
-            const count = Math.min(VIEWPORT, total)
-            return Array.from({ length: count }, (_, i) => ({
-                row: rankedRows[i],
-                rank: i + 1,
-            }))
-        }
+        const start = clamp(restStart + offset, 0, maxStart)
+        const ranks = [...pinnedRanks, ...freeRanks.slice(start, start + windowSize)]
+            .filter((r) => r <= total)
+            .sort((a, b) => a - b)
+        return ranks.map((rank) => ({ row: rankedRows[rank - 1], rank }))
+    }, [total, restStart, offset, maxStart, pinnedRanks, freeRanks, windowSize, rankedRows])
 
-        const p = playerRank as number
-        const off = clamp(offset, 4 - p, 0)
-        return [
-            { row: rankedRows[0], rank: 1 },
-            { row: rankedRows[p - 3 + off], rank: p - 2 + off },
-            { row: rankedRows[p - 2 + off], rank: p - 1 + off },
-            { row: rankedRows[p - 1], rank: p },
-        ]
-    }, [total, playerPinnedBelow, playerRank, offset, rankedRows])
+    const scrollable = maxStart > 0
 
-    const scrollable = playerPinnedBelow && total > VIEWPORT
-    const minOff = 4 - (playerRank ?? 0)
-    const atTop = !scrollable || offset <= minOff
-    const atBottom = !scrollable || offset >= 0
-
-    const scrollBy = (delta: number) => {
+    // One scroll step moves a whole page (e.g. 3,4 -> 5,6 -> 7,8).
+    const scrollBy = (delta: number, throttle = true) => {
         const dir = directionOf(delta)
-        if (dir === 0 || !scrollable || playerRank === null) return
-        const now = Date.now()
-        if (now < scrollLockRef.current) return
-        scrollLockRef.current = now + SCROLL_LOCK_MS
+        if (dir === 0 || !scrollable) return
+        if (throttle) {
+            const now = Date.now()
+            if (now < scrollLockRef.current) return
+            scrollLockRef.current = now + SCROLL_LOCK_MS
+        }
         dirRef.current = dir
-        setOffset((o) => clamp(o + dir, 4 - playerRank, 0))
+        setOffset((o) => clamp(o + dir * windowSize, minOff, maxOff))
     }
 
     // Non-passive wheel + drag handling (React's synthetic events are passive).
@@ -149,7 +160,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     scrollByRef.current = scrollBy
 
     useEffect(() => {
-        const el = containerRef.current
+        const el = containerEl
         if (!el) return
         let dragY: number | null = null
 
@@ -162,14 +173,20 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
             if (!scrollableRef.current) return
             if (e.touches.length === 1) dragY = e.touches[0].clientY
         }
+        // Step one user per MIN_DRAG_PX of finger travel, live while dragging,
+        // so a long swipe walks through many users.
         const onTouchMove = (e: TouchEvent) => {
-            if (dragY !== null && scrollableRef.current) e.preventDefault()
+            if (dragY === null || !scrollableRef.current) return
+            e.preventDefault()
+            const y = e.touches[0].clientY
+            const dy = dragY - y
+            if (Math.abs(dy) >= MIN_DRAG_PX) {
+                scrollByRef.current(dy, false)
+                dragY = y
+            }
         }
-        const onTouchEnd = (e: TouchEvent) => {
-            if (dragY === null) return
-            const dy = dragY - e.changedTouches[0].clientY
+        const onTouchEnd = () => {
             dragY = null
-            if (Math.abs(dy) > MIN_DRAG_PX) scrollByRef.current(dy)
         }
 
         el.addEventListener('wheel', onWheel, { passive: false })
@@ -182,7 +199,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
             el.removeEventListener('touchmove', onTouchMove)
             el.removeEventListener('touchend', onTouchEnd)
         }
-    }, [])
+    }, [containerEl])
 
     if (total === 0) return null
 
@@ -193,7 +210,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
 
     return (
         <div className="relative flex items-stretch gap-1">
-            <div ref={containerRef} className="min-w-0 flex-1 touch-pan-y">
+            <div ref={setContainerEl} className={`min-w-0 flex-1 ${scrollable ? 'touch-none select-none' : 'touch-pan-y'}`}>
                 <div className="flex flex-col gap-3.5">
                     {slots.map((slot, i) => (
                         // The frame stays mounted forever — the data inside it
@@ -204,35 +221,6 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
                     ))}
                 </div>
             </div>
-
-            {/* scroll rail — only when the middle window can actually slide */}
-            {scrollable && (
-                <div className="flex w-8 shrink-0 flex-col items-center justify-center gap-2">
-                    <button
-                        onClick={() => scrollBy(-1)}
-                        disabled={atTop}
-                        aria-label="Scroll toward first place"
-                        className="flex size-7 items-center justify-center rounded-full bg-gray-200/80 text-gray-600 active:bg-gray-300 disabled:opacity-30"
-                    >
-                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                            <path d="M1 5 5 1l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                    <span className="text-[10px] font-bold tabular-nums text-gray-400">
-                        {slots[1]?.rank}–{slots[2]?.rank}
-                    </span>
-                    <button
-                        onClick={() => scrollBy(1)}
-                        disabled={atBottom}
-                        aria-label="Scroll toward the player"
-                        className="flex size-7 items-center justify-center rounded-full bg-gray-200/80 text-gray-600 active:bg-gray-300 disabled:opacity-30"
-                    >
-                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                            <path d="m1 1 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                </div>
-            )}
         </div>
     )
 }
