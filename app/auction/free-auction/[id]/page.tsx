@@ -94,6 +94,10 @@ const LeaderboardPage = () => {
     // fruit's level (everyone is level 1 -> x2 for now), so there is nothing to
     // pick — Activate fires straight away.
     const [multiplyTarget, setMultiplyTarget] = useState<string | null>(null)
+    // One activation = exactly one multiply. Guards against the animation
+    // firing onBidUpdated a second time (e.g. the card remounting after the
+    // multiplied bid climbs the table).
+    const multiplyAppliedRef = useRef(false)
 
     //  Ability Fruit DIVIDE state. The fruit appears on YOUR
     // card, travels to whoever holds FIRST POSITION and divides their bid.
@@ -423,6 +427,8 @@ const LeaderboardPage = () => {
 
     //  Ability Fruit MULTIPLY — optimistic update at FRAME 4 + server commit
     const handleMultiplyOptimistic = useCallback((id: number | string, newBid: number) => {
+        if (multiplyAppliedRef.current) return
+        multiplyAppliedRef.current = true
         const userId = String(id)
         // Update only the target row immediately (optimistic). Other rows keep the
         // same object reference so only this card re-renders.
@@ -470,6 +476,7 @@ const LeaderboardPage = () => {
             return
         }
         recordFruitUse(auctionId, 'multiply')
+        multiplyAppliedRef.current = false
         setMultiplyTarget(myUserId)
     }, [multiplyTarget, myUserId, myBid, dispatch, stealStage, swapStage, restoreStage])
 
