@@ -15,7 +15,7 @@
 //        [ 44 ]
 //        [ 45 ]       the player — always pinned
 //
-// Scrolling (wheel / drag / rail) NEVER moves #1 or the player. It only slides
+// Scrolling (mouse wheel / finger drag) NEVER moves #1 or the player. It only slides
 // the two middle cards through everyone who sits between them:
 //   scroll up   -> 1, 42, 43, 45 -> 1, 41, 42, 45 -> ... -> 1, 2, 3, 45
 //   scroll down -> back to the default 1, 43, 44, 45
@@ -70,7 +70,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     const [offset, setOffset] = useState(0)
     const dirRef = useRef<1 | -1>(1)
 
-    const containerRef = useRef<HTMLDivElement>(null)
+    const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null)
     const scrollLockRef = useRef(0)
 
     // Ranks come from a stable sort: highest bid first, ties broken by row id.
@@ -127,16 +127,15 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     }, [total, playerPinnedBelow, playerRank, offset, rankedRows])
 
     const scrollable = playerPinnedBelow && total > VIEWPORT
-    const minOff = 4 - (playerRank ?? 0)
-    const atTop = !scrollable || offset <= minOff
-    const atBottom = !scrollable || offset >= 0
 
-    const scrollBy = (delta: number) => {
+    const scrollBy = (delta: number, throttle = true) => {
         const dir = directionOf(delta)
         if (dir === 0 || !scrollable || playerRank === null) return
-        const now = Date.now()
-        if (now < scrollLockRef.current) return
-        scrollLockRef.current = now + SCROLL_LOCK_MS
+        if (throttle) {
+            const now = Date.now()
+            if (now < scrollLockRef.current) return
+            scrollLockRef.current = now + SCROLL_LOCK_MS
+        }
         dirRef.current = dir
         setOffset((o) => clamp(o + dir, 4 - playerRank, 0))
     }
@@ -149,7 +148,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     scrollByRef.current = scrollBy
 
     useEffect(() => {
-        const el = containerRef.current
+        const el = containerEl
         if (!el) return
         let dragY: number | null = null
 
@@ -162,14 +161,20 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
             if (!scrollableRef.current) return
             if (e.touches.length === 1) dragY = e.touches[0].clientY
         }
+        // Step one user per MIN_DRAG_PX of finger travel, live while dragging,
+        // so a long swipe walks through many users.
         const onTouchMove = (e: TouchEvent) => {
-            if (dragY !== null && scrollableRef.current) e.preventDefault()
+            if (dragY === null || !scrollableRef.current) return
+            e.preventDefault()
+            const y = e.touches[0].clientY
+            const dy = dragY - y
+            if (Math.abs(dy) >= MIN_DRAG_PX) {
+                scrollByRef.current(dy, false)
+                dragY = y
+            }
         }
-        const onTouchEnd = (e: TouchEvent) => {
-            if (dragY === null) return
-            const dy = dragY - e.changedTouches[0].clientY
+        const onTouchEnd = () => {
             dragY = null
-            if (Math.abs(dy) > MIN_DRAG_PX) scrollByRef.current(dy)
         }
 
         el.addEventListener('wheel', onWheel, { passive: false })
@@ -182,7 +187,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
             el.removeEventListener('touchmove', onTouchMove)
             el.removeEventListener('touchend', onTouchEnd)
         }
-    }, [])
+    }, [containerEl])
 
     if (total === 0) return null
 
@@ -193,7 +198,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
 
     return (
         <div className="relative flex items-stretch gap-1">
-            <div ref={containerRef} className="min-w-0 flex-1 touch-pan-y">
+            <div ref={setContainerEl} className={`min-w-0 flex-1 ${scrollable ? 'touch-none select-none' : 'touch-pan-y'}`}>
                 <div className="flex flex-col gap-3.5">
                     {slots.map((slot, i) => (
                         // The frame stays mounted forever — the data inside it
@@ -204,35 +209,6 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
                     ))}
                 </div>
             </div>
-
-            {/* scroll rail — only when the middle window can actually slide */}
-            {scrollable && (
-                <div className="flex w-8 shrink-0 flex-col items-center justify-center gap-2">
-                    <button
-                        onClick={() => scrollBy(-1)}
-                        disabled={atTop}
-                        aria-label="Scroll toward first place"
-                        className="flex size-7 items-center justify-center rounded-full bg-gray-200/80 text-gray-600 active:bg-gray-300 disabled:opacity-30"
-                    >
-                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                            <path d="M1 5 5 1l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                    <span className="text-[10px] font-bold tabular-nums text-gray-400">
-                        {slots[1]?.rank}–{slots[2]?.rank}
-                    </span>
-                    <button
-                        onClick={() => scrollBy(1)}
-                        disabled={atBottom}
-                        aria-label="Scroll toward the player"
-                        className="flex size-7 items-center justify-center rounded-full bg-gray-200/80 text-gray-600 active:bg-gray-300 disabled:opacity-30"
-                    >
-                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-                            <path d="m1 1 4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </button>
-                </div>
-            )}
         </div>
     )
 }
