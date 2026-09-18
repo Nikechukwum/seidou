@@ -11,14 +11,14 @@
 // Layout when the player sits at #45, for example:
 //
 //        [ 1 ]        first place — always pinned
-//        [ 43 ]       the scrolling window between the two pins
+//        [ 43 ]       the two free cards — they page through everyone else
 //        [ 44 ]
 //        [ 45 ]       the player — always pinned
 //
-// Scrolling (mouse wheel / finger drag) NEVER moves #1 or the player. It only slides
-// the two middle cards through everyone who sits between them:
-//   scroll up   -> 1, 42, 43, 45 -> 1, 41, 42, 45 -> ... -> 1, 2, 3, 45
-//   scroll down -> back to the default 1, 43, 44, 45
+// Scrolling (mouse wheel / finger drag) NEVER moves #1 or the player. Each step
+// pages the two free cards through every OTHER user, above or below the player.
+// Cards are always shown in rank order. E.g. the player at #2:
+//   1, 2, 3, 4 -> 1, 2, 5, 6 -> 1, 2, 7, 8 -> ... and back up again.
 //
 // The four card FRAMES stay perfectly still — a scroll only swaps the DATA in
 // the middle slots, and only the rank number, the bid amount and the player's
@@ -93,51 +93,63 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
         return idx === -1 ? null : idx + 1
     }, [myUserId, rankedRows])
 
-    // The pins only leave if the player has no bid yet, or their true position
-    // already fits inside the natural top-4 window (then it is simply visible).
-    const playerPinnedBelow = playerRank !== null && playerRank > VIEWPORT
+    // Pinned cards: #1 and the player (just #1 if the player has no bid yet,
+    // or when the player IS #1). Every other rank is "free" and scrolls
+    // through the remaining slots, a page at a time.
+    const pinnedRanks = useMemo(() => {
+        const set = new Set<number>([1])
+        if (playerRank !== null) set.add(playerRank)
+        return set
+    }, [playerRank])
 
-    // A live bid change can move the player. Snap the middle window back to its
-    // resting place (1, P-2, P-1, P) so the pinned view always "re-finds" them.
+    const freeRanks = useMemo(() => {
+        const list: number[] = []
+        for (let r = 1; r <= total; r++) if (!pinnedRanks.has(r)) list.push(r)
+        return list
+    }, [total, pinnedRanks])
+
+    const windowSize = Math.max(0, Math.min(VIEWPORT, total) - pinnedRanks.size)
+    const maxStart = Math.max(0, freeRanks.length - windowSize)
+
+    // Resting window: the natural top 4 when the player is inside it,
+    // otherwise the users right above the player (1, P-2, P-1, P).
+    const restStart = playerRank !== null && playerRank > VIEWPORT
+        ? clamp(freeRanks.indexOf(playerRank - 1) - (windowSize - 1), 0, maxStart)
+        : 0
+
+    // Scroll offset from the resting window. Negative = toward first place.
+    const minOff = -restStart
+    const maxOff = maxStart - restStart
+
+    // A live bid change can move the player. Snap back to the resting window
+    // so the pinned view always "re-finds" them.
     useEffect(() => {
         setOffset(0)
     }, [playerRank])
 
-    // Four static slots:
-    //   [0] = #1 (always)        [1], [2] = the sliding middle window
-    //   [3] = the player (always, when pinned below)
+    // Four static slots, always ordered by rank: the pins plus the window.
     const slots = useMemo(() => {
         if (total === 0) return [] as { row: LeaderboardRow; rank: number }[]
-        if (!playerPinnedBelow) {
-            const count = Math.min(VIEWPORT, total)
-            return Array.from({ length: count }, (_, i) => ({
-                row: rankedRows[i],
-                rank: i + 1,
-            }))
-        }
+        const start = clamp(restStart + offset, 0, maxStart)
+        const ranks = [...pinnedRanks, ...freeRanks.slice(start, start + windowSize)]
+            .filter((r) => r <= total)
+            .sort((a, b) => a - b)
+        return ranks.map((rank) => ({ row: rankedRows[rank - 1], rank }))
+    }, [total, restStart, offset, maxStart, pinnedRanks, freeRanks, windowSize, rankedRows])
 
-        const p = playerRank as number
-        const off = clamp(offset, 4 - p, 0)
-        return [
-            { row: rankedRows[0], rank: 1 },
-            { row: rankedRows[p - 3 + off], rank: p - 2 + off },
-            { row: rankedRows[p - 2 + off], rank: p - 1 + off },
-            { row: rankedRows[p - 1], rank: p },
-        ]
-    }, [total, playerPinnedBelow, playerRank, offset, rankedRows])
+    const scrollable = maxStart > 0
 
-    const scrollable = playerPinnedBelow && total > VIEWPORT
-
+    // One scroll step moves a whole page (e.g. 3,4 -> 5,6 -> 7,8).
     const scrollBy = (delta: number, throttle = true) => {
         const dir = directionOf(delta)
-        if (dir === 0 || !scrollable || playerRank === null) return
+        if (dir === 0 || !scrollable) return
         if (throttle) {
             const now = Date.now()
             if (now < scrollLockRef.current) return
             scrollLockRef.current = now + SCROLL_LOCK_MS
         }
         dirRef.current = dir
-        setOffset((o) => clamp(o + dir, 4 - playerRank, 0))
+        setOffset((o) => clamp(o + dir * windowSize, minOff, maxOff))
     }
 
     // Non-passive wheel + drag handling (React's synthetic events are passive).
