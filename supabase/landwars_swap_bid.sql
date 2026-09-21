@@ -11,6 +11,10 @@
 -- the RPC rejects that with a friendly message, mirroring the UI toast.
 -- Both rows are locked and updated in one transaction, so the board stays
 -- consistent. Realtime on "Bids" keeps every client in sync.
+--
+-- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
+-- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
+-- then re-run this file.
 -- ============================================================================
 
 create or replace function public.swap_positions(p_auction_id uuid)
@@ -72,6 +76,15 @@ begin
      set "bidAmount" = v_actor_bid
    where "auctionId" = p_auction_id
      and "userId" = v_target.u;
+
+  -- A swap moves TWO bids, so BOTH players get an entry on their stack: the
+  -- player who was swapped out of first place can Negate their way back.
+  perform public.record_bid_effect(
+    p_auction_id, v_actor_id, v_actor_id, 'swap', v_actor_bid, v_target.b
+  );
+  perform public.record_bid_effect(
+    p_auction_id, v_target.u, v_actor_id, 'swap', v_target.b, v_actor_bid
+  );
 
   return json_build_object(
     'success',        true,
