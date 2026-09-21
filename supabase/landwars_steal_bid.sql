@@ -11,6 +11,10 @@
 -- take is capped by their balance). All rows are locked and updated in one
 -- transaction so the board stays consistent. Realtime on "Bids" keeps every
 -- client in sync.
+--
+-- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
+-- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
+-- then re-run this file.
 -- ============================================================================
 
 create or replace function public.steal_bids(
@@ -78,6 +82,12 @@ begin
      where "auctionId" = p_auction_id
        and "userId" = v_target.u;
 
+    -- Each drained player gets their own stack entry (value before the drain).
+    perform public.record_bid_effect(
+      p_auction_id, v_target.u, v_actor_id, 'thief',
+      v_target.b, v_target.b - v_take
+    );
+
     v_total := v_total + v_take;
     v_out := array_append(v_out, json_build_object(
       'user_id',   v_target.u,
@@ -95,6 +105,12 @@ begin
      set "bidAmount" = v_actor_bid + v_total
    where "auctionId" = p_auction_id
      and "userId" = v_actor_id;
+
+  -- ...and the pooled gain lands on the thief's own stack.
+  perform public.record_bid_effect(
+    p_auction_id, v_actor_id, v_actor_id, 'thief',
+    v_actor_bid, v_actor_bid + v_total
+  );
 
   return json_build_object(
     'success',       true,

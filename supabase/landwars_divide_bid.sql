@@ -10,6 +10,10 @@
 -- Divides the #1 bid by a factor (÷2, ÷3, ÷4) and ROUNDS DOWN. Clamps the
 -- result so it can never drop below 1. Realtime on "Bids" keeps every client
 -- in sync after the RPC commits.
+--
+-- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
+-- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
+-- then re-run this file.
 -- ============================================================================
 
 create or replace function public.divide_bid(
@@ -58,6 +62,12 @@ begin
      set "bidAmount" = v_new_bid
    where "auctionId" = p_auction_id
      and "userId" = v_target."userId";
+
+  -- Push the cut onto the target's effect stack so they can Negate it.
+  perform public.record_bid_effect(
+    p_auction_id, v_target."userId", v_actor_id, 'divide',
+    v_target."bidAmount", v_new_bid
+  );
 
   return json_build_object(
     'success',          true,

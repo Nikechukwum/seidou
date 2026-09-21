@@ -9,6 +9,10 @@
 -- Multiplies the caller's bid in an auction by a factor, capped at
 -- maxBidLimit (same cap the UI applies). Realtime on "Bids" keeps every client
 -- in sync after the RPC commits.
+--
+-- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
+-- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
+-- then re-run this file.
 -- ============================================================================
 
 create or replace function public.multiply_bid(
@@ -62,6 +66,13 @@ begin
   update public."Bids"
      set "bidAmount" = v_new_bid
    where id = v_existing.id;
+
+  -- Multiply is self-cast, so the activator is both actor and target: eating a
+  -- Negate straight afterwards undoes your own gain.
+  perform public.record_bid_effect(
+    p_auction_id, v_actor_id, v_actor_id, 'multiply',
+    v_existing."bidAmount", v_new_bid
+  );
 
   return json_build_object(
     'success',          true,

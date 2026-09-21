@@ -25,6 +25,7 @@ export type AbilityFruitId =
     | 'mirror'
     | 'time'
     | 'restore'
+    | 'negate'
 
 export type AbilityFruit = {
     id: AbilityFruitId
@@ -53,8 +54,8 @@ export type AbilityFruit = {
     available: boolean
 }
 
-//  during the testing phase every user holds all 10 fruits,
-// 10 uses each. Swap this for the real inventory once fruits are purchasable.
+//  during the testing phase every user holds every fruit
+// in this catalog, 10 uses each. Swap this for the real inventory once fruits are purchasable.
 export const TESTING_PHASE_FRUIT_COUNT = 10
 
 export const ABILITY_FRUITS: AbilityFruit[] = [
@@ -136,7 +137,12 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         tagline: 'Drains 1,000 BC per second from every other player on the table.',
         description:
             "Steals 1,000 bidding currency per second from EVERY other player on the table — no aiming needed. The fruit locks on automatically and runs a 60-second countdown, then slams all the stolen BC straight onto your bid. Players whose balance runs out mid-countdown stop being drained, and anyone left at zero keeps no take.",
-        image: '/ability-fruits/thief.png',
+        // ARTWORK (design, Negate walkthrough): "the picture we are using for
+        // the steal fruit is the negate fruit — you can just swap them." Done:
+        // the red swirl orb that used to sit here belongs to NEGATE and now
+        // lives at /ability-fruits/negate.png, and this is Steal's own
+        // turquoise-and-gold orb from the design canvas.
+        image: '/ability-fruits/mirror.png',
         accent: { base: '#a855f7', spark: '#f5f3ff', deep: '#6b21a8' },
         available: true,
     },
@@ -159,6 +165,21 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         image: '/ability-fruits/time.png',
         accent: { base: '#eab308', spark: '#fef9c3', deep: '#a16207' },
         available: false,
+    },
+    {
+        id: 'negate',
+        name: 'Negate Fruit',
+        tagline: 'Cancels the last ability fruit used on you and puts your bid back.',
+        description:
+            "Activate and the fruit cancels the most recent ability fruit effect that hit you — a divide, a steal, a swap — and restores your bid to exactly what it was before that effect landed. It only ever undoes the LAST effect, it does not shield you from anything that comes next, and it cannot be used when nothing has been done to you. After use the fruit needs a short cooldown before it can be eaten again.",
+        // The red swirl orb from the design canvas — this artwork is Negate's
+        // alone; Steal used to borrow it (see the note on the thief entry).
+        image: '/ability-fruits/negate.png',
+        // The sequence frames show the fruit in magenta the whole way through,
+        // the way Multiply runs purple and Restore runs teal.
+        animationImage: '/ability-fruits/negate-pink.png',
+        accent: { base: '#ec4899', spark: '#fce7f3', deep: '#9d174d' },
+        available: true,
     },
     {
         id: 'restore',
@@ -229,3 +250,36 @@ export const DIVIDE_FACTOR = divideFactorForLevel(CURRENT_FRUIT_LEVEL)
 export const STEAL_PER_SECOND = 1_000
 export const STEAL_FRUIT_DURATION_S = 60
 export const STEAL_FRUIT_AMOUNT = STEAL_FRUIT_DURATION_S * STEAL_PER_SECOND
+
+
+// ----------------------------------------------------------------------------
+// NEGATE SETTINGS
+// ----------------------------------------------------------------------------
+// DEV NOTES (design, Negate sheet):
+//   - "Track effect history stack per player (type, value before effect,
+//     timestamp)."  -> public.bid_effects, written by every fruit RPC.
+//   - "Negate removes the last effect, restores stored value, and clears that
+//     entry."        -> negate_bid() pops the newest un-negated row.
+//   - "Prevent Negate activation if no recent effect exists."
+//                    -> the table page peeks before it plays a single frame.
+//   - "Negate Fruit has a cooldown (e.g., 15-20s)."
+//
+// The cooldown is enforced server-side as well (see landwars_negate_bid.sql);
+// this constant only drives the client-side guard and the toast copy, so keep
+// the two in step.
+export const NEGATE_COOLDOWN_S = 20
+
+/** Effects the stack records, and therefore what Negate can undo. */
+export type NegatableEffect = 'multiply' | 'divide' | 'swap' | 'thief'
+
+/** How the negated effect is named in the status pill and the toast. */
+export const NEGATE_EFFECT_LABELS: Record<NegatableEffect, string> = {
+    multiply: 'Multiply',
+    divide: 'Divide',
+    swap: 'Position Swap',
+    thief: 'Steal Bidding Currency',
+}
+
+export function negateEffectLabel(type: string | null | undefined): string {
+    return NEGATE_EFFECT_LABELS[type as NegatableEffect] ?? 'the last effect'
+}

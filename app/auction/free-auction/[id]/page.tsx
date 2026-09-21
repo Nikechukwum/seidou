@@ -31,8 +31,16 @@ import RestoreFruitAbility, {
     RESTORE_RESTORING_MIN_MS,
     RESTORE_COMPLETE_MS,
 } from "@/components/RestoreFruitAbility";
+import NegateFruitAbility, {
+    NegateStatusPill,
+    NegateStage,
+    NEGATE_APPEAR_MS,
+    NEGATE_SLIDE_MS,
+    NEGATE_BURST_MS,
+    NEGATE_RESTORED_MS,
+} from "@/components/NegateFruitAbility";
 import AdaptiveLeaderboard from "@/components/AdaptiveLeaderboard";
-import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, getAbilityFruit, AbilityFruitId } from "@/lib/abilityFruits";
+import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, getAbilityFruit, negateEffectLabel, AbilityFruitId } from "@/lib/abilityFruits";
 import { getFruitUsage, recordFruitUse, clearFruitUsage } from "@/lib/fruitUsage";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
@@ -117,6 +125,9 @@ const LeaderboardPage = () => {
         // clear any in-flight restore timers when the page unmounts
         restoreTimeoutsRef.current.forEach(clearTimeout)
         restoreTimeoutsRef.current = []
+        // clear any in-flight negate timers when the page unmounts
+        negateTimeoutsRef.current.forEach(clearTimeout)
+        negateTimeoutsRef.current = []
     }, [])
 
     //  Ability Fruit STEAL BIDDING CURRENCY state. Auto-targets
@@ -157,6 +168,21 @@ const LeaderboardPage = () => {
     // FRAME 5 summary. Read from the per-auction usage ledger (lib/fruitUsage).
     const [restoreFruits, setRestoreFruits] = useState<RestoredFruit[]>([])
     const restoreTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+    //  Ability Fruit NEGATE state. Cancels the most recent
+    // effect that hit ME and puts my bid back to what it was before it landed.
+    // The effect history lives server-side (public.bid_effects), so the page
+    // PEEKS at the top of the stack before it plays a single frame — the sheet
+    // says activation must be prevented when there is no recent effect.
+    const [negateStage, setNegateStage] = useState<NegateStage>('idle')
+    // What the bid goes back to, and the human name of the effect being undone
+    // ("Divide", "Position Swap") for the caption pill — both from the peek.
+    const [negateRestoreTo, setNegateRestoreTo] = useState(0)
+    const [negateLabel, setNegateLabel] = useState<string | null>(null)
+    const negateTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+    // One activation at a time: the peek is async, so the guard has to hold
+    // from the tap, not from the first frame.
+    const negateBusyRef = useRef(false)
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -470,7 +496,7 @@ const LeaderboardPage = () => {
     }, [myUserId])
 
     const handleMultiplySelf = useCallback(() => {
-        if (multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle' || negateStage !== 'idle') return
         if (!myUserId || !myBid) {
             dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
             return
@@ -478,7 +504,7 @@ const LeaderboardPage = () => {
         recordFruitUse(auctionId, 'multiply')
         multiplyAppliedRef.current = false
         setMultiplyTarget(myUserId)
-    }, [multiplyTarget, myUserId, myBid, dispatch, stealStage, swapStage, restoreStage])
+    }, [multiplyTarget, myUserId, myBid, dispatch, stealStage, swapStage, restoreStage, negateStage])
 
     // FRAME 5 (settled): the overlay is gone — float "+X,XXX,XXX ↑" next to the
     // target's new bid, the same green delta a normal bid raise shows.
@@ -530,7 +556,7 @@ const LeaderboardPage = () => {
     // Separately timed frames for the divide sequence. The fruit rests on your
     // card, flies to first position, covers it, then the reduction lands.
     const handleDivideSelf = useCallback(() => {
-        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle' || negateStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -569,7 +595,7 @@ const LeaderboardPage = () => {
             setDivideFlight(null)
         }, APP_MS + TRAVEL_MS + SPLIT_MS + IMPACT_MS + SETTLE_MS)
         divideTimeoutsRef.current.push(t5)
-    }, [divideTarget, divideStage, myUserId, bids, handleDivideOptimistic, dispatch])
+    }, [divideTarget, divideStage, myUserId, bids, handleDivideOptimistic, dispatch, negateStage])
 
     // while the fruit is in flight, capture the source card (mine) and the #1
     // card positions so the page-level overlay can fly between them.
@@ -596,7 +622,7 @@ const LeaderboardPage = () => {
     // Auto-targets every other player who holds any bidding currency, then
     // drains 1,000 BC per second from each for 60 seconds.
     const handleStealSelf = useCallback(() => {
-        if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle' || restoreStage !== 'idle') return
+        if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle' || restoreStage !== 'idle' || negateStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -622,7 +648,7 @@ const LeaderboardPage = () => {
         setStealGain(0)
         setStealSeconds(STEAL_FRUIT_DURATION_S)
         setStealStage('active')
-    }, [stealStage, divideTarget, multiplyTarget, myUserId, bids, dispatch])
+    }, [stealStage, divideTarget, multiplyTarget, myUserId, bids, dispatch, negateStage])
 
     // The 60s countdown: every second, each still-eligible target loses 1,000
     // BC. Anyone who runs out before zero loses their red border and badge. At
@@ -752,7 +778,7 @@ const LeaderboardPage = () => {
     }, [auctionId, bids, dispatch])
 
     const handleSwapSelf = useCallback(() => {
-        if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget || restoreStage !== 'idle') return
+        if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget || restoreStage !== 'idle' || negateStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -823,7 +849,7 @@ const LeaderboardPage = () => {
             setSwapFlight(null)
             setSwapDeltas({})
         }, APP_MS + TRAVEL_MS + EXPLODE_MS + SETTLE_MS)
-    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, handleSwapOptimistic, dispatch])
+    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, handleSwapOptimistic, dispatch, negateStage])
 
     // while the fruit is in flight, capture the source card (mine) and the
     // leader's card positions so the page-level overlay can fly between them.
@@ -911,7 +937,7 @@ const LeaderboardPage = () => {
     // FRAME 5 (the summary) and FRAME 6 (complete) are driven by commitRestore
     // and by Continue, because the sheet dismisses the summary by hand.
     const handleRestoreSelf = useCallback(() => {
-        if (restoreStage !== 'idle' || stealStage !== 'idle' || swapStage !== 'idle' || divideTarget || multiplyTarget) return
+        if (restoreStage !== 'idle' || stealStage !== 'idle' || swapStage !== 'idle' || divideTarget || multiplyTarget || negateStage !== 'idle') return
         if (!myUserId) {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
@@ -952,7 +978,7 @@ const LeaderboardPage = () => {
             setRestoreStage('restoring')
             void commitRestore(spent)
         }, RESTORE_APPEAR_MS + RESTORE_BURST_MS)
-    }, [restoreStage, stealStage, swapStage, divideTarget, multiplyTarget, myUserId, bids, auctionId, commitRestore, dispatch])
+    }, [restoreStage, stealStage, swapStage, divideTarget, multiplyTarget, myUserId, bids, auctionId, commitRestore, dispatch, negateStage])
 
     // FRAME 6 — Continue on the summary: the green "restored" marker rides the
     // card for a beat, then the sequence is done.
@@ -966,6 +992,130 @@ const LeaderboardPage = () => {
         restoreTimeoutsRef.current.push(t)
     }, [])
 
+    //  Ability Fruit NEGATE — "cancels any effect another
+    // player's ability fruit had on you and restores your bid amount to what
+    // it was before". The commit runs UNDER the explosion frame, so the number
+    // that comes out of the burst is already the restored one. On a failure
+    // the table is put back exactly as it was.
+    const commitNegate = useCallback((restoreTo: number) => {
+        const previousBids = bids
+        setBids(prev => prev.map(b =>
+            String(b.userId) === myUserId ? { ...b, bidAmount: restoreTo } : b
+        ))
+
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/negate-bid', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    setBids(previousBids)
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not negate the effect.' }))
+                    return
+                }
+                // The stack may have moved between the peek and the commit (the
+                // effect is popped inside the transaction), so the server's
+                // amount wins over the one the animation counted to.
+                const settled = Number(data?.bidAmount)
+                if (Number.isFinite(settled)) {
+                    setBids(prev => prev.map(b =>
+                        String(b.userId) === myUserId ? { ...b, bidAmount: settled } : b
+                    ))
+                    setNegateRestoreTo(settled)
+                }
+            } catch {
+                setBids(previousBids)
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [auctionId, bids, myUserId, dispatch])
+
+    // FRAMES 5-7. The peek comes FIRST: "prevent Negate activation if no recent
+    // effect exists", and the same call reports the cooldown and hands back the
+    // amount the bid is going back to. Only once that passes is a frame played
+    // or a fruit counted as eaten.
+    const handleNegateSelf = useCallback(async () => {
+        if (negateBusyRef.current) return
+        if (negateStage !== 'idle' || restoreStage !== 'idle' || stealStage !== 'idle' || swapStage !== 'idle' || divideTarget || multiplyTarget) return
+        if (!myUserId) {
+            dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
+            return
+        }
+        if (!bids.some(b => String(b.userId) === myUserId)) {
+            dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
+            return
+        }
+
+        negateBusyRef.current = true
+        const abort = (message: string) => {
+            negateBusyRef.current = false
+            dispatch(showToast({ type: 'error', message }))
+        }
+
+        let peek: {
+            has_effect?: boolean
+            cooldown_remaining?: number
+            effect_type?: string
+            restored_bid?: number
+            error?: string
+        }
+        try {
+            const res = await fetch(`/api/landwars/negate-bid?auctionId=${encodeURIComponent(auctionId)}`)
+            peek = await res.json()
+            if (!res.ok) {
+                abort(peek?.error || 'Could not read your effect history.')
+                return
+            }
+        } catch {
+            abort('Something went wrong. Please try again.')
+            return
+        }
+
+        // "Negate Fruit has a cooldown (e.g., 15-20s)."
+        const cooling = Number(peek?.cooldown_remaining ?? 0)
+        if (cooling > 0) {
+            abort(`Negate Fruit is still cooling down — ${Math.ceil(cooling)}s left.`)
+            return
+        }
+        // "Prevent Negate activation if no recent effect exists."
+        if (!peek?.has_effect) {
+            abort('Nothing has been used on you yet — there is no effect to negate.')
+            return
+        }
+
+        recordFruitUse(auctionId, 'negate')
+        const restoreTo = Number(peek.restored_bid ?? 0)
+        setNegateRestoreTo(restoreTo)
+        setNegateLabel(negateEffectLabel(peek.effect_type))
+
+        // schedule helper — tracked so the cleanup effect can cancel the frames
+        const at = (fn: () => void, ms: number) => {
+            const t = setTimeout(fn, ms)
+            negateTimeoutsRef.current.push(t)
+        }
+
+        const SLIDE_AT = NEGATE_APPEAR_MS
+        const BURST_AT = SLIDE_AT + NEGATE_SLIDE_MS
+        const RESTORED_AT = BURST_AT + NEGATE_BURST_MS
+
+        setNegateStage('appear')
+        at(() => setNegateStage('covering'), SLIDE_AT)
+        at(() => {
+            setNegateStage('explode')
+            commitNegate(restoreTo)
+        }, BURST_AT)
+        at(() => setNegateStage('restored'), RESTORED_AT)
+        at(() => {
+            setNegateStage('idle')
+            setNegateRestoreTo(0)
+            setNegateLabel(null)
+            negateBusyRef.current = false
+        }, RESTORED_AT + NEGATE_RESTORED_MS)
+    }, [negateStage, restoreStage, stealStage, swapStage, divideTarget, multiplyTarget, myUserId, bids, auctionId, commitNegate, dispatch])
+
     // Fire the armed fruit as soon as the table has loaded and we know who you
     // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
     useEffect(() => {
@@ -978,7 +1128,8 @@ const LeaderboardPage = () => {
         if (armed === 'thief') handleStealSelf()
         if (armed === 'swap') handleSwapSelf()
         if (armed === 'restore') handleRestoreSelf()
-    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf])
+        if (armed === 'negate') void handleNegateSelf()
+    }, [loading, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf, handleNegateSelf])
 
     //  ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
@@ -1087,25 +1238,38 @@ const LeaderboardPage = () => {
                         // RESTORE FRAME 3: the same shake, on my own card, while
                         // the Restore Fruit explodes on it.
                         const isRestoreBursting = restoreStage === 'explode' && String(bid.userId) === String(myUserId)
+                        // NEGATE FRAME 6: the Negate Fruit blows up on my own
+                        // card as it cancels the effect — same shake again.
+                        const isNegateBursting = negateStage === 'explode' && String(bid.userId) === String(myUserId)
                         return (
                             <motion.div
                                 data-divide-card={bid.userId}
                                 data-swap-card={bid.userId}
                                 data-steal-card={bid.userId}
                                 data-steal-target={stealTargets.includes(String(bid.userId)) ? 'true' : undefined}
-                                animate={isSwapBursting || isRestoreBursting
+                                animate={isSwapBursting || isRestoreBursting || isNegateBursting
                                     ? { x: [0, -7, 6, -5, 4, -2, 0], y: [0, 3, -3, 2, -1, 0, 0] }
                                     : { x: 0, y: 0 }}
                                 transition={isSwapBursting
                                     ? { duration: SWAP_BURST_MS / 1000, ease: 'easeOut' }
                                     : isRestoreBursting
                                         ? { duration: RESTORE_BURST_MS / 1000, ease: 'easeOut' }
-                                        : { duration: 0.2 }}
+                                        : isNegateBursting
+                                            ? { duration: NEGATE_BURST_MS / 1000, ease: 'easeOut' }
+                                            : { duration: 0.2 }}
                                 className={`bg-white rounded-3xl shadow-sm border transition-colors duration-300 ${
                                     isStealLiveTarget ? 'border-red-200 ring-1 ring-red-100' : 'border-gray-100'
                                 }`}
                             >
-                                {/*  each card wraps in the Restore + Steal + Swap + Divide + Multiply fruit overlays */}
+                                {/*  each card wraps in the Negate + Restore + Steal + Swap + Divide + Multiply fruit overlays */}
+                                <NegateFruitAbility
+                                    tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
+                                    activatorId={myUserId}
+                                    stage={negateStage}
+                                    playerId={bid.userId}
+                                    restoredAmount={negateRestoreTo}
+                                    effectLabel={negateLabel}
+                                >
                                 <RestoreFruitAbility
                                     tableData={bids.map(b => ({ id: b.userId, bidAmount: Number(b.bidAmount) }))}
                                     activatorId={myUserId}
@@ -1213,6 +1377,7 @@ const LeaderboardPage = () => {
                                 </SwapFruitAbility>
                                 </StealFruitAbility>
                                 </RestoreFruitAbility>
+                                </NegateFruitAbility>
                             </motion.div>
                         )
                     }}
@@ -1234,6 +1399,11 @@ const LeaderboardPage = () => {
                 stage={swapStage}
                 targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
             />
+
+            {/*  NEGATE FRAMES 5-7 — the magenta caption bar under
+                the table, naming the effect being cancelled, turning green on
+                the frame where the bid is restored. */}
+            <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
 
             {/*  RESTORE FRAMES 2-4 — the teal caption bar under
                 the table, ending on the "Restoring your resources..." spinner. */}
