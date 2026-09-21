@@ -142,7 +142,7 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         // the red swirl orb that used to sit here belongs to NEGATE and now
         // lives at /ability-fruits/negate.png, and this is Steal's own
         // turquoise-and-gold orb from the design canvas.
-        image: '/ability-fruits/mirror.png',
+        image: '/ability-fruits/thief.png',
         accent: { base: '#a855f7', spark: '#f5f3ff', deep: '#6b21a8' },
         available: true,
     },
@@ -152,7 +152,7 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         tagline: 'Reflects the next ability used on you back at its caster.',
         description:
             'Holds a reflective surface over your position. The next fruit aimed at you is sent straight back to the player who threw it, at full strength.',
-        image: '/ability-fruits/mirror.png',
+        image: '/ability-fruits/freeze.png',
         accent: { base: '#14b8a6', spark: '#fde68a', deep: '#115e59' },
         available: false,
     },
