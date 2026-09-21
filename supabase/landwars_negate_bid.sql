@@ -12,6 +12,17 @@
 -- moves is always the caller's, read from auth.uid() and never from the
 -- request body, so a crafted call cannot rewind anyone else's bid.
 --
+-- EXCEPTION — SWAP undoes BOTH halves: a swap moves two bids and writes TWO
+-- rows (one per participant, sharing the same transaction created_at). When
+-- the top effect is a swap, the RPC also restores the OTHER player, so the
+-- swap is fully undone instead of leaving both parties on the swapped-out
+-- side at zero.
+--
+-- PAIRING: the sibling row is matched on (auction_id, actor_user_id,
+-- effect_type='swap', created_at) with a different target_user_id. All fruit
+-- rows are written inside one security-definer transaction, so the two swap
+-- rows always share the identical created_at.
+--
 -- RULES from the sheet:
 --   - Only the MOST RECENT effect is undone — one entry per activation.
 --   - It does NOT prevent future effects: nothing is shielded afterwards.
@@ -40,6 +51,9 @@ declare
   v_wait_s       int;
   v_bid          numeric;
   v_effect       record;
+  v_partner      record;              -- the OTHER half of my swap, if any
+  v_partner_bid  numeric;
+  v_partner_new  numeric;
   v_new_bid      numeric;
 begin
   if v_actor_id is null then
@@ -103,6 +117,47 @@ begin
      set negated = true,
          negated_at = clock_timestamp()
    where id = v_effect.id;
+
+  -- SWAP UNDO — the swap wrote TWO rows (one per participant) inside the same
+  -- transaction, so both share the same created_at. Undo the OTHER half too:
+  -- the partner's bid is put back to what it was before the swap, never left
+  -- stranded at the swapped-down value. If the partner already negated their
+  -- own half first, skip them (their side is done; only rewrite mine).
+  if v_effect.effect_type = 'swap' then
+    select * into v_partner
+      from public.bid_effects
+     where auction_id      = p_auction_id
+       and actor_user_id   = v_effect.actor_user_id
+       and effect_type     = 'swap'
+       and created_at      = v_effect.created_at
+       and target_user_id <> v_actor_id
+       and not negated
+     order by created_at desc, id desc
+     limit 1
+     for update;
+
+    if found then
+      select "bidAmount" into v_partner_bid
+        from public."Bids"
+       where "auctionId" = p_auction_id
+         and "userId" = v_partner.target_user_id;
+
+      v_partner_new := greatest(
+        coalesce(v_partner_bid, 0) + (v_partner.bid_before - v_partner.bid_after),
+        0
+      );
+
+      update public."Bids"
+         set "bidAmount" = v_partner_new
+       where "auctionId" = p_auction_id
+         and "userId" = v_partner.target_user_id;
+
+      update public.bid_effects
+         set negated = true,
+             negated_at = clock_timestamp()
+       where id = v_partner.id;
+    end if;
+  end if;
 
   -- Record the activation itself: it is what the cooldown reads, and it is
   -- flagged negated up front so it can never become a target of another
