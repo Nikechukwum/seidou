@@ -29,6 +29,10 @@
 -- ONE FREEZE PER TABLE AT A TIME: freeze_bid refuses while an un-expired,
 -- un-negated freeze already exists on the auction, which keeps the 30s timer
 -- unambiguous.
+--
+-- COOLDOWN: freeze shares the negate-style cooldown with every other fruit.
+-- Run landwars_fruit_cooldowns.sql first, then re-run this file so this RPC's
+-- cooldown guard resolves.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -91,6 +95,9 @@ begin
     raise exception 'Invalid freeze duration';
   end if;
 
+  -- COOLDOWN GUARD: a fruit cannot be cast again within 20s of its last cast.
+  perform public.assert_fruit_cooldown(p_auction_id, v_actor_id, 'freeze', 'Freeze Fruit');
+
   -- FROZEN GUARD: a frozen player cannot even cast ANOTHER freeze — the Negate
   -- Fruit is the only fruit that works while frozen (see landwars_negate_bid.sql).
   if public.is_freeze_active(p_auction_id, v_actor_id) then
@@ -146,6 +153,10 @@ begin
   if array_length(v_out, 1) is null then
     raise exception 'No other players on this table to freeze';
   end if;
+
+  -- Start the cooldown on this fruit (same transaction: any later failure
+  -- rolls this row back, so a failed cast never spends the cooldown).
+  perform public.bump_fruit_cooldown(p_auction_id, v_actor_id, 'freeze');
 
   return json_build_object(
     'success',     true,

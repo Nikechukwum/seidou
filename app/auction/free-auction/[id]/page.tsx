@@ -1345,6 +1345,23 @@ const LeaderboardPage = () => {
             } catch {
                 // fall through to the handler — its own server commit still refuses
             }
+            // COOLDOWN: the same fruit cannot fire twice within 20s. Stopped
+            // HERE (before any frame) so a player never watches a fruit explode
+            // only for the server to refuse and revert it.
+            try {
+                const coolRes = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+                const coolData = await coolRes.json()
+                const remaining = Number(coolData?.cooldowns?.[armed] ?? 0)
+                if (coolRes.ok && remaining > 0) {
+                    dispatch(showToast({
+                        type: 'error',
+                        message: `${getAbilityFruit(armed)?.name ?? 'This fruit'} is still cooling down — ${remaining} more second${remaining === 1 ? '' : 's'}.`,
+                    }))
+                    return
+                }
+            } catch {
+                // fall through — the fruit RPC's own cooldown guard still refuses
+            }
             if (armed === 'multiply') handleMultiplySelf()
             if (armed === 'divide') handleDivideSelf()
             if (armed === 'thief') handleStealSelf()

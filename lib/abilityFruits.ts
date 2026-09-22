@@ -279,21 +279,22 @@ export const FREEZE_BORDER_COLOR = '#3DA5FF'
 
 
 // ----------------------------------------------------------------------------
-// NEGATE SETTINGS
+// FRUIT COOLDOWNS
 // ----------------------------------------------------------------------------
-// DEV NOTES (design, Negate sheet):
-//   - "Track effect history stack per player (type, value before effect,
-//     timestamp)."  -> public.bid_effects, written by every fruit RPC.
-//   - "Negate removes the last effect, restores stored value, and clears that
-//     entry."        -> negate_bid() pops the newest un-negated row.
-//   - "Prevent Negate activation if no recent effect exists."
-//                    -> the table page peeks before it plays a single frame.
-//   - "Negate Fruit has a cooldown (e.g., 15-20s)."
+// DEV NOTE (design, Negate sheet): "Negate Fruit has a cooldown (e.g., 15-20s)."
+// Every ability fruit now shares the same rule — after a fruit fires you must
+// wait FRUIT_COOLDOWN_S (20s) before the SAME fruit can fire again on that
+// table. Casting Multiply does not lock Divide; only the fruit you just used
+// cools down.
 //
-// The cooldown is enforced server-side as well (see landwars_negate_bid.sql);
-// this constant only drives the client-side guard and the toast copy, so keep
-// the two in step.
-export const NEGATE_COOLDOWN_S = 20
+// Enforced server-side by every fruit RPC via public.assert_fruit_cooldown /
+// public.bump_fruit_cooldown (see supabase/landwars_fruit_cooldowns.sql), and
+// surfaced client-side by the /api/landwars/fruit-cooldown read. Keep the SQL
+// side and this constant in step.
+export const FRUIT_COOLDOWN_S = 20
+
+// Negate's own cooldown is simply the shared one.
+export const NEGATE_COOLDOWN_S = FRUIT_COOLDOWN_S
 
 /** Effects the stack records, and therefore what Negate can undo. */
 export type NegatableEffect = 'multiply' | 'divide' | 'swap' | 'thief' | 'freeze'

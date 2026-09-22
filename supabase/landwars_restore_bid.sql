@@ -19,7 +19,11 @@
 -- spent by the player (not the current wallet balance)", and a player with a
 -- zero bid can still restore the fruits they used — so a zero bid is a
 -- refunded amount of 0, NOT an error. The "nothing to restore at all" case is
--- caught client-side, where the fruit ledger is known.
+--   caught client-side, where the fruit ledger is known.
+--
+-- COOLDOWN: every fruit shares the negate-style cooldown. Run
+-- landwars_fruit_cooldowns.sql first, then re-run this file so this RPC's
+-- cooldown guard resolves.
 -- ============================================================================
 
 create or replace function public.restore_bid(p_auction_id uuid)
@@ -41,6 +45,9 @@ begin
   if p_auction_id is null then
     raise exception 'Invalid auction id';
   end if;
+
+  -- COOLDOWN GUARD: a fruit cannot be cast again within 20s of its last cast.
+  perform public.assert_fruit_cooldown(p_auction_id, v_actor_id, 'restore', 'Restore Fruit');
 
   -- FROZEN GUARD (Freeze Fruit): a frozen player cannot use a fruit. Run
   -- landwars_freeze_bid.sql first, then re-run this file so the guard resolves.
@@ -82,6 +89,10 @@ begin
   select bidding_balance into v_new_balance
     from public.users
    where id = v_actor_id;
+
+  -- Start the cooldown on this fruit (same transaction: any later failure
+  -- rolls this row back, so a failed cast never spends the cooldown).
+  perform public.bump_fruit_cooldown(p_auction_id, v_actor_id, 'restore');
 
   return json_build_object(
     'success',         true,

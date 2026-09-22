@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Ability Fruit: NEGATE — cancel the last effect that hit you.
--- Run this in the Supabase SQL editor AFTER landwars_bid_effects.sql.
+-- Run this in the Supabase SQL editor AFTER landwars_bid_effects.sql AND
+-- landwars_fruit_cooldowns.sql (its cooldown guard calls into that file).
 --
 -- MECHANIC (design sheet): "When activated, the fruit removes the most recent
 -- effect that affected the user and restores their original bid amount."
@@ -28,7 +29,17 @@
 --   - It does NOT prevent future effects: nothing is shielded afterwards.
 --   - Activation is refused when the stack is empty ("no recent effect").
 --   - The fruit has a cooldown (15-20s); 20s here, and the client mirrors it
---     from NEGATE_COOLDOWN_S in lib/abilityFruits.ts.
+--     from FRUIT_COOLDOWN_S in lib/abilityFruits.ts. It lives on the shared
+--     public.fruit_cooldowns ledger with every other fruit (run
+--     landwars_fruit_cooldowns.sql first, then re-run this file).
+--
+-- SWAP CAN ONLY BE UNDONE ONCE: the pair of swap rows is flagged negated in
+-- the SAME shot (this file's partner block marks both), and the stack query
+-- only ever surfaces un-negated rows. So after a swap has been negated — by
+-- either party — both rows are consumed, that swap vanishes from both stacks,
+-- and a SECOND Negate is refused with "No recent effect to negate" instead of
+-- re-swapping the pair. A fresh effect (e.g. a Divide aimed at you afterwards)
+-- is a brand new stack entry and can be negated normally.
 --
 -- WHY THE BID IS PUT BACK BY DELTA, NOT BY ASSIGNMENT: the restore is written
 -- as current + (bid_before - bid_after). When nothing has touched the bid
@@ -46,9 +57,7 @@ set search_path = public
 as $$
 declare
   v_actor_id     uuid := auth.uid();
-  v_cooldown_s   int  := 20;          -- keep in step with NEGATE_COOLDOWN_S
-  v_last_negate  timestamptz;
-  v_wait_s       int;
+  v_cooldown_s   int  := 20;          -- keep in step with FRUIT_COOLDOWN_S
   v_bid          numeric;
   v_effect       record;
   v_partner      record;              -- the OTHER half of my swap, if any
@@ -64,19 +73,9 @@ begin
     raise exception 'Invalid auction id';
   end if;
 
-  -- COOLDOWN: the previous activation is itself recorded in the stack, so the
-  -- cooldown reads straight off the history.
-  select max(created_at) into v_last_negate
-    from public.bid_effects
-   where auction_id = p_auction_id
-     and actor_user_id = v_actor_id
-     and effect_type = 'negate';
-
-  if v_last_negate is not null
-     and clock_timestamp() - v_last_negate < make_interval(secs => v_cooldown_s) then
-    v_wait_s := ceil(v_cooldown_s - extract(epoch from (clock_timestamp() - v_last_negate)));
-    raise exception 'Negate Fruit is still cooling down — % more second(s)', greatest(v_wait_s, 1);
-  end if;
+  -- COOLDOWN: the shared per-fruit ledger (landwars_fruit_cooldowns.sql).
+  -- Negate is exempt from the FREEZE guard but NOT from the cooldown.
+  perform public.assert_fruit_cooldown(p_auction_id, v_actor_id, 'negate', 'Negate Fruit');
 
   -- The activator must be on the table for there to be a bid to restore.
   select "bidAmount" into v_bid
@@ -159,9 +158,10 @@ begin
     end if;
   end if;
 
-  -- Record the activation itself: it is what the cooldown reads, and it is
-  -- flagged negated up front so it can never become a target of another
-  -- Negate (and so a Negate is never undone by one).
+  -- Record the activation itself as history (audit trail). It is flagged
+  -- negated up front so it can never become the target of another Negate, and
+  -- a Negate is never undone by one. The COOLDOWN lives on the shared
+  -- public.fruit_cooldowns ledger, NOT on this row.
   insert into public.bid_effects (
     auction_id, target_user_id, actor_user_id, effect_type,
     bid_before, bid_after, negated, negated_at
@@ -170,6 +170,10 @@ begin
     p_auction_id, v_actor_id, v_actor_id, 'negate',
     coalesce(v_bid, 0), v_new_bid, true, clock_timestamp()
   );
+
+  -- Start the cooldown on this fruit (same transaction: any later failure
+  -- rolls this row back, so a failed cast never spends the cooldown).
+  perform public.bump_fruit_cooldown(p_auction_id, v_actor_id, 'negate');
 
   return json_build_object(
     'success',          true,
@@ -205,8 +209,6 @@ set search_path = public
 as $$
 declare
   v_actor_id    uuid := auth.uid();
-  v_cooldown_s  int  := 20;
-  v_last_negate timestamptz;
   v_remaining   int  := 0;
   v_bid         numeric;
   v_effect      record;
@@ -219,18 +221,9 @@ begin
     raise exception 'Invalid auction id';
   end if;
 
-  select max(created_at) into v_last_negate
-    from public.bid_effects
-   where auction_id = p_auction_id
-     and actor_user_id = v_actor_id
-     and effect_type = 'negate';
-
-  if v_last_negate is not null then
-    v_remaining := greatest(
-      0,
-      ceil(v_cooldown_s - extract(epoch from (clock_timestamp() - v_last_negate)))::int
-    );
-  end if;
+  -- COOLDOWN shared with the commit, so the client countdown never drifts from
+  -- what negate_bid enforces.
+  v_remaining := public.fruit_cooldown_remaining(p_auction_id, v_actor_id, 'negate');
 
   select "bidAmount" into v_bid
     from public."Bids"
