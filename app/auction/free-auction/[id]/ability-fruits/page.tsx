@@ -17,7 +17,7 @@ import { PageLayout } from '@/components/PageLayout'
 import { Modal } from '@/components/Modal'
 import { Button } from '@/components/Button'
 import AbilityFruitOrb from '@/components/AbilityFruitOrb'
-import { ABILITY_FRUITS, AbilityFruit, TESTING_PHASE_FRUIT_COUNT } from '@/lib/abilityFruits'
+import { ABILITY_FRUITS, AbilityFruit, TESTING_PHASE_FRUIT_COUNT, getAbilityFruit } from '@/lib/abilityFruits'
 
 const AbilityFruitsPage = () => {
     const params = useParams()
@@ -26,11 +26,30 @@ const AbilityFruitsPage = () => {
 
     const [learnMore, setLearnMore] = useState<AbilityFruit | null>(null)
     const [comingSoon, setComingSoon] = useState<AbilityFruit | null>(null)
+    // Set by the frozen check on Activate: "You are currently frozen — wait Xs".
+    const [freezeNotice, setFreezeNotice] = useState<{ remaining: number } | null>(null)
 
-    const handleActivate = (fruit: AbilityFruit) => {
+    const handleActivate = async (fruit: AbilityFruit) => {
         if (!fruit.available) {
             setComingSoon(fruit)
             return
+        }
+        // A player frozen by someone else's Freeze Fruit cannot activate any
+        // fruit except NEGATE — the freeze's one designed counter. Checking here
+        // means the "you are currently frozen" response arrives the moment they
+        // tap Activate, before the table ever arms the fruit and plays a frame
+        // that the server would have to refuse and revert.
+        if (fruit.id !== 'negate') {
+            try {
+                const res = await fetch(`/api/landwars/freeze-bid?auctionId=${encodeURIComponent(auctionId)}`)
+                const data = await res.json()
+                if (res.ok && data?.frozen) {
+                    setFreezeNotice({ remaining: Number(data?.remaining_seconds ?? 0) })
+                    return
+                }
+            } catch {
+                // network hiccup — fall through and let the table decide
+            }
         }
         // Back to the table with the fruit armed — the table drops straight into
         // "tap a player" targeting mode.
@@ -75,7 +94,7 @@ const AbilityFruitsPage = () => {
                                     text="Activate"
                                     size="xs"
                                     classname="flex-1"
-                                    onClick={() => handleActivate(fruit)}
+                                    onClick={() => void handleActivate(fruit)}
                                 />
                                 <Button
                                     text="Learn More"
@@ -110,6 +129,20 @@ const AbilityFruitsPage = () => {
                             This fruit is not playable yet. It will be available in a future update.
                         </p>
                         <Button text="Got it" classname="w-full py-3.5" onClick={() => setComingSoon(null)} />
+                    </div>
+                )}
+            </Modal>
+
+            <Modal isActive={!!freezeNotice} setIsActive={() => setFreezeNotice(null)}>
+                {freezeNotice && (
+                    <div className="flex flex-col items-center text-center">
+                        <AbilityFruitOrb fruit={getAbilityFruit('freeze') as AbilityFruit} size={96} glow className="mb-5" />
+                        <h2 className="mb-2 text-xl font-bold text-gray-900">You are frozen</h2>
+                        <p className="mb-8 text-sm text-slate-500">
+                            You are currently frozen. Wait {Math.max(1, Math.ceil(freezeNotice.remaining))} seconds
+                            for the effect of the Freeze Fruit to wear off — or use the Negate Fruit to break out now.
+                        </p>
+                        <Button text="Got it" classname="w-full py-3.5" onClick={() => setFreezeNotice(null)} />
                     </div>
                 )}
             </Modal>

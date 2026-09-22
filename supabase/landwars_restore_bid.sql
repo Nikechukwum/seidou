@@ -42,6 +42,12 @@ begin
     raise exception 'Invalid auction id';
   end if;
 
+  -- FROZEN GUARD (Freeze Fruit): a frozen player cannot use a fruit. Run
+  -- landwars_freeze_bid.sql first, then re-run this file so the guard resolves.
+  if public.is_freeze_active(p_auction_id, v_actor_id) then
+    raise exception 'You are currently frozen — wait for the Freeze Fruit to wear off before using a fruit';
+  end if;
+
   -- How much of the wallet went into this auction = the current bid.
   select "bidAmount" into v_bid
     from public."Bids"

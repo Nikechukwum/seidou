@@ -38,6 +38,12 @@ begin
     raise exception 'Invalid auction id';
   end if;
 
+  -- FROZEN GUARD (Freeze Fruit): a frozen player cannot use a fruit. Run
+  -- landwars_freeze_bid.sql first, then re-run this file so the guard resolves.
+  if public.is_freeze_active(p_auction_id, v_actor_id) then
+    raise exception 'You are currently frozen — wait for the Freeze Fruit to wear off before using a fruit';
+  end if;
+
   -- Design spec: default ÷2, upgradeable to ÷3 / ÷4.
   if p_factor is null or p_factor < 2 or p_factor > 4 then
     raise exception 'Invalid divide factor';

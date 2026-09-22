@@ -35,6 +35,14 @@ begin
     raise exception 'Invalid auction id or bid amount';
   end if;
 
+  -- FROZEN GUARD (Freeze Fruit): a frozen player cannot change their bid —
+  -- only the player who cast the freeze, and anyone who negated it off, can
+  -- act while the table is frozen. Run landwars_freeze_bid.sql first, then
+  -- re-run this file so the guard resolves.
+  if public.is_freeze_active(p_auction_id, v_user_id) then
+    raise exception 'You are currently frozen — wait for the Freeze Fruit to wear off before placing a bid';
+  end if;
+
   update public.users
      set bidding_balance = bidding_balance - p_bid_amount
    where id = v_user_id
@@ -88,6 +96,17 @@ $$;
 revoke all on function public.place_bid(uuid, numeric) from public;
 grant execute on function public.place_bid(uuid, numeric) to authenticated;
 
--- 3. Enable Realtime on Bids table
+-- 3. Enable Realtime on Bids table (idempotent — safe to re-run)
 
-alter publication supabase_realtime add table public."Bids";
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'Bids'
+  ) then
+    alter publication supabase_realtime add table public."Bids";
+  end if;
+end;
+$$;
