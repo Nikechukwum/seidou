@@ -103,13 +103,13 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     },
     {
         id: 'freeze',
-        name: 'Freeze Freeze Fruit',
-        tagline: 'Freezes your target, preventing them from taking actions for a short time.',
+        name: 'Freeze Fruit',
+        tagline: 'Prevents all other players from changing their bid amounts for 30 seconds. Only the activating player can still bid.',
         description:
-            'Locks one player out of the table for a short window. They cannot raise their bid or use a fruit until the ice melts, which buys you room to climb past them.',
+            'Activate and the fruit freezes every OTHER player on the table: for 30 seconds nobody else can change their bid or use a fruit, while their cards wear a blue frozen border and anything they try is refused — a safe window to climb. You can still bid while the freeze holds. The Negate Fruit is the one exception: a frozen player holding it can negate the freeze off themselves. The blue borders fade when the timer hits zero.',
         image: '/ability-fruits/freeze.png',
-        accent: { base: '#38bdf8', spark: '#e0f2fe', deep: '#0369a1' },
-        available: false,
+        accent: { base: '#4DA6FF', spark: '#dbeafe', deep: '#1d4ed8' },
+        available: true,
     },
     {
         id: 'flame',
@@ -171,7 +171,7 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         name: 'Negate Fruit',
         tagline: 'Cancels the last ability fruit used on you and puts your bid back.',
         description:
-            "Activate and the fruit cancels the most recent ability fruit effect that hit you — a divide, a steal, a swap — and restores your bid to exactly what it was before that effect landed. It only ever undoes the LAST effect, it does not shield you from anything that comes next, and it cannot be used when nothing has been done to you. After use the fruit needs a short cooldown before it can be eaten again.",
+            "Activate and the fruit cancels the most recent ability fruit effect that hit you — a divide, a steal, a swap, a freeze — and restores your bid to exactly what it was before that effect landed. It only ever undoes the LAST effect, it does not shield you from anything that comes next, and it cannot be used when nothing has been done to you. After use the fruit needs a short cooldown before it can be eaten again.",
         // The red swirl orb from the design canvas — this artwork is Negate's
         // alone; Steal used to borrow it (see the note on the thief entry).
         image: '/ability-fruits/negate.png',
@@ -253,24 +253,51 @@ export const STEAL_FRUIT_AMOUNT = STEAL_FRUIT_DURATION_S * STEAL_PER_SECOND
 
 
 // ----------------------------------------------------------------------------
-// NEGATE SETTINGS
+// FREEZE SETTINGS
 // ----------------------------------------------------------------------------
-// DEV NOTES (design, Negate sheet):
-//   - "Track effect history stack per player (type, value before effect,
-//     timestamp)."  -> public.bid_effects, written by every fruit RPC.
-//   - "Negate removes the last effect, restores stored value, and clears that
-//     entry."        -> negate_bid() pops the newest un-negated row.
-//   - "Prevent Negate activation if no recent effect exists."
-//                    -> the table page peeks before it plays a single frame.
-//   - "Negate Fruit has a cooldown (e.g., 15-20s)."
+// DEV NOTES (design, Freeze sheet + video):
+//   - The freeze holds for FREEZE_FRUIT_DURATION_S (30s), shown by the
+//     countdown timer hanging below the fruit on the activator's card.
+//   - On activation a BLUE pulse (FREEZE_PULSE_MS) spreads out of the
+//     activator's card as a RADIAL WAVE that travels over ALL the other cards
+//     — the sheet draws concentric rings crossing the whole table, not a badge
+//     on one card — then every OTHER player's card wears a FREEZE_BORDER_COLOR
+//     frozen border + glow until the timer hits zero. The activator's card
+//     NEVER gets the border.
+//   - Frozen players cannot change their bid and cannot use fruits — enforced
+//     server-side by the fruit RPCs (see supabase/landwars_freeze_bid.sql).
+//     The Negate Fruit is the exception: it stays usable while frozen and
+//     releases the player who negates the freeze.
+//   - The blue borders fade out smoothly over FREEZE_FADE_MS.
+export const FREEZE_FRUIT_DURATION_S = 30
+// Design sheet, NOTES FOR DEV: "radial wave from activator to all other cards
+// (~600ms)" and "when duration ends, fade borders out smoothly (~400ms)".
+export const FREEZE_PULSE_MS = 600
+export const FREEZE_FADE_MS = 400
+// Design sheet: "use blue border (#3DA5FF) with subtle glow for frozen state".
+export const FREEZE_BORDER_COLOR = '#3DA5FF'
+
+
+// ----------------------------------------------------------------------------
+// FRUIT COOLDOWNS
+// ----------------------------------------------------------------------------
+// DEV NOTE (design, Negate sheet): "Negate Fruit has a cooldown (e.g., 15-20s)."
+// Every ability fruit now shares the same rule — after a fruit fires you must
+// wait FRUIT_COOLDOWN_S (20s) before the SAME fruit can fire again on that
+// table. Casting Multiply does not lock Divide; only the fruit you just used
+// cools down.
 //
-// The cooldown is enforced server-side as well (see landwars_negate_bid.sql);
-// this constant only drives the client-side guard and the toast copy, so keep
-// the two in step.
-export const NEGATE_COOLDOWN_S = 20
+// Enforced server-side by every fruit RPC via public.assert_fruit_cooldown /
+// public.bump_fruit_cooldown (see supabase/landwars_fruit_cooldowns.sql), and
+// surfaced client-side by the /api/landwars/fruit-cooldown read. Keep the SQL
+// side and this constant in step.
+export const FRUIT_COOLDOWN_S = 20
+
+// Negate's own cooldown is simply the shared one.
+export const NEGATE_COOLDOWN_S = FRUIT_COOLDOWN_S
 
 /** Effects the stack records, and therefore what Negate can undo. */
-export type NegatableEffect = 'multiply' | 'divide' | 'swap' | 'thief'
+export type NegatableEffect = 'multiply' | 'divide' | 'swap' | 'thief' | 'freeze'
 
 /** How the negated effect is named in the status pill and the toast. */
 export const NEGATE_EFFECT_LABELS: Record<NegatableEffect, string> = {
@@ -278,6 +305,7 @@ export const NEGATE_EFFECT_LABELS: Record<NegatableEffect, string> = {
     divide: 'Divide',
     swap: 'Position Swap',
     thief: 'Steal Bidding Currency',
+    freeze: 'Freeze Fruit',
 }
 
 export function negateEffectLabel(type: string | null | undefined): string {

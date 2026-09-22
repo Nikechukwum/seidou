@@ -15,6 +15,10 @@
 -- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
 -- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
 -- then re-run this file.
+--
+-- COOLDOWN: every fruit shares the negate-style cooldown. Run
+-- landwars_fruit_cooldowns.sql first, then re-run this file so this RPC's
+-- cooldown guard resolves.
 -- ============================================================================
 
 create or replace function public.swap_positions(p_auction_id uuid)
@@ -34,6 +38,15 @@ begin
 
   if p_auction_id is null then
     raise exception 'Invalid auction id';
+  end if;
+
+  -- COOLDOWN GUARD: a fruit cannot be cast again within 20s of its last cast.
+  perform public.assert_fruit_cooldown(p_auction_id, v_actor_id, 'swap', 'Position Swap');
+
+  -- FROZEN GUARD (Freeze Fruit): a frozen player cannot use a fruit. Run
+  -- landwars_freeze_bid.sql first, then re-run this file so the guard resolves.
+  if public.is_freeze_active(p_auction_id, v_actor_id) then
+    raise exception 'You are currently frozen — wait for the Freeze Fruit to wear off before using a fruit';
   end if;
 
   -- The activator must actually be on the table to trade bids.
@@ -85,6 +98,10 @@ begin
   perform public.record_bid_effect(
     p_auction_id, v_target.u, v_actor_id, 'swap', v_target.b, v_actor_bid
   );
+
+  -- Start the cooldown on this fruit (same transaction: any later failure
+  -- rolls this row back, so a failed cast never spends the cooldown).
+  perform public.bump_fruit_cooldown(p_auction_id, v_actor_id, 'swap');
 
   return json_build_object(
     'success',        true,

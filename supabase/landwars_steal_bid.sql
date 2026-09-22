@@ -15,6 +15,10 @@
 -- EFFECT HISTORY: every bid this fruit moves is recorded in public.bid_effects
 -- so the NEGATE fruit can undo it. Run supabase/landwars_bid_effects.sql first,
 -- then re-run this file.
+--
+-- COOLDOWN: every fruit shares the negate-style cooldown. Run
+-- landwars_fruit_cooldowns.sql first, then re-run this file so this RPC's
+-- cooldown guard resolves.
 -- ============================================================================
 
 create or replace function public.steal_bids(
@@ -44,12 +48,21 @@ begin
     raise exception 'Invalid auction id';
   end if;
 
+  -- COOLDOWN GUARD: a fruit cannot be cast again within 20s of its last cast.
+  perform public.assert_fruit_cooldown(p_auction_id, v_actor_id, 'thief', 'Steal Bidding Currency');
+
   if p_per_second is null or p_per_second <= 0 then
     raise exception 'Invalid steal rate';
   end if;
 
   if p_seconds is null or p_seconds <= 0 then
     raise exception 'Invalid steal duration';
+  end if;
+
+  -- FROZEN GUARD (Freeze Fruit): a frozen player cannot use a fruit. Run
+  -- landwars_freeze_bid.sql first, then re-run this file so the guard resolves.
+  if public.is_freeze_active(p_auction_id, v_actor_id) then
+    raise exception 'You are currently frozen — wait for the Freeze Fruit to wear off before using a fruit';
   end if;
 
   -- The activator must actually be on the table to collect the stolen BC.
@@ -111,6 +124,10 @@ begin
     p_auction_id, v_actor_id, v_actor_id, 'thief',
     v_actor_bid, v_actor_bid + v_total
   );
+
+  -- Start the cooldown on this fruit (same transaction: any later failure
+  -- rolls this row back, so a failed cast never spends the cooldown).
+  perform public.bump_fruit_cooldown(p_auction_id, v_actor_id, 'thief');
 
   return json_build_object(
     'success',       true,
