@@ -83,3 +83,56 @@ export function clearFruitUsage(auctionId: string, keep: FruitUsage = {}): void 
 export function remainingUses(usage: FruitUsage, fruitId: AbilityFruitId): number {
     return Math.max(0, TESTING_PHASE_FRUIT_COUNT - (usage[fruitId] ?? 0))
 }
+
+// ----------------------------------------------------------------------------
+// COPIED FRUIT BONUSES
+// ----------------------------------------------------------------------------
+// The Copy Fruit hands the player an EXTRA use of whatever ability it copied,
+// above their normal allocation. Uses are spent (recordFruitUse) but the bonus
+// comes from its own small ledger, so copying multiply twice gives your
+// multiply two extra uses on top of the base ten. Restore's clearFruitUsage
+// intentionally leaves these alone — a copied ability is not "something you
+// used", so it is not something to give back.
+// ----------------------------------------------------------------------------
+
+export type FruitBonuses = Partial<Record<AbilityFruitId, number>>
+
+const bonusKey = (auctionId: string) => `seidou:fruit-bonus:${auctionId}`
+
+/** Extra uses earned by COPYING fruits on this auction. */
+export function getFruitBonuses(auctionId: string): FruitBonuses {
+    if (typeof window === 'undefined' || !auctionId) return {}
+    try {
+        const raw = window.sessionStorage.getItem(bonusKey(auctionId))
+        if (!raw) return {}
+        const parsed = JSON.parse(raw) as unknown
+        if (!parsed || typeof parsed !== 'object') return {}
+        return parsed as FruitBonuses
+    } catch {
+        return {}
+    }
+}
+
+/** Grant one bonus use of `fruitId` (a successful Copy). */
+export function grantFruitBonus(auctionId: string, fruitId: AbilityFruitId): FruitBonuses {
+    const next: FruitBonuses = { ...getFruitBonuses(auctionId) }
+    next[fruitId] = (next[fruitId] ?? 0) + 1
+    if (typeof window !== 'undefined' && auctionId) {
+        try {
+            window.sessionStorage.setItem(bonusKey(auctionId), JSON.stringify(next))
+        } catch {
+            // storage full / blocked — the ledger is a convenience, never a blocker
+        }
+    }
+    return next
+}
+
+/** Uses a player genuinely holds on a fruit this auction: base 10 − spent + copied bonuses. */
+export function availableUses(
+    auctionId: string,
+    usage: FruitUsage,
+    bonuses: FruitBonuses,
+    fruitId: AbilityFruitId
+): number {
+    return Math.max(0, TESTING_PHASE_FRUIT_COUNT - (usage[fruitId] ?? 0) + (bonuses[fruitId] ?? 0))
+}

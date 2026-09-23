@@ -24,6 +24,7 @@ export type AbilityFruitId =
     | 'thief'
     | 'mirror'
     | 'time'
+    | 'copy'
     | 'restore'
     | 'negate'
 
@@ -112,15 +113,28 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         available: true,
     },
     {
-        id: 'flame',
-        name: 'Flame Flame Fruit',
-        tagline: 'Engulfs the target in flames, dealing damage over time.',
+        id: 'copy',
+        name: 'Copy Fruit',
+        tagline: 'Copies any one of the last 3 ability fruits used on this table into your abilities.',
         description:
-            'Sets a rival alight. Their bid burns down in small ticks for as long as the flames last, so the longer they ignore it, the more ground they lose.',
+            "Activate and a picker opens listing the last ability fruits used on this table by anyone — up to three. Choose one and it is copied straight into your abilities: you can use it just like a normal fruit from then on. The Copy Fruit itself is consumed when the copy lands, and Copy Fruits can never be copied.",
         image: '/ability-fruits/flame.png',
-        accent: { base: '#f59e0b', spark: '#fef08a', deep: '#c2410c' },
-        available: false,
+        // The video's "copyability fruit" is a yellow spiky fruit with a stem
+        // (durian-like). The artwork ships separately — drop it at
+        // /public/ability-fruits/copy.png and it lights up everywhere.
+        accent: { base: '#facc15', spark: '#fef08a', deep: '#a16207' },
+        available: true,
     },
+    // {
+    //     id: 'flame',
+    //     name: 'Flame Flame Fruit',
+    //     tagline: 'Engulfs the target in flames, dealing damage over time.',
+    //     description:
+    //         'Sets a rival alight. Their bid burns down in small ticks for as long as the flames last, so the longer they ignore it, the more ground they lose.',
+    //     image: '/ability-fruits/flame.png',
+    //     accent: { base: '#f59e0b', spark: '#fef08a', deep: '#c2410c' },
+    //     available: false,
+    // },
     {
         id: 'void',
         name: 'Void Void Fruit',
@@ -199,6 +213,16 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
 export function getAbilityFruit(id: string): AbilityFruit | undefined {
     return ABILITY_FRUITS.find((f) => f.id === id)
 }
+
+// ----------------------------------------------------------------------------
+// COPY FRUIT — coppable set
+// ----------------------------------------------------------------------------
+// The Copy Fruit can hand the player any PLAYABLE fruit except itself (edge
+// case: "Cannot copy another Copy Fruit"). Mirror of the `v_coppable` array in
+// supabase/landwars_copy_fruit.sql — keep the two in step.
+export const COPYABLE_FRUIT_IDS = ABILITY_FRUITS.filter(
+    (f) => f.available && f.id !== 'copy'
+).map((f) => f.id) as AbilityFruitId[]
 
 // ----------------------------------------------------------------------------
 // FRUIT LEVELS
