@@ -17,7 +17,9 @@ import { PageLayout } from '@/components/PageLayout'
 import { Modal } from '@/components/Modal'
 import { Button } from '@/components/Button'
 import AbilityFruitOrb from '@/components/AbilityFruitOrb'
-import { ABILITY_FRUITS, AbilityFruit, TESTING_PHASE_FRUIT_COUNT, getAbilityFruit } from '@/lib/abilityFruits'
+import CopyFruitModal from '@/components/CopyFruitModal'
+import { ABILITY_FRUITS, AbilityFruit, AbilityFruitId, TESTING_PHASE_FRUIT_COUNT, getAbilityFruit } from '@/lib/abilityFruits'
+import { getFruitUsage, getFruitBonuses, recordFruitUse, grantFruitBonus, availableUses } from '@/lib/fruitUsage'
 
 const AbilityFruitsPage = () => {
     const params = useParams()
@@ -34,6 +36,19 @@ const AbilityFruitsPage = () => {
     const [cooldowns, setCooldowns] = useState<Record<string, number>>({})
     // Set when Activate is tapped on a fruit that is still cooling down.
     const [cooldownNotice, setCooldownNotice] = useState<AbilityFruit | null>(null)
+
+    //  The Copy Fruit flow. Activate on the Copy Fruit opens this
+    // picker inline (it does NOT navigate to the table — there is no target).
+    // Closing without copying consumes nothing; a successful copy consumes one
+    // Copy Fruit use and adds a bonus use of the copied fruit (both in
+    // onCopied below). The badges below re-read the storage-backed ledger on
+    // every render, so they refresh the moment the modal closes.
+    const [copyOpen, setCopyOpen] = useState(false)
+
+    // Live uses for the x-badges: base 10 − spent + copied bonuses. Re-read
+    // on every render, so the badges are fresh once the copy modal closes.
+    const usage = getFruitUsage(auctionId)
+    const bonuses = getFruitBonuses(auctionId)
 
     // Read the live cooldowns when the page opens (whatever you just cast runs
     // its countdown server-side, so re-entering the page shows the truth).
@@ -100,6 +115,13 @@ const AbilityFruitsPage = () => {
                 // network hiccup — fall through and let the table decide
             }
         }
+        // COPY FRUIT flow: no target to pick on the table — the picker modal
+        // opens here instead. Stays on this page; nothing is consumed until a
+        // copy actually commits.
+        if (fruit.id === 'copy') {
+            setCopyOpen(true)
+            return
+        }
         // Back to the table with the fruit armed — the table drops straight into
         // "tap a player" targeting mode.
         router.push(`/auction/free-auction/${auctionId}?fruit=${fruit.id}`)
@@ -117,6 +139,7 @@ const AbilityFruitsPage = () => {
             <div className="flex flex-col gap-4">
                 {ABILITY_FRUITS.map((fruit) => {
                     const coolingFor = cooldowns[fruit.id] ?? 0
+                    const usesLeft = availableUses(auctionId, usage, bonuses, fruit.id)
                     return (
                     <div
                         key={fruit.id}
@@ -125,7 +148,7 @@ const AbilityFruitsPage = () => {
                         <div className="flex shrink-0 flex-col items-center gap-2 pt-1">
                             <AbilityFruitOrb fruit={fruit} size={64} glow />
                             <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-600">
-                                x{TESTING_PHASE_FRUIT_COUNT}
+                                x{usesLeft}
                             </span>
                         </div>
 
@@ -217,6 +240,20 @@ const AbilityFruitsPage = () => {
                     </div>
                 )}
             </Modal>
+
+            <CopyFruitModal
+                isActive={copyOpen}
+                onClose={() => setCopyOpen(false)}
+                auctionId={auctionId}
+                onCopied={(copiedId) => {
+                    // Copy Fruit is consumed the moment the copy commits — a
+                    // failed / abandoned attempt never reaches this callback.
+                    recordFruitUse(auctionId, 'copy')
+                    // …and the copied ability earns a bonus use above the
+                    // testing-phase base (availableUses adds it back on).
+                    grantFruitBonus(auctionId, copiedId as AbilityFruitId)
+                }}
+            />
         </PageLayout>
     )
 }
