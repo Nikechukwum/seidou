@@ -18,6 +18,7 @@ import { Modal } from '@/components/Modal'
 import { Button } from '@/components/Button'
 import AbilityFruitOrb from '@/components/AbilityFruitOrb'
 import CopyFruitModal from '@/components/CopyFruitModal'
+import CloneFruitModal from '@/components/CloneFruitModal'
 import { ABILITY_FRUITS, AbilityFruit, AbilityFruitId, TESTING_PHASE_FRUIT_COUNT, getAbilityFruit } from '@/lib/abilityFruits'
 import { getFruitUsage, getFruitBonuses, recordFruitUse, grantFruitBonus, availableUses } from '@/lib/fruitUsage'
 
@@ -44,6 +45,14 @@ const AbilityFruitsPage = () => {
     // onCopied below). The badges below re-read the storage-backed ledger on
     // every render, so they refresh the moment the modal closes.
     const [copyOpen, setCopyOpen] = useState(false)
+
+    //  The Clone Fruit flow. Activate on the Clone Fruit opens this
+    // carousel inline (it does NOT navigate to the table — there is no
+    // target): pick a fruit you own, confirm, and it becomes Current + 2.
+    // Closing without cloning consumes nothing; a successful clone consumes
+    // one Clone Fruit use and adds 2 bonus uses of the chosen fruit (both in
+    // onCloned below).
+    const [cloneOpen, setCloneOpen] = useState(false)
 
     // Live uses for the x-badges: base 10 − spent + copied bonuses. Re-read
     // on every render, so the badges are fresh once the copy modal closes.
@@ -120,6 +129,12 @@ const AbilityFruitsPage = () => {
         // copy actually commits.
         if (fruit.id === 'copy') {
             setCopyOpen(true)
+            return
+        }
+        // CLONE FRUIT flow: also an on-page picker (a carousel of fruits you
+        // own). Stays on this page; nothing is consumed until a clone commits.
+        if (fruit.id === 'clone') {
+            setCloneOpen(true)
             return
         }
         // Back to the table with the fruit armed — the table drops straight into
@@ -252,6 +267,20 @@ const AbilityFruitsPage = () => {
                     // …and the copied ability earns a bonus use above the
                     // testing-phase base (availableUses adds it back on).
                     grantFruitBonus(auctionId, copiedId as AbilityFruitId)
+                }}
+            />
+
+            <CloneFruitModal
+                isActive={cloneOpen}
+                onClose={() => setCloneOpen(false)}
+                auctionId={auctionId}
+                onCloned={(clonedId) => {
+                    // Clone Fruit is consumed the moment the clone commits — a
+                    // failed / abandoned attempt never reaches this callback.
+                    recordFruitUse(auctionId, 'clone')
+                    // …and the cloned fruit earns 2 extra copies above the
+                    // testing-phase base (master prompt: x1 becomes x3).
+                    grantFruitBonus(auctionId, clonedId as AbilityFruitId, 2)
                 }}
             />
         </PageLayout>
