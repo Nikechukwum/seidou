@@ -113,10 +113,18 @@ export function getFruitBonuses(auctionId: string): FruitBonuses {
     }
 }
 
-/** Grant one bonus use of `fruitId` (a successful Copy). */
-export function grantFruitBonus(auctionId: string, fruitId: AbilityFruitId): FruitBonuses {
+/**
+ * Grant bonus uses of `fruitId`: +1 for a successful Copy, +2 for a
+ * successful Clone (master prompt: "One clone action creates 2 additional
+ * copies. So 1 becomes 3").
+ */
+export function grantFruitBonus(
+    auctionId: string,
+    fruitId: AbilityFruitId,
+    amount = 1
+): FruitBonuses {
     const next: FruitBonuses = { ...getFruitBonuses(auctionId) }
-    next[fruitId] = (next[fruitId] ?? 0) + 1
+    next[fruitId] = (next[fruitId] ?? 0) + amount
     if (typeof window !== 'undefined' && auctionId) {
         try {
             window.sessionStorage.setItem(bonusKey(auctionId), JSON.stringify(next))
@@ -127,7 +135,7 @@ export function grantFruitBonus(auctionId: string, fruitId: AbilityFruitId): Fru
     return next
 }
 
-/** Uses a player genuinely holds on a fruit this auction: base 10 − spent + copied bonuses. */
+/** Uses a player genuinely holds on a fruit this auction: base 10 − spent + copied/cloned bonuses. */
 export function availableUses(
     auctionId: string,
     usage: FruitUsage,

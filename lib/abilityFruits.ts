@@ -25,6 +25,7 @@ export type AbilityFruitId =
     | 'mirror'
     | 'time'
     | 'copy'
+    | 'clone'
     | 'restore'
     | 'negate'
 
@@ -125,6 +126,20 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         accent: { base: '#facc15', spark: '#fef08a', deep: '#a16207' },
         available: true,
     },
+    {
+        id: 'clone',
+        name: 'Clone Fruit',
+        tagline: 'Duplicates any ability fruit you own into 2 extra copies (x1 becomes x3).',
+        description:
+            "Activate and a carousel opens listing every ability fruit you currently hold. Pick one — Multiply, Position Swap, Steal, Restore, anything you own — and the tree buds 2 extra copies of it: x1 becomes x3, x2 becomes x4. You can clone any fruit you own except the Clone fruit itself, and the Clone fruit you used is consumed.",
+        image: '/ability-fruits/flame.png',
+        // The Clone fruit is the SAME yellow spiky durian-looking fruit as the
+        // Copy fruit in the video. If there is only one piece of artwork, share
+        // it: drop it at /public/ability-fruits/clone.png (copy of copy.png)
+        // and it lights up everywhere.
+        accent: { base: '#facc15', spark: '#fef08a', deep: '#a16207' },
+        available: true,
+    },
     // {
     //     id: 'flame',
     //     name: 'Flame Flame Fruit',
@@ -222,6 +237,17 @@ export function getAbilityFruit(id: string): AbilityFruit | undefined {
 // supabase/landwars_copy_fruit.sql — keep the two in step.
 export const COPYABLE_FRUIT_IDS = ABILITY_FRUITS.filter(
     (f) => f.available && f.id !== 'copy'
+).map((f) => f.id) as AbilityFruitId[]
+
+// ----------------------------------------------------------------------------
+// CLONE FRUIT — clonable set
+// ----------------------------------------------------------------------------
+// The Clone Fruit can duplicate any PLAYABLE fruit except ITSELF (edge case:
+// "prevent infinite loop" — the Clone fruit can never be cloned). Note the
+// Copy fruit IS clonable here: it is a different fruit. Mirror of the
+// `v_clonable` array in supabase/landwars_clone_fruit.sql — keep in step.
+export const CLONABLE_FRUIT_IDS = ABILITY_FRUITS.filter(
+    (f) => f.available && f.id !== 'clone'
 ).map((f) => f.id) as AbilityFruitId[]
 
 // ----------------------------------------------------------------------------
