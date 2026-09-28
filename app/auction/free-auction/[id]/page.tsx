@@ -43,6 +43,21 @@ import FreezeFruitAbility, { FreezeStatusPill, FreezePulseOverlay } from "@/comp
 import AdaptiveLeaderboard from "@/components/AdaptiveLeaderboard";
 import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, FREEZE_FRUIT_DURATION_S, FREEZE_PULSE_MS, FREEZE_FADE_MS, getAbilityFruit, negateEffectLabel, AbilityFruitId } from "@/lib/abilityFruits";
 import { getFruitUsage, recordFruitUse, clearFruitUsage } from "@/lib/fruitUsage";
+import {
+    AbilityInteraction,
+    InteractionFeed,
+    FEED_POLL_MS,
+    effectLabel,
+    effectShortLabel,
+    feedClockOffsetMs,
+    iBlockedMe,
+    iReflectedMe,
+    iWasAffected,
+    windowRemainingSeconds,
+} from "@/lib/abilityInteractions";
+import AbilityManifestOverlay from "@/components/AbilityManifestOverlay";
+import TargetTelegraphOverlay from "@/components/TargetTelegraphOverlay";
+import ReactFruitPicker from "@/components/ReactFruitPicker";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
@@ -210,6 +225,23 @@ const LeaderboardPage = () => {
     // Am I (on THIS client) frozen by someone else's Freeze Fruit right now?
     const [myFreeze, setMyFreeze] = useState<{ frozen: boolean; remaining: number }>({ frozen: false, remaining: 0 })
     const [freezePopupOpen, setFreezePopupOpen] = useState(false)
+
+    //  Ability Fruit INTERACTION SYSTEM — the reaction-window feed.
+    // Every client polls it (~1s); the GET runs the server sweep first, so
+    // what comes back is post-resolution truth. Pending entries drive the
+    // manifest overlay + spidey-sense rings + React picker; resolved entries
+    // drive the impact bursts below. All SQL timestamps are compared in SERVER
+    // time: feedOffsetMs is the measured clock skew, added to Date.now().
+    const [interactionFeed, setInteractionFeed] = useState<InteractionFeed | null>(null)
+    const [feedOffsetMs, setFeedOffsetMs] = useState(0)
+    // The pending interaction currently targeting ME (drives the React picker).
+    const [reactTarget, setReactTarget] = useState<AbilityInteraction | null>(null)
+    const [reactCooldowns, setReactCooldowns] = useState<Partial<Record<'shield' | 'mirror', number>>>({})
+    const [responding, setResponding] = useState(false)
+    // interaction id -> state last seen, so a resolution fires once.
+    const seenInteractionsRef = useRef<Map<number, string>>(new Map())
+    // the interaction my current steal countdown collects on commit.
+    const stealInteractionIdRef = useRef<number | null>(null)
 
     const openFreezePopup = useCallback(() => setFreezePopupOpen(true), [])
 
@@ -589,48 +621,11 @@ const LeaderboardPage = () => {
         if (delta > 0) fireDelta(String(id), delta)
     }, [fireDelta])
 
-    //  Ability Fruit DIVIDE — the fruit ALWAYS hits whoever
-    // holds FIRST POSITION. It appears on YOUR card and travels across to rest
-    // on the #1 card (FRAME 2), their bid splits old -> reduced (FRAME 3), the
-    // red "-X,XXX,XXX ↓" floats off (FRAME 4), then it settles (FRAME 5).
-    const handleDivideOptimistic = useCallback((userId: string) => {
-        const previousBids = bids
-        const oldBid = Number(previousBids.find(b => b.userId === userId)?.bidAmount ?? 0)
-        const divided = Math.max(1, Math.floor(oldBid / DIVIDE_FACTOR))
-        setBids(prev => prev.map(b => b.userId === userId ? { ...b, bidAmount: divided } : b))
-
-        void (async () => {
-            try {
-                const res = await fetch('/api/landwars/divide-bid', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auctionId, factor: DIVIDE_FACTOR }),
-                })
-                const data = await res.json()
-                if (!res.ok) {
-                    setBids(previousBids)
-                    dispatch(showToast({ type: 'error', message: data.error || 'Could not divide the bid.' }))
-                } else if (data && data.target_user_id && String(data.target_user_id) !== userId) {
-                    // the server divided whoever is #1 NOW — if that is not the
-                    // card we animated, reconcile so client and server agree.
-                    setBids(prev => prev.map(b =>
-                        b.userId === userId
-                            ? { ...b, bidAmount: oldBid }
-                            : String(b.userId) === String(data.target_user_id)
-                                ? { ...b, bidAmount: Number(data.bidAmount) }
-                                : b
-                    ))
-                    dispatch(showToast({ type: 'error', message: 'The #1 player changed mid-animation.' }))
-                }
-            } catch {
-                setBids(previousBids)
-                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
-            }
-        })()
-    }, [auctionId, bids, dispatch])
-
-    // Separately timed frames for the divide sequence. The fruit rests on your
-    // card, flies to first position, covers it, then the reduction lands.
+    //  Ability Fruit DIVIDE — interaction system. The fruit is CAST through
+    // the interaction RPC: it parks a 5s reaction window during which the #1
+    // player (the derived target) can Shield/Mirror, then the server sweep
+    // applies the cut. Nothing is mutated here — the impact burst plays on the
+    // card once the feed reports the outcome (see the resolution effect below).
     const handleDivideSelf = useCallback(() => {
         if (divideTarget || divideStage !== 'idle' || multiplyTarget || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle' || negateStage !== 'idle' || freezeStage !== 'idle') return
         if (myFreeze.frozen) {
@@ -641,41 +636,37 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
         }
+        if (!bids.some(b => b.userId === myUserId)) {
+            dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
+            return
+        }
+        if ((interactionFeed?.interactions ?? []).some(i => i.state === 'pending' && i.actor_is_me)) {
+            dispatch(showToast({ type: 'error', message: 'You already have an ability fruit in flight on this table.' }))
+            return
+        }
         const rank1 = [...bids].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))[0]
         if (!rank1) {
             dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
             return
         }
+
         recordFruitUse(auctionId, 'divide')
-
-        const APP_MS = 800
-        const TRAVEL_MS = 850
-        // long enough to read the old amount strike through before it lifts away
-        const SPLIT_MS = 700
-        const IMPACT_MS = 950
-        const SETTLE_MS = 300
-
-        setDivideTarget(rank1.userId)
-        setDivideStage('appear')
-
-        const t1 = setTimeout(() => setDivideStage('travel'), APP_MS)
-        divideTimeoutsRef.current.push(t1)
-        const t2 = setTimeout(() => setDivideStage('covering'), APP_MS + TRAVEL_MS)
-        divideTimeoutsRef.current.push(t2)
-        const t3 = setTimeout(() => {
-            handleDivideOptimistic(rank1.userId)
-            setDivideStage('explode')
-        }, APP_MS + TRAVEL_MS + SPLIT_MS)
-        divideTimeoutsRef.current.push(t3)
-        const t4 = setTimeout(() => setDivideStage('settle'), APP_MS + TRAVEL_MS + SPLIT_MS + IMPACT_MS)
-        divideTimeoutsRef.current.push(t4)
-        const t5 = setTimeout(() => {
-            setDivideStage('idle')
-            setDivideTarget(null)
-            setDivideFlight(null)
-        }, APP_MS + TRAVEL_MS + SPLIT_MS + IMPACT_MS + SETTLE_MS)
-        divideTimeoutsRef.current.push(t5)
-    }, [divideTarget, divideStage, myUserId, bids, handleDivideOptimistic, dispatch, negateStage, freezeStage, myFreeze.frozen])
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/ability-interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, action: 'cast', effectType: 'divide', factor: DIVIDE_FACTOR }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Divide Fruit.' }))
+                }
+            } catch {
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [divideTarget, divideStage, multiplyTarget, stealStage, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
 
     // while the fruit is in flight, capture the source card (mine) and the #1
     // card positions so the page-level overlay can fly between them.
@@ -698,9 +689,10 @@ const LeaderboardPage = () => {
         })
     }, [divideStage, myUserId, divideTarget])
 
-    //  Ability Fruit STEAL BIDDING CURRENCY.
-    // Auto-targets every other player who holds any bidding currency, then
-    // drains 1,000 BC per second from each for 60 seconds.
+    //  Ability Fruit STEAL BIDDING CURRENCY — interaction system. Cast through
+    // the interaction RPC: every other player is telegraphed for a 5s reaction
+    // window (Shield/Mirror save per-target), the sweep resolves eligibility,
+    // and the drain spectacle + commit run only once the outcome is 'ready'.
     const handleStealSelf = useCallback(() => {
         if (stealStage !== 'idle' || divideTarget || multiplyTarget || swapStage !== 'idle' || restoreStage !== 'idle' || negateStage !== 'idle' || freezeStage !== 'idle') return
         if (myFreeze.frozen) {
@@ -721,29 +713,40 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'No one else on the table has bidding currency to take.' }))
             return
         }
-        recordFruitUse(auctionId, 'thief')
+        if ((interactionFeed?.interactions ?? []).some(i => i.state === 'pending' && i.actor_is_me)) {
+            dispatch(showToast({ type: 'error', message: 'You already have an ability fruit in flight on this table.' }))
+            return
+        }
 
-        const basis = new Map<string, number>()
-        targets.forEach(t => basis.set(String(t.userId), Number(t.bidAmount)))
-        stealBasisRef.current = basis
-        stealSnapshotRef.current = bids
-        setStealTargets(targets.map(t => String(t.userId)))
-        setStealLossByPlayer({})
-        setStealGain(0)
-        setStealSeconds(STEAL_FRUIT_DURATION_S)
-        setStealStage('active')
-    }, [stealStage, divideTarget, multiplyTarget, myUserId, bids, dispatch, negateStage, freezeStage, myFreeze.frozen])
+        recordFruitUse(auctionId, 'thief')
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/ability-interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, action: 'cast', effectType: 'thief' }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Steal.' }))
+                }
+            } catch {
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [stealStage, divideTarget, multiplyTarget, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
 
     // The 60s countdown: every second, each still-eligible target loses 1,000
     // BC. Anyone who runs out before zero loses their red border and badge. At
     // zero: commit the steal + explode + settle.
     const handleStealCommit = useCallback(() => {
         const myId = myUserIdRef.current
-        if (!myId) return
+        const interactionId = stealInteractionIdRef.current
+        if (!myId || !interactionId) return
         const basis = stealBasisRef.current
         const snapshot = stealSnapshotRef.current
 
-        // Each target loses min(their starting balance, one full 60s drain).
+        // Each target loses min(their starting balance, one full 30s drain).
         const lossByPlayer: Record<string, number> = {}
         let gain = 0
         basis.forEach((bid, id) => {
@@ -768,7 +771,7 @@ const LeaderboardPage = () => {
                 const res = await fetch('/api/landwars/steal-bid', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auctionId, perSecond: STEAL_PER_SECOND, seconds: STEAL_FRUIT_DURATION_S }),
+                    body: JSON.stringify({ auctionId, interactionId, perSecond: STEAL_PER_SECOND, seconds: STEAL_FRUIT_DURATION_S }),
                 })
                 const data = await res.json()
                 if (!res.ok) {
@@ -830,37 +833,10 @@ const LeaderboardPage = () => {
         }
     }, [stealStage, handleStealCommit])
 
-    //  Ability Fruit POSITION SWAP.
-    // The fruit ALWAYS swaps with the highest bidder: the two bid amounts
-    // change hands, so the activator walks away holding the top bid. A player
-    // who already holds (or ties for) first place cannot swap.
-    const handleSwapOptimistic = useCallback((meId: string, targetId: string, myAmount: number, leaderAmount: number) => {
-        const previousBids = bids
-        setBids(prev => prev.map(b => {
-            if (String(b.userId) === meId) return { ...b, bidAmount: leaderAmount }
-            if (String(b.userId) === targetId) return { ...b, bidAmount: myAmount }
-            return b
-        }))
-
-        void (async () => {
-            try {
-                const res = await fetch('/api/landwars/swap-bid', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auctionId }),
-                })
-                const data = await res.json()
-                if (!res.ok) {
-                    setBids(previousBids)
-                    dispatch(showToast({ type: 'error', message: data.error || 'Could not swap positions.' }))
-                }
-            } catch {
-                setBids(previousBids)
-                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
-            }
-        })()
-    }, [auctionId, bids, dispatch])
-
+    //  Ability Fruit POSITION SWAP — interaction system. Cast through the
+    // interaction RPC: the fruit locks onto the #1 player and parks a 5s
+    // reaction window (they can Shield/Mirror), then the server sweep trades
+    // the two bids. The burst plays once the feed reports the outcome.
     const handleSwapSelf = useCallback(() => {
         if (swapStage !== 'idle' || stealStage !== 'idle' || divideTarget || multiplyTarget || restoreStage !== 'idle' || negateStage !== 'idle' || freezeStage !== 'idle') return
         if (myFreeze.frozen) {
@@ -871,73 +847,45 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'Sign in to use a fruit.' }))
             return
         }
-        const ranked = [...bids].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))
         const myBidEntry = bids.find(b => String(b.userId) === myUserId)
         if (!myBidEntry) {
             dispatch(showToast({ type: 'error', message: 'Place a bid on this table first.' }))
             return
         }
+        if ((interactionFeed?.interactions ?? []).some(i => i.state === 'pending' && i.actor_is_me)) {
+            dispatch(showToast({ type: 'error', message: 'You already have an ability fruit in flight on this table.' }))
+            return
+        }
+        const ranked = [...bids].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))
         const leader = ranked[0]
         if (!leader) {
             dispatch(showToast({ type: 'error', message: 'No bids on this table yet.' }))
             return
         }
-        recordFruitUse(auctionId, 'swap')
         const myAmount = Number(myBidEntry.bidAmount)
         const leaderAmount = Number(leader.bidAmount)
         if (String(leader.userId) === myUserId || leaderAmount === myAmount) {
             dispatch(showToast({ type: 'error', message: "You're already in first position — there's nothing to swap for." }))
             return
         }
-        const target = String(leader.userId)
 
-        // Position deltas: rank before (by amount) vs rank after (amounts swapped).
-        const rankBefore: Record<string, number> = {}
-        ranked.forEach((b, i) => { rankBefore[String(b.userId)] = i + 1 })
-        const post = bids.map(b => {
-            if (String(b.userId) === myUserId) return { ...b, bidAmount: leaderAmount }
-            if (String(b.userId) === target) return { ...b, bidAmount: myAmount }
-            return b
-        })
-        const rankAfter: Record<string, number> = {}
-        ;[...post].sort((a, b) => Number(b.bidAmount) - Number(a.bidAmount))
-            .forEach((b, i) => { rankAfter[String(b.userId)] = i + 1 })
-        // Stored as PLACES GAINED (before - after), so climbing 2nd -> 1st is
-        // +1 and reads as the green "↑ 1" of FRAME 5, while the leader dropping
-        // 1st -> 2nd is -1 and reads as the red "↓ 1".
-        setSwapDeltas({
-            [myUserId]: (rankBefore[myUserId] ?? 0) - (rankAfter[myUserId] ?? 0),
-            [target]: (rankBefore[target] ?? 0) - (rankAfter[target] ?? 0),
-        })
-        setSwapTargetId(target)
-
-        // FRAME timings: activated -> travel -> explode -> settled -> reset.
-        // The explosion and the settled indicators follow the design sheet:
-        // ~400-600ms for the burst, ~800ms for the ↑/↓ badges before they fade.
-        const APP_MS = 650
-        const TRAVEL_MS = 850
-        const EXPLODE_MS = SWAP_BURST_MS
-        const SETTLE_MS = 800
-
-        setSwapStage('active')
-        const at = (fn: () => void, ms: number) => {
-            const t = setTimeout(fn, ms)
-            swapTimeoutsRef.current.push(t)
-        }
-        at(() => setSwapStage('travel'), APP_MS)
-        // The fruit lands: the two amounts trade hands and the DB commits.
-        at(() => {
-            setSwapStage('explode')
-            handleSwapOptimistic(myUserId, target, myAmount, leaderAmount)
-        }, APP_MS + TRAVEL_MS)
-        at(() => setSwapStage('settle'), APP_MS + TRAVEL_MS + EXPLODE_MS)
-        at(() => {
-            setSwapStage('idle')
-            setSwapTargetId(null)
-            setSwapFlight(null)
-            setSwapDeltas({})
-        }, APP_MS + TRAVEL_MS + EXPLODE_MS + SETTLE_MS)
-    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, handleSwapOptimistic, dispatch, negateStage, freezeStage, myFreeze.frozen])
+        recordFruitUse(auctionId, 'swap')
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/ability-interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, action: 'cast', effectType: 'swap' }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Position Swap.' }))
+                }
+            } catch {
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            }
+        })()
+    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, interactionFeed, restoreStage, negateStage, freezeStage, myFreeze.frozen, auctionId, dispatch])
 
     // while the fruit is in flight, capture the source card (mine) and the
     // leader's card positions so the page-level overlay can fly between them.
@@ -1232,41 +1180,28 @@ const LeaderboardPage = () => {
             dispatch(showToast({ type: 'error', message: 'No other players on this table to freeze.' }))
             return
         }
+        if ((interactionFeed?.interactions ?? []).some(i => i.state === 'pending' && i.actor_is_me)) {
+            dispatch(showToast({ type: 'error', message: 'You already have an ability fruit in flight on this table.' }))
+            return
+        }
 
         recordFruitUse(auctionId, 'freeze')
-        setFreezeTargets(targets)
-        setFreezeSeconds(FREEZE_FRUIT_DURATION_S)
-        setFreezeStage('pulse')
-
-        // FRAME 3 -> FRAME 4 once the pulse has played.
-        const at = (fn: () => void, ms: number) => {
-            const t = setTimeout(fn, ms)
-            freezeTimeoutsRef.current.push(t)
-        }
-        at(() => setFreezeStage('active'), FREEZE_PULSE_MS)
-
-        // Commit the lock immediately — the table must be blocked from second 0.
-        // On a failure the sequence is dropped and the table is left as it was.
         void (async () => {
             try {
-                const res = await fetch('/api/landwars/freeze-bid', {
+                const res = await fetch('/api/landwars/ability-interactions', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ auctionId, durationS: FREEZE_FRUIT_DURATION_S }),
+                    body: JSON.stringify({ auctionId, action: 'cast', effectType: 'freeze' }),
                 })
                 const data = await res.json()
                 if (!res.ok) {
-                    setFreezeStage('idle')
-                    setFreezeTargets([])
-                    dispatch(showToast({ type: 'error', message: data.error || 'Could not freeze the table.' }))
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Freeze.' }))
                 }
             } catch {
-                setFreezeStage('idle')
-                setFreezeTargets([])
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [freezeStage, stealStage, swapStage, restoreStage, negateStage, divideTarget, multiplyTarget, myFreeze.frozen, myUserId, bids, auctionId, dispatch])
+    }, [freezeStage, stealStage, swapStage, restoreStage, negateStage, divideTarget, multiplyTarget, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
 
     // FREEZE FRAME 3: measure the radial wave once the pulse stage opens. The
     // origin is the activator's own card (where the fruit sits) and the reach
@@ -1370,6 +1305,227 @@ const LeaderboardPage = () => {
             if (armed === 'freeze') handleFreezeSelf()
         })()
     }, [loading, auctionId, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf, handleFreezeSelf])
+
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  INTERACTION SYSTEM — feed, react target, impact bursts, and respond.
+    //  ─────────────────────────────────────────────────────────────────────────
+
+    // The one pending interaction currently targeting ME → opens the React
+    // picker and pre-fetches our Shield/Mirror cooldowns.
+    const reactableTarget = useMemo(
+        () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.is_targeting_me) ?? null,
+        [interactionFeed]
+    )
+    useEffect(() => {
+        setReactTarget(reactableTarget)
+        if (!reactableTarget) return
+        void (async () => {
+            try {
+                const res = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+                const data = await res.json()
+                const c = data?.cooldowns ?? {}
+                setReactCooldowns({ shield: Number(c.shield ?? 0), mirror: Number(c.mirror ?? 0) })
+            } catch {
+                // keep the last known cooldowns
+            }
+        })()
+    }, [reactableTarget, auctionId])
+
+    // Poll the feed every ~1s. The GET already runs the server sweep first, so
+    // each response is post-resolution truth; a failed poll keeps the last feed.
+    useEffect(() => {
+        if (loading) return
+        let cancelled = false
+        let timer: ReturnType<typeof setTimeout>
+        const check = async () => {
+            try {
+                const res = await fetch(`/api/landwars/ability-interactions?auctionId=${encodeURIComponent(auctionId)}`)
+                const data = await res.json()
+                if (cancelled || !res.ok) return
+                setFeedOffsetMs(feedClockOffsetMs(data) ?? 0)
+                setInteractionFeed(data)
+            } catch {
+                // keep last known feed
+            }
+            timer = setTimeout(check, FEED_POLL_MS)
+        }
+        void check()
+        return () => { cancelled = true; clearTimeout(timer) }
+    }, [auctionId, loading])
+
+    // All SQL timestamps live in server time; this is "now-ish" in that clock.
+    const serverNowMs = Date.now() + feedOffsetMs
+
+    const pendingInteractions = useMemo(
+        () => (interactionFeed?.interactions ?? []).filter(i => i.state === 'pending'),
+        [interactionFeed]
+    )
+    const myPending = useMemo(
+        () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.actor_is_me) ?? null,
+        [interactionFeed]
+    )
+    const myPendingSeconds = myPending ? windowRemainingSeconds(myPending, serverNowMs) : 0
+
+    // IMPACT BURSTS — replay the visual on top of the server-applied numbers.
+    // Nothing here is authoritative; each only fires while its outcome is fresh
+    // (< 4s old) so a tab that opens later never replays an ancient effect.
+    const burstDivide = useCallback((it: AbilityInteraction) => {
+        const o = it.outcome
+        if (!o || o.status !== 'applied' || !o.target_user_id) {
+            if (o?.status === 'blocked') dispatch(showToast({ type: 'error', message: 'Your Divide was blocked — the #1 player held up a Shield.' }))
+            else if (o?.status === 'reflected') {
+                const loss = Number(o.previous_bid ?? 0) - Number(o.bid_after ?? 0)
+                const myId = myUserIdRef.current
+                if (myId && loss > 0) fireDelta(myId, loss)
+                dispatch(showToast({ type: 'error', message: 'The #1 player reflected your Divide — you are the one divided.' }))
+            }
+            return
+        }
+        setDivideTarget(o.target_user_id)
+        setDivideStage('explode')
+        const t1 = setTimeout(() => setDivideStage('settle'), 1000)
+        divideTimeoutsRef.current.push(t1)
+        const t2 = setTimeout(() => { setDivideStage('idle'); setDivideTarget(null) }, 1400)
+        divideTimeoutsRef.current.push(t2)
+        const loss = Number(o.previous_bid ?? 0) - Number(o.bid_after ?? 0)
+        if (loss > 0) fireDelta(o.target_user_id, loss)
+    }, [dispatch, fireDelta])
+
+    const burstSwap = useCallback((it: AbilityInteraction) => {
+        const o = it.outcome
+        if (!o || o.status !== 'applied' || !o.leader_id) {
+            if (o?.status === 'blocked') dispatch(showToast({ type: 'error', message: 'Your Swap was blocked — the leader held up a Shield.' }))
+            else if (o?.status === 'reflected') dispatch(showToast({ type: 'error', message: 'The leader reflected your Swap — no position changed.' }))
+            return
+        }
+        const rankOf = (m: Record<string, number>) => {
+            const sorted = Object.entries(m).sort((a, b) => Number(b[1]) - Number(a[1]))
+            const r: Record<string, number> = {}
+            sorted.forEach(([id], i) => { r[id] = i + 1 })
+            return r
+        }
+        const before: Record<string, number> = {}
+        const after: Record<string, number> = {}
+        if (myUserId) { before[myUserId] = Number(o.actor_previous ?? 0); after[myUserId] = Number(o.actor_new ?? 0) }
+        before[o.leader_id] = Number(o.leader_previous ?? 0)
+        after[o.leader_id] = Number(o.leader_new ?? 0)
+        const rb = rankOf(before)
+        const ra = rankOf(after)
+        setSwapDeltas(myUserId
+            ? {
+                [myUserId]: (rb[myUserId] ?? 0) - (ra[myUserId] ?? 0),
+                [o.leader_id]: (rb[o.leader_id] ?? 0) - (ra[o.leader_id] ?? 0),
+            }
+            : {})
+        setSwapTargetId(o.leader_id)
+        setSwapStage('explode')
+        const t1 = setTimeout(() => setSwapStage('settle'), SWAP_BURST_MS)
+        swapTimeoutsRef.current.push(t1)
+        const t2 = setTimeout(() => { setSwapStage('idle'); setSwapTargetId(null); setSwapDeltas({}) }, SWAP_BURST_MS + 1200)
+        swapTimeoutsRef.current.push(t2)
+    }, [myUserId, dispatch])
+
+    const startStealDrain = useCallback((it: AbilityInteraction) => {
+        const eligible = (it.outcome?.eligible ?? []).map(String)
+        if (eligible.length === 0) {
+            dispatch(showToast({ type: 'error', message: 'Your Steal was fully blocked — nobody was reachable.' }))
+            return
+        }
+        const basis = new Map<string, number>()
+        bids.forEach(b => { if (eligible.includes(String(b.userId))) basis.set(String(b.userId), Number(b.bidAmount)) })
+        stealBasisRef.current = basis
+        stealSnapshotRef.current = bids
+        stealInteractionIdRef.current = it.id
+        setStealTargets(eligible)
+        setStealLossByPlayer({})
+        setStealGain(0)
+        setStealSeconds(STEAL_FRUIT_DURATION_S)
+        setStealStage('active')
+    }, [bids, dispatch])
+
+    const startFreezeImpact = useCallback((it: AbilityInteraction) => {
+        const frozen = (it.outcome?.frozen ?? []).map(String)
+        if (frozen.length === 0) {
+            dispatch(showToast({ type: 'error', message: 'Your Freeze was blocked — every target countered it.' }))
+            return
+        }
+        setFreezeTargets(frozen)
+        setFreezeSeconds(FREEZE_FRUIT_DURATION_S)
+        setFreezeStage('pulse')
+        const t = setTimeout(() => setFreezeStage('active'), FREEZE_PULSE_MS)
+        freezeTimeoutsRef.current.push(t)
+    }, [dispatch])
+
+    // RESOLUTION EFFECT — watch for pending → resolved transitions; fire the
+    // matching impact burst + toasts exactly once per interaction id. The reach
+    // of `FRONT` also fires the drain spectators the moment they come in range.
+    useEffect(() => {
+        if (!interactionFeed || !myUserId) return
+        const seen = seenInteractionsRef.current
+        for (const it of interactionFeed.interactions) {
+            const prev = seen.get(it.id)
+            if (prev !== 'resolved' && it.state === 'resolved') {
+                const resolvedMs = Date.parse(it.resolved_at ?? '')
+                const fresh = Number.isFinite(resolvedMs) && serverNowMs - resolvedMs < 4000
+                if (fresh) {
+                    if (it.actor_is_me) {
+                        if (it.effect_type === 'divide') burstDivide(it)
+                        else if (it.effect_type === 'swap') burstSwap(it)
+                        else if (it.effect_type === 'thief') startStealDrain(it)
+                        else if (it.effect_type === 'freeze') startFreezeImpact(it)
+                    } else if (it.is_targeting_me) {
+                        if (iBlockedMe(it, myUserId)) {
+                            dispatch(showToast({ type: 'success', message: `🛡 You shielded the ${effectShortLabel(it.effect_type)} — your bid is safe.` }))
+                        } else if (iReflectedMe(it, myUserId)) {
+                            dispatch(showToast({ type: 'success', message: `↩️ You mirrored the ${effectShortLabel(it.effect_type)} — thrown straight back.` }))
+                        } else if (iWasAffected(it, myUserId)) {
+                            if (it.effect_type === 'freeze') {
+                                setMyFreeze({ frozen: true, remaining: FREEZE_FRUIT_DURATION_S })
+                                dispatch(showToast({ type: 'error', message: '❄️ The Freeze Fruit hit you — you are frozen.' }))
+                            } else {
+                                dispatch(showToast({ type: 'error', message: `The ${effectShortLabel(it.effect_type)} hit you.` }))
+                            }
+                        }
+                    }
+                }
+            }
+            seen.set(it.id, it.state)
+        }
+    }, [interactionFeed, myUserId, serverNowMs, burstDivide, burstSwap, startStealDrain, startFreezeImpact, dispatch])
+
+    // RESPOND — the defender casts Shield (blocks) or Mirror (reflects) on the
+    // interaction currently targeting them.
+    const handleRespond = useCallback((interactionId: number, fruitId: 'shield' | 'mirror') => {
+        if (responding) return
+        setResponding(true)
+        void (async () => {
+            try {
+                const res = await fetch('/api/landwars/ability-interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auctionId, action: 'respond', interactionId, fruitId }),
+                })
+                const data = await res.json()
+                if (!res.ok) {
+                    dispatch(showToast({ type: 'error', message: data.error || 'Could not use that defense.' }))
+                    return
+                }
+                recordFruitUse(auctionId, fruitId)
+                dispatch(showToast({
+                    type: 'success',
+                    message: fruitId === 'shield'
+                        ? '🛡 Shield up — the effect will bounce off you.'
+                        : '↩️ Mirror up — the effect will be thrown straight back.',
+                }))
+                // Closing is left to the feed: the next poll sees blocked_by /
+                // reflected_by updated and is_targeting_me flips to false.
+            } catch {
+                dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
+            } finally {
+                setResponding(false)
+            }
+        })()
+    }, [auctionId, dispatch, responding])
 
     //  ControlsModal save handler
     const handleControlsSave = useCallback((mode: typeof bidMode) => {
@@ -1717,6 +1873,24 @@ const LeaderboardPage = () => {
                 the table, ending on the "Restoring your resources..." spinner. */}
             <RestoreStatusPill stage={restoreStage} />
 
+            {/*  INTERACTION FRAME 1-2 — the manifest pill under the
+                table while OUR interactive fruit is in its reaction window. */}
+            <AnimatePresence>
+                {myPending && myPendingSeconds > 0 && (
+                    <motion.div
+                        className="pointer-events-none flex justify-center"
+                        initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        transition={{ duration: 0.3 }}
+                    >
+                        <div className="mt-4 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg bg-gray-900">
+                            {effectLabel(myPending.effect_type)} in flight · {myPendingSeconds}s reaction window
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/*  RESTORE FRAME 5 — the summary of exactly what
                 came back. Closed by Continue, never on a timer. */}
             <RestoreSummaryModal
@@ -1796,6 +1970,22 @@ const LeaderboardPage = () => {
                     />
                 </div>
             )}
+
+            {/*  INTERACTION SYSTEM — the manifest flights (z-60), the
+                spidey-sense telegraph rings (z-55) and the defender's React
+                picker. The two overlays are pointer-events-none; only the
+                picker modal accepts taps. */}
+            <AbilityManifestOverlay interactions={pendingInteractions} serverNowMs={Date.now() + feedOffsetMs} />
+            <TargetTelegraphOverlay interactions={pendingInteractions} serverNowMs={Date.now() + feedOffsetMs} myUserId={myUserId} />
+            <ReactFruitPicker
+                interaction={reactTarget && reactTarget.state === 'pending' ? reactTarget : null}
+                serverNowMs={Date.now() + feedOffsetMs}
+                responding={responding}
+                myUserId={myUserId}
+                cooldowns={reactCooldowns}
+                onRespond={handleRespond}
+                onDismiss={() => setReactTarget(null)}
+            />
         </PageLayout>
     );
 }

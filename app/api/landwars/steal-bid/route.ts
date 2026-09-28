@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// Ability Fruit: STEAL BIDDING CURRENCY — commit the pooled steal.
-// The UI runs the 60s countdown + drains 1,000 BC/sec, then reconciles with
-// this endpoint once the timer hits zero. The RPC derives everyone to drain
-// itself; it never reads a target list from the request, so it cannot be
-// aimed at anyone.
+// Ability Fruit: STEAL BIDDING CURRENCY — commit the POOLED steal of an
+// interaction-system steal. Casting the fruit parks a 'thief' interaction;
+// the server sweep resolves it after the 5s reaction window and the attacker
+// then runs the (30s) drain spectacle and collects with this endpoint, which
+// drains ONLY the interaction's eligible list and debits the full share of
+// each mirrored defender from the caster instead.
 export async function POST(request: NextRequest) {
     try {
-        let body: { auctionId?: unknown; perSecond?: unknown; seconds?: unknown }
+        let body: { auctionId?: unknown; interactionId?: unknown; perSecond?: unknown; seconds?: unknown }
         try {
             body = await request.json()
         } catch {
@@ -16,11 +17,15 @@ export async function POST(request: NextRequest) {
         }
 
         const auctionId = String(body?.auctionId ?? '').trim()
+        const interactionId = Number(body?.interactionId)
         const perSecond = Number(body?.perSecond ?? 1000)
-        const seconds = Number(body?.seconds ?? 60)
+        const seconds = Number(body?.seconds ?? 30)
 
         if (!auctionId) {
             return NextResponse.json({ error: 'auctionId is required.' }, { status: 400 })
+        }
+        if (!Number.isInteger(interactionId) || interactionId <= 0) {
+            return NextResponse.json({ error: 'interactionId is required.' }, { status: 400 })
         }
         if (!Number.isFinite(perSecond) || perSecond <= 0) {
             return NextResponse.json({ error: 'perSecond must be a positive number.' }, { status: 400 })
@@ -49,6 +54,7 @@ export async function POST(request: NextRequest) {
 
         const { data, error } = await supabase.rpc('steal_bids', {
             p_auction_id: auctionId,
+            p_interaction_id: interactionId,
             p_per_second: perSecond,
             p_seconds: seconds,
         })
