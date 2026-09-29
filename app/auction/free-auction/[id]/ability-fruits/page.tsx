@@ -37,6 +37,9 @@ const AbilityFruitsPage = () => {
     const [cooldowns, setCooldowns] = useState<Record<string, number>>({})
     // Set when Activate is tapped on a fruit that is still cooling down.
     const [cooldownNotice, setCooldownNotice] = useState<AbilityFruit | null>(null)
+    // Set when Activate is tapped on the Shield/Mirror defense fruits: they are
+    // played against an incoming effect on the table, not armed.
+    const [defenseNotice, setDefenseNotice] = useState<AbilityFruit | null>(null)
 
     //  The Copy Fruit flow. Activate on the Copy Fruit opens this
     // picker inline (it does NOT navigate to the table — there is no target).
@@ -123,6 +126,13 @@ const AbilityFruitsPage = () => {
             } catch {
                 // network hiccup — fall through and let the table decide
             }
+        }
+        // SHIELD / MIRROR are DEFENSE fruits — there is nothing to arm. They
+        // are played the moment a rival's fruit is inbound: the table shows a
+        // "React!" window with a Shield · Block / Mirror · Reflect choice.
+        if (fruit.id === 'shield' || fruit.id === 'mirror') {
+            setDefenseNotice(fruit)
+            return
         }
         // COPY FRUIT flow: no target to pick on the table — the picker modal
         // opens here instead. Stays on this page; nothing is consumed until a
@@ -252,6 +262,21 @@ const AbilityFruitsPage = () => {
                             before you can use it again.
                         </p>
                         <Button text="Got it" classname="w-full py-3.5" onClick={() => setCooldownNotice(null)} />
+                    </div>
+                )}
+            </Modal>
+
+            <Modal isActive={!!defenseNotice} setIsActive={() => setDefenseNotice(null)}>
+                {defenseNotice && (
+                    <div className="flex flex-col items-center text-center">
+                        <AbilityFruitOrb fruit={defenseNotice} size={96} glow className="mb-5" />
+                        <h2 className="mb-2 text-xl font-bold text-gray-900">{defenseNotice.name}</h2>
+                        <p className="mb-8 text-sm text-slate-500">
+                            This is a defense fruit — there is nothing to arm. The moment a rival's Divide, Swap, Steal
+                            or Freeze is inbound, the table shows a react window. Hold up the Shield to block your share,
+                            or the Mirror to throw the fruit straight back at its caster.
+                        </p>
+                        <Button text="Got it" classname="w-full py-3.5" onClick={() => setDefenseNotice(null)} />
                     </div>
                 )}
             </Modal>

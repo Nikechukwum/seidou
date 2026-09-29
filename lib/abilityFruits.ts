@@ -96,12 +96,12 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     {
         id: 'shield',
         name: 'Shield Shield Fruit',
-        tagline: 'Creates a protective shield that blocks enemy attacks and theft.',
+        tagline: 'Blocks the next fruit aimed at you during its reaction window.',
         description:
-            'Wraps your position in a barrier for a short time. While the shield holds, abilities aimed at you — multiplies, freezes, thefts — bounce off and leave your bid untouched.',
+            'You do not throw the Shield — you HOLD it. The moment an ability fruit targets you (Divide, Swap, Steal, Freeze), a reaction window opens for 5 seconds and this is your moment: play the Shield and the effect bounces off you, leaving your bid untouched. It blocks your share only — everyone else still eats the effect. The Shield is consumed and needs its cooldown before it can save you again.',
         image: '/ability-fruits/shield.png',
         accent: { base: '#2563eb', spark: '#fcd34d', deep: '#1e3a8a' },
-        available: false,
+        available: true,
     },
     {
         id: 'freeze',
@@ -165,7 +165,7 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         name: 'Steal Bidding Currency',
         tagline: 'Drains 1,000 BC per second from every other player on the table.',
         description:
-            "Steals 1,000 bidding currency per second from EVERY other player on the table — no aiming needed. The fruit locks on automatically and runs a 60-second countdown, then slams all the stolen BC straight onto your bid. Players whose balance runs out mid-countdown stop being drained, and anyone left at zero keeps no take.",
+            "Steals 1,000 bidding currency per second from EVERY other player on the table — no aiming needed. The fruit locks on automatically and runs a 30-second countdown, then slams all the stolen BC straight onto your bid. Players whose balance runs out mid-countdown stop being drained, and anyone left at zero keeps no take.",
         // ARTWORK (design, Negate walkthrough): "the picture we are using for
         // the steal fruit is the negate fruit — you can just swap them." Done:
         // the red swirl orb that used to sit here belongs to NEGATE and now
@@ -178,12 +178,12 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
     {
         id: 'mirror',
         name: 'Mirror Mirror Fruit',
-        tagline: 'Reflects the next ability used on you back at its caster.',
+        tagline: 'Reflects the next fruit aimed at you back at its caster, at full strength.',
         description:
-            'Holds a reflective surface over your position. The next fruit aimed at you is sent straight back to the player who threw it, at full strength.',
+            'Like the Shield, the Mirror is a defensive fruit you hold rather than throw. When an ability fruit targets you and its reaction window opens, play the Mirror: the effect is thrown straight back at the player who cast it, at full strength — your bid is untouched, and the caster eats their own fruit. Mirroring a Divide divides the caster, a Steal costs the caster the drained share, and a Freeze freezes the caster instead.',
         image: '/ability-fruits/freeze.png',
         accent: { base: '#14b8a6', spark: '#fde68a', deep: '#115e59' },
-        available: false,
+        available: true,
     },
     {
         id: 'time',
@@ -293,12 +293,18 @@ export const DIVIDE_FACTOR = divideFactorForLevel(CURRENT_FRUIT_LEVEL)
 // ----------------------------------------------------------------------------
 // STEAL (BIDDING CURRENCY) SETTINGS
 // ----------------------------------------------------------------------------
-// While the fruit's 60-second countdown runs, EVERY other player on the table
-// is drained STEAL_PER_SECOND per second. STEAL_FRUIT_AMOUNT is the most any
-// single player can lose (the full 60 seconds). Players whose balance runs out
-// before the timer hits zero stop being drained and lose their red border.
+// While the fruit's countdown runs, EVERY other player on the table who
+// survived the reaction window (see the interaction system) is drained
+// STEAL_PER_SECOND per second. STEAL_FRUIT_AMOUNT is the most any single
+// player can lose (the full duration). Players whose balance runs out before
+// the timer hits zero stop being drained and lose their red border.
+//
+// The CEO's spec dropped the original 60s drain to 30s. The 5s reaction
+// window the interaction system adds is separate and comes BEFORE this drain,
+// so an unchallenged steal resolves at ~5s and spends the following 30s
+// visibly draining before pooling.
 export const STEAL_PER_SECOND = 1_000
-export const STEAL_FRUIT_DURATION_S = 60
+export const STEAL_FRUIT_DURATION_S = 30
 export const STEAL_FRUIT_AMOUNT = STEAL_FRUIT_DURATION_S * STEAL_PER_SECOND
 
 
