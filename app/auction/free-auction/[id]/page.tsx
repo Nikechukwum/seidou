@@ -220,6 +220,10 @@ const LeaderboardPage = () => {
     // activator's card (the origin) and the distance to the furthest corner of
     // the table (the reach) and hands both to <FreezePulseOverlay />.
     const [freezePulse, setFreezePulse] = useState<{ origin: { x: number; y: number }; reach: number } | null>(null)
+    // Whose card the freeze wave starts from — the CASTER's on the target's
+    // client (the fruit travels toward you), the activator's own on theirs.
+    // The pulse effect reads this once when the pulse stage opens.
+    const freezePulseOriginRef = useRef<string | null>(null)
     const freezeTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
     const freezeCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
     // Am I (on THIS client) frozen by someone else's Freeze Fruit right now?
@@ -1212,8 +1216,9 @@ const LeaderboardPage = () => {
             setFreezePulse(null)
             return
         }
-        const card = myUserId
-            ? document.querySelector<HTMLElement>(`[data-freeze-card="${myUserId}"]`)
+        const originId = freezePulseOriginRef.current ?? myUserId
+        const card = originId
+            ? document.querySelector<HTMLElement>(`[data-freeze-card="${originId}"]`)
             : null
         const rect = card?.getBoundingClientRect()
         const origin = rect
@@ -1360,6 +1365,13 @@ const LeaderboardPage = () => {
         () => (interactionFeed?.interactions ?? []).filter(i => i.state === 'pending'),
         [interactionFeed]
     )
+    // CEO broadcast rule: the in-flight animation (manifest flights + telegraph
+    // rings) is visible ONLY to the activator and the target(s) — spectators
+    // watch the plain table until the result lands and the bids change.
+    const viewablePending = useMemo(
+        () => pendingInteractions.filter(i => i.actor_is_me || i.is_targeting_me),
+        [pendingInteractions]
+    )
     const myPending = useMemo(
         () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.actor_is_me) ?? null,
         [interactionFeed]
@@ -1443,7 +1455,7 @@ const LeaderboardPage = () => {
         setStealStage('active')
     }, [bids, dispatch])
 
-    const startFreezeImpact = useCallback((it: AbilityInteraction) => {
+    const startFreezeImpact = useCallback((it: AbilityInteraction, pulseOriginUserId?: string) => {
         const frozen = (it.outcome?.frozen ?? []).map(String)
         if (frozen.length === 0) {
             dispatch(showToast({ type: 'error', message: 'Your Freeze was blocked — every target countered it.' }))
@@ -1451,10 +1463,11 @@ const LeaderboardPage = () => {
         }
         setFreezeTargets(frozen)
         setFreezeSeconds(FREEZE_FRUIT_DURATION_S)
+        freezePulseOriginRef.current = pulseOriginUserId ?? myUserId
         setFreezeStage('pulse')
         const t = setTimeout(() => setFreezeStage('active'), FREEZE_PULSE_MS)
         freezeTimeoutsRef.current.push(t)
-    }, [dispatch])
+    }, [dispatch, myUserId])
 
     // RESOLUTION EFFECT — watch for pending → resolved transitions; fire the
     // matching impact burst + toasts exactly once per interaction id. The reach
@@ -1482,8 +1495,16 @@ const LeaderboardPage = () => {
                             if (it.effect_type === 'freeze') {
                                 setMyFreeze({ frozen: true, remaining: FREEZE_FRUIT_DURATION_S })
                                 dispatch(showToast({ type: 'error', message: '❄️ The Freeze Fruit hit you — you are frozen.' }))
-                            } else {
+                                startFreezeImpact(it, it.actor_user_id)
+                            } else if (it.effect_type === 'divide') {
                                 dispatch(showToast({ type: 'error', message: `The ${effectShortLabel(it.effect_type)} hit you.` }))
+                                burstDivide(it)
+                            } else if (it.effect_type === 'swap') {
+                                dispatch(showToast({ type: 'error', message: `The ${effectShortLabel(it.effect_type)} hit you.` }))
+                                burstSwap(it)
+                            } else if (it.effect_type === 'thief') {
+                                dispatch(showToast({ type: 'error', message: `The ${effectShortLabel(it.effect_type)} hit you.` }))
+                                startStealDrain(it)
                             }
                         }
                     }
@@ -1975,8 +1996,8 @@ const LeaderboardPage = () => {
                 spidey-sense telegraph rings (z-55) and the defender's React
                 picker. The two overlays are pointer-events-none; only the
                 picker modal accepts taps. */}
-            <AbilityManifestOverlay interactions={pendingInteractions} serverNowMs={Date.now() + feedOffsetMs} />
-            <TargetTelegraphOverlay interactions={pendingInteractions} serverNowMs={Date.now() + feedOffsetMs} myUserId={myUserId} />
+            <AbilityManifestOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} />
+            <TargetTelegraphOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} myUserId={myUserId} />
             <ReactFruitPicker
                 interaction={reactTarget && reactTarget.state === 'pending' ? reactTarget : null}
                 serverNowMs={Date.now() + feedOffsetMs}
