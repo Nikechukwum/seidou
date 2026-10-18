@@ -2,7 +2,7 @@
 -- Seidou Social — imported YouTube videos
 -- ============================================================================
 --
--- One table behind the import page (/studio/import) and the youtubeVideos
+-- One table behind the import page (/import) and the youtubeVideos
 -- procedures. Separate from "videos" on purpose: those are Mux uploads owned
 -- by a user, these are references to videos hosted on YouTube.
 --

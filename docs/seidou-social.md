@@ -77,7 +77,8 @@ under `npm run dev`; a production build ignores them.
 
 ## YouTube import
 
-`/studio/import` is an admin-only page that loads videos hosted on YouTube
+`/import` (top level, not under `/app-center/apps/seidou-social`) is an
+admin-only page that loads videos hosted on YouTube
 into `youtube_videos`, a table of its own — these are not Mux uploads and do
 not appear in the feeds yet.
 
@@ -122,7 +123,6 @@ not appear in the feeds yet.
   /playlists/history         watch history                 (auth)
   /studio                    your videos                   (auth)
   /studio/videos/[videoId]   edit a video                  (auth)
-  /studio/import             import YouTube videos         (admin)
 
 /api/social/trpc/[trpc]      the API
 /api/social/videos/webhook   Mux processing callbacks
