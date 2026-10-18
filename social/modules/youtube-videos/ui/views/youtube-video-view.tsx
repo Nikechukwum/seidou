@@ -2,14 +2,12 @@
 
 import { Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
-import { ExternalLink } from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { Skeleton } from "@/social/components/ui/skeleton";
 import { UserAvatar } from "@/social/components/user-avatar";
 import { VideoBackBar } from "@/social/modules/videos/ui/components/video-back-bar";
 
-import { youtubeWatchUrl } from "../../lib/parse";
 import { YouTubeGridCard } from "../components/youtube-grid-card";
 
 /**
@@ -71,15 +69,6 @@ const YouTubeVideoSuspense = ({ youtubeId }: { youtubeId: string }) => {
               <p className="truncate text-xs text-muted-foreground">{video.channel.subscribersText}</p>
             )}
           </div>
-          <a
-            href={youtubeWatchUrl(video.youtubeId)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex shrink-0 items-center gap-1 rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold active:bg-gray-100"
-          >
-            YouTube
-            <ExternalLink className="size-3.5" />
-          </a>
         </div>
 
         {video.category && (
