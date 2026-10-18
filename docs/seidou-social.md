@@ -40,6 +40,7 @@ declared-vs-actual and can propose dropping commerce columns from
 | `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ✅ |
 | `0002_storage.sql` | `social` storage bucket + policies | ✅ |
 | `0003_watch_rewards.sql` | `watch_reward_progress`, `watch_reward_grants`, RLS | ✅ |
+| `0004_youtube_videos.sql` | `youtube_videos`, RLS | ⬜ |
 
 Also run `supabase/loyalty_rewards_claim.sql` (the `claim_loyalty_reward`
 RPC) — it lives with the commerce SQL because the claim pages use it. ✅
@@ -74,6 +75,35 @@ under `npm run dev`; a production build ignores them.
 
 ---
 
+## YouTube import
+
+`/studio/import` is an admin-only page that loads videos hosted on YouTube
+into `youtube_videos`, a table of its own — these are not Mux uploads and do
+not appear in the feeds yet.
+
+- **Input.** Paste the JSON export from the video-library tool, or choose the
+  file. "Preview" shows what would be written; nothing is sent until "Import".
+- **Identity.** The 11-character video id, read from whatever URL shape the
+  export has. It is unique in the table, and the insert is
+  `ON CONFLICT DO NOTHING`, so a video already present is skipped and left
+  untouched. Importing overlapping exports is safe.
+- **Cleaning.** "Uncategorized" and "Unknown Channel" are stored as null.
+  Rows flagged `isUnrelatedChannel` are left out unless the box is ticked.
+  Rows with no usable id or a missing field are listed and not sent.
+- **Writes.** Batches of 200 through `youtubeVideos.importBatch`, each one a
+  single atomic insert. A failed batch is reported and can be retried; the
+  others carry on.
+- **Playback.** `YouTubeThumbnailItem` takes a `videoUrl` and a title, and
+  opens `YouTubePlayerOverlay`, which mounts the embed iframe only while open.
+  The page lists the last 10 imported videos with it.
+- **Access.** `adminProcedure` in `social/trpc/init.ts`: the signed-in user's
+  id must be in `SOCIAL_ADMIN_USER_IDS`. Unset means nobody. Everyone else
+  gets a 404.
+
+`npm run social:test-import` checks the parsing rules — no database needed.
+
+---
+
 ## Routes
 
 ```
@@ -92,6 +122,7 @@ under `npm run dev`; a production build ignores them.
   /playlists/history         watch history                 (auth)
   /studio                    your videos                   (auth)
   /studio/videos/[videoId]   edit a video                  (auth)
+  /studio/import             import YouTube videos         (admin)
 
 /api/social/trpc/[trpc]      the API
 /api/social/videos/webhook   Mux processing callbacks
@@ -268,6 +299,7 @@ app/api/social/                      tRPC handler + Mux webhook
 | `DATABASE_URL` | Everything | Supabase → Connect → Transaction pooler |
 | `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Upload + playback | Mux → Access Tokens |
 | `MUX_WEBHOOK_SECRET` | Instant processing updates | Mux → Webhooks (optional, see below) |
+| `SOCIAL_ADMIN_USER_IDS` | The YouTube import page. Comma-separated user ids | Supabase → Authentication → Users |
 | `NEXT_PUBLIC_APP_URL` | Optional. Pins the site address used when the server has no page to read it from | Your origin |
 
 Share links and upload CORS use the address the page was actually opened on,

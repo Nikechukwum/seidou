@@ -34,6 +34,14 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Seidou Social: thumbnails of imported YouTube videos, referenced by
+      // video id rather than copied into our own storage.
+      {
+        protocol: 'https',
+        hostname: 'i.ytimg.com',
+        port: '',
+        pathname: '/vi/**',
+      },
       // Seidou Social: custom thumbnails and channel banners in Supabase
       // Storage. Rendered with unoptimized, but listed so any future
       // optimized usage does not fail.

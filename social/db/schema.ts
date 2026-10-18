@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   date,
   doublePrecision,
@@ -421,3 +422,34 @@ export const watchRewardGrantRelations = relations(watchRewardGrants, ({ one }) 
     references: [users.id],
   }),
 }));
+
+/**
+ * YouTube videos brought in by the import page — see
+ * social/modules/youtube-videos and migrations/0004_youtube_videos.sql.
+ *
+ * Deliberately separate from `videos`: those are Mux uploads owned by a user,
+ * these are references to videos hosted on YouTube and played in an iframe.
+ * `youtube_id` is the identity, and its unique constraint is what makes
+ * re-importing an overlapping export safe. The watch URL, embed URL and
+ * thumbnail are all derived from it, so none of them is stored.
+ *
+ * `category` and `channel_name` are plain text, not lookups: they come from
+ * the search the video was found by. Null means the export had no real value.
+ */
+export const youtubeVideos = pgTable("youtube_videos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  youtubeId: text("youtube_id").notNull().unique(),
+  title: text("title").notNull(),
+  category: text("category"),
+  // The channel that was searched for.
+  channelName: text("channel_name"),
+  // The channel YouTube reports for the video.
+  actualChannelName: text("actual_channel_name"),
+  isUnrelatedChannel: boolean("is_unrelated_channel").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("youtube_videos_category_idx").on(t.category),
+  index("youtube_videos_created_at_idx").on(t.createdAt),
+  check("youtube_videos_youtube_id_format", sql`${t.youtubeId} ~ '^[A-Za-z0-9_-]{11}$'`),
+]);
