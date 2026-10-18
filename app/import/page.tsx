@@ -1,8 +1,10 @@
 import { TRPCError } from "@trpc/server";
-import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
 
 import { HydrateClient, trpc } from "@/social/trpc/server";
 import { ImportView } from "@/social/modules/youtube-videos/ui/views/import-view";
+import { ImportSignedOut } from "@/social/modules/youtube-videos/ui/views/import-signed-out";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,18 @@ const ImportPage = async () => {
     }
   }
 
-  if (access === "signed-out") redirect("/signin");
+  // Signed out: offer a sign-in that comes back here, instead of redirecting
+  // straight to /signin — an automatic redirect is what produced the
+  // sign-in -> /import -> sign-in loop when the session did not reach the
+  // server. Log which case it is so the next one is quick to triage.
+  if (access === "signed-out") {
+    const supabaseCookies = (await cookies()).getAll().filter((c) => c.name.startsWith("sb-"));
+    console.warn("[import] no signed-in session on the server:",
+      supabaseCookies.length
+        ? "a Supabase session cookie was sent but is invalid or expired"
+        : "the browser sent no Supabase session cookie");
+    return <ImportSignedOut />;
+  }
   // A 404 rather than a "forbidden" page: non-admins are not told it exists.
   if (access === "not-admin") notFound();
 
