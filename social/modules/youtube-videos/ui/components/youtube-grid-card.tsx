@@ -20,8 +20,7 @@ export const youtubeWatchPath = (youtubeId: string) => socialPath(`/youtube/${yo
 /**
  * An imported YouTube video in the feed. Laid out like VideoGridCard — full
  * width thumbnail, then avatar + title + channel — so the two read as one
- * feed. It has no duration or view count (YouTube's are not imported), and a
- * small badge marks it as YouTube.
+ * feed. It has no duration or view count (YouTube's are not imported).
  */
 export const YouTubeGridCard = ({ data }: { data: YouTubeGridCardData }) => {
   const href = youtubeWatchPath(data.youtubeId);
@@ -39,9 +38,6 @@ export const YouTubeGridCard = ({ data }: { data: YouTubeGridCardData }) => {
             quality={65}
             className="h-full w-full object-cover"
           />
-          <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-xs font-medium text-white">
-            YouTube
-          </span>
         </div>
       </Link>
       <div className="flex gap-3">
