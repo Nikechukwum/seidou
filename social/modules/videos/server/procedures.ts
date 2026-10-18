@@ -9,14 +9,18 @@ import {
   isNotNull,
   lt,
   or,
+  sql,
 } from "drizzle-orm";
 
 import { db } from "@/social/db";
 import { getMux } from "@/social/lib/mux";
 import {
+  categories,
   socialUserColumns,
   subscriptions,
   users,
+  youtubeChannels,
+  youtubeVideos,
   videoReactions,
   videos,
   videoUpdateSchema,
@@ -477,6 +481,128 @@ export const videosRouter = createTRPCRouter({
         : null;
 
       return { items, nextCursor };
+    }),
+
+  /**
+   * The home feed: user uploads AND imported YouTube videos in one timeline,
+   * newest first (uploads by updatedAt like getMany, YouTube videos by when
+   * they were imported).
+   *
+   * Two sources, one cursor: each is read up to limit + 1 rows past the
+   * cursor, the two are merged by (date, id) and the first `limit` kept. Any
+   * row beyond what was read from one source is older than everything read
+   * from it, so nothing is skipped or repeated across pages.
+   *
+   * A category chip filters uploads by categoryId and YouTube videos by their
+   * free-text category matching the chip's NAME, ignoring case.
+   */
+  getFeed: baseProcedure
+    .input(
+      z.object({
+        categoryId: z.string().uuid().nullish(),
+        cursor: z
+          .object({
+            at: z.date(),
+            id: z.string().uuid(),
+          })
+          .nullish(),
+        limit: z.number().min(1).max(100),
+      })
+    )
+    .query(async ({ input }) => {
+      const { cursor, limit, categoryId } = input;
+
+      let categoryName: string | null = null;
+      if (categoryId) {
+        const [category] = await db
+          .select({ name: categories.name })
+          .from(categories)
+          .where(eq(categories.id, categoryId))
+          .limit(1);
+        categoryName = category?.name ?? null;
+      }
+
+      const [uploads, imported] = await Promise.all([
+        db
+          .select({
+            ...getTableColumns(videos),
+            user: socialUserColumns,
+            viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+            likeCount: db.$count(
+              videoReactions,
+              and(eq(videoReactions.videoId, videos.id), eq(videoReactions.type, "like"))
+            ),
+            dislikeCount: db.$count(
+              videoReactions,
+              and(eq(videoReactions.videoId, videos.id), eq(videoReactions.type, "dislike"))
+            ),
+          })
+          .from(videos)
+          .innerJoin(users, eq(videos.userId, users.id))
+          .where(
+            and(
+              eq(videos.visibility, "public"),
+              categoryId ? eq(videos.categoryId, categoryId) : undefined,
+              cursor
+                ? or(
+                    lt(videos.updatedAt, cursor.at),
+                    and(eq(videos.updatedAt, cursor.at), lt(videos.id, cursor.id))
+                  )
+                : undefined
+            )
+          )
+          .orderBy(desc(videos.updatedAt), desc(videos.id))
+          .limit(limit + 1),
+
+        // A chip whose name matches no YouTube category simply finds none.
+        categoryId && !categoryName
+          ? Promise.resolve([])
+          : db
+              .select({
+                id: youtubeVideos.id,
+                youtubeId: youtubeVideos.youtubeId,
+                title: youtubeVideos.title,
+                category: youtubeVideos.category,
+                channelName: sql<string | null>`coalesce(${youtubeChannels.name}, ${youtubeVideos.actualChannelName}, ${youtubeVideos.channelName})`,
+                channelAvatarUrl: youtubeChannels.avatarUrl,
+                createdAt: youtubeVideos.createdAt,
+              })
+              .from(youtubeVideos)
+              .leftJoin(youtubeChannels, eq(youtubeVideos.channelId, youtubeChannels.id))
+              .where(
+                and(
+                  categoryName
+                    ? sql`lower(trim(${youtubeVideos.category})) = lower(trim(${categoryName}))`
+                    : undefined,
+                  cursor
+                    ? or(
+                        lt(youtubeVideos.createdAt, cursor.at),
+                        and(eq(youtubeVideos.createdAt, cursor.at), lt(youtubeVideos.id, cursor.id))
+                      )
+                    : undefined
+                )
+              )
+              .orderBy(desc(youtubeVideos.createdAt), desc(youtubeVideos.id))
+              .limit(limit + 1),
+      ]);
+
+      type FeedItem =
+        | ({ kind: "upload"; at: Date } & (typeof uploads)[number])
+        | ({ kind: "youtube"; at: Date } & (typeof imported)[number]);
+
+      const merged: FeedItem[] = [
+        ...uploads.map((v) => ({ ...v, kind: "upload" as const, at: v.updatedAt })),
+        ...imported.map((v) => ({ ...v, kind: "youtube" as const, at: v.createdAt })),
+      ].sort((a, b) => b.at.getTime() - a.at.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+
+      const hasMore = merged.length > limit;
+      const items = merged.slice(0, limit);
+      const last = items[items.length - 1];
+
+      return {
+        items,
+        nextCursor: hasMore && last ? { at: last.at, id: last.id } : null,
+      };
     }),
 
   getManyTrending: baseProcedure

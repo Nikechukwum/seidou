@@ -10,6 +10,7 @@ import {
   VideoGridCard,
   VideoGridCardSkeleton,
 } from "@/social/modules/videos/ui/components/video-grid-card";
+import { YouTubeGridCard } from "@/social/modules/youtube-videos/ui/components/youtube-grid-card";
 
 interface HomeVideosSectionProps {
   categoryId?: string;
@@ -48,7 +49,8 @@ const HomeVideosSectionSkeleton = () => {
 };
 
 const HomeVideosSectionSuspense = ({ categoryId }: HomeVideosSectionProps) => {
-  const [videos, query] = trpc.videos.getMany.useSuspenseInfiniteQuery(
+  // User uploads and imported YouTube videos, one timeline (videos.getFeed).
+  const [videos, query] = trpc.videos.getFeed.useSuspenseInfiniteQuery(
     { categoryId, limit: DEFAULT_LIMIT },
     { getNextPageParam: (lastPage) => lastPage.nextCursor }
   );
@@ -67,9 +69,13 @@ const HomeVideosSectionSuspense = ({ categoryId }: HomeVideosSectionProps) => {
     <div>
       {/* Single column: the shell is max-w-md, so a grid has nowhere to go. */}
       <div className="flex flex-col gap-6 px-4">
-        {items.map((video) => (
-          <VideoGridCard key={video.id} data={video} />
-        ))}
+        {items.map((item) =>
+          item.kind === "youtube" ? (
+            <YouTubeGridCard key={`yt-${item.id}`} data={item} />
+          ) : (
+            <VideoGridCard key={item.id} data={item} />
+          )
+        )}
       </div>
       <InfiniteScroll
         hasNextPage={query.hasNextPage}

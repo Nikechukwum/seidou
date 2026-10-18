@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { and, desc, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 import { db } from "@/social/db";
 import { youtubeChannels, youtubeVideos } from "@/social/db/schema";
-import { adminProcedure, createTRPCRouter } from "@/social/trpc/init";
+import { adminProcedure, baseProcedure, createTRPCRouter } from "@/social/trpc/init";
 
 import {
   IMPORT_BATCH_SIZE,
@@ -35,7 +35,79 @@ const RECENT_LIMIT = 10;
  * page. Admin-only for now — the import page is the only screen that reads or
  * writes them.
  */
+/** What the watch page and its "more videos" list read for a YouTube video. */
+const watchColumns = {
+  id: youtubeVideos.id,
+  youtubeId: youtubeVideos.youtubeId,
+  title: youtubeVideos.title,
+  category: youtubeVideos.category,
+  channelName: sql<string | null>`coalesce(${youtubeChannels.name}, ${youtubeVideos.actualChannelName}, ${youtubeVideos.channelName})`,
+  channelAvatarUrl: youtubeChannels.avatarUrl,
+  createdAt: youtubeVideos.createdAt,
+};
+
 export const youtubeVideosRouter = createTRPCRouter({
+  /**
+   * One imported video for its watch page, with its channel. Public, like
+   * videos.getOne — imported videos appear in the public feed.
+   */
+  getOne: baseProcedure
+    .input(z.object({ youtubeId: z.string().regex(/^[A-Za-z0-9_-]{11}$/) }))
+    .query(async ({ input }) => {
+      const [video] = await db
+        .select({
+          ...watchColumns,
+          channel: {
+            id: youtubeChannels.id,
+            handle: youtubeChannels.handle,
+            name: youtubeChannels.name,
+            subscribersText: youtubeChannels.subscribersText,
+            avatarUrl: youtubeChannels.avatarUrl,
+            bannerUrl: youtubeChannels.bannerUrl,
+          },
+        })
+        .from(youtubeVideos)
+        .leftJoin(youtubeChannels, eq(youtubeVideos.channelId, youtubeChannels.id))
+        .where(eq(youtubeVideos.youtubeId, input.youtubeId))
+        .limit(1);
+
+      if (!video) throw new TRPCError({ code: "NOT_FOUND" });
+      // leftJoin fills every channel field with null when there is no channel.
+      return { ...video, channel: video.channel?.id ? video.channel : null };
+    }),
+
+  /**
+   * "More videos" under the player: the rest of the same channel, or — for a
+   * video imported without a channel — the latest imports.
+   */
+  getMore: baseProcedure
+    .input(
+      z.object({
+        youtubeId: z.string().regex(/^[A-Za-z0-9_-]{11}$/),
+        limit: z.number().min(1).max(50).default(20),
+      })
+    )
+    .query(async ({ input }) => {
+      const [current] = await db
+        .select({ channelId: youtubeVideos.channelId })
+        .from(youtubeVideos)
+        .where(eq(youtubeVideos.youtubeId, input.youtubeId))
+        .limit(1);
+
+      return db
+        .select(watchColumns)
+        .from(youtubeVideos)
+        .leftJoin(youtubeChannels, eq(youtubeVideos.channelId, youtubeChannels.id))
+        .where(
+          and(
+            ne(youtubeVideos.youtubeId, input.youtubeId),
+            current?.channelId ? eq(youtubeVideos.channelId, current.channelId) : undefined
+          )
+        )
+        .orderBy(desc(youtubeVideos.createdAt), desc(youtubeVideos.id))
+        .limit(input.limit);
+    }),
+
   /** The most recently imported videos, newest first. */
   getRecent: adminProcedure.query(async () => {
     return db

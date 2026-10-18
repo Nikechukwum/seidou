@@ -80,8 +80,9 @@ under `npm run dev`; a production build ignores them.
 
 `/import` (top level, not under `/app-center/apps/seidou-social`) is an
 admin-only page that loads videos hosted on YouTube
-into `youtube_videos`, a table of its own — these are not Mux uploads and do
-not appear in the feeds yet.
+into `youtube_videos`, a table of its own — these are not Mux uploads. They
+appear in the home feed (`videos.getFeed`, merged with uploads by date) and
+open on their own watch page, `/youtube/[youtubeId]`.
 
 - **Input.** Paste the JSON export from the video-library tool, or choose the
   file. "Preview" shows what would be written; nothing is sent until "Import".
@@ -133,6 +134,7 @@ not appear in the feeds yet.
   /playlists/liked           liked videos                  (auth)
   /playlists/history         watch history                 (auth)
   /studio                    your videos                   (auth)
+  /youtube/[youtubeId]       watch an imported YouTube video
   /studio/videos/[videoId]   edit a video                  (auth)
 
 /api/social/trpc/[trpc]      the API
