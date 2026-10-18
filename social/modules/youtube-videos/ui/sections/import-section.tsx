@@ -4,14 +4,68 @@ import { useRef, useState } from "react";
 
 import { trpc } from "@/social/trpc/client";
 import { toast } from "@/social/lib/toast";
+import { uploadSocialImage, type UploadResult } from "@/social/lib/storage";
+import { createClient } from "@/lib/supabase/client";
 
 import {
   IMPORT_BATCH_SIZE,
   IMPORT_MAX_CHARS,
   parseExport,
+  type ChannelImage,
+  type ParsedChannel,
   type ParsedExport,
   type YoutubeImportRow,
 } from "../../lib/parse";
+
+/**
+ * Where a channel's images go in the `social` bucket. The second segment must
+ * be the uploader's own user id — that is what the bucket policies (0002)
+ * allow a signed-in user to write.
+ */
+const channelImagePath = (userId: string, handle: string, kind: "avatar" | "banner") =>
+  `youtube-channels/${userId}/${handle.slice(1).replace(/[^a-z0-9._-]/g, "-")}/${kind}`;
+
+const uploadChannelImage = async (image: ChannelImage, path: string): Promise<UploadResult> => {
+  const blob = await (await fetch(image.dataUrl)).blob();
+  const file = new File([blob], path.split("/").pop() ?? "image", { type: image.type });
+  return uploadSocialImage(file, path);
+};
+
+/** Banner strip, avatar, name and counts — how the channel will be stored. */
+const ChannelPreview = ({ channel }: { channel: ParsedChannel }) => (
+  <div className="overflow-hidden rounded-xl border border-gray-200">
+    <div className="h-16 bg-gray-100">
+      {channel.banner && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={channel.banner.dataUrl} alt="" className="h-full w-full object-cover" />
+      )}
+    </div>
+    <div className="flex items-start gap-3 px-3 pb-3">
+      <div className="-mt-6 size-12 shrink-0 overflow-hidden rounded-full border-4 border-white bg-gray-100">
+        {channel.avatar && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={channel.avatar.dataUrl} alt="" className="h-full w-full object-cover" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 pt-1.5">
+        <p className="truncate text-sm font-bold">{channel.name}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {[channel.handle, channel.subscribersText, channel.videoCountText].filter(Boolean).join(" • ")}
+        </p>
+        {(!channel.avatar || !channel.banner) && (
+          <p className="mt-1 text-xs text-amber-600">
+            {[!channel.avatar && "No avatar", !channel.banner && "No banner"].filter(Boolean).join(", ")} in the file
+          </p>
+        )}
+        {channel.imageProblems.map((problem) => (
+          <p key={problem} className="mt-1 text-xs text-red-600">
+            {problem}
+          </p>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
 /** Rows shown in the preview and in each result list before "and N more". */
 const LIST_LIMIT = 20;
@@ -27,6 +81,9 @@ interface ImportResult {
   inserted: number;
   skipped: number;
   failed: FailedRow[];
+  /** Channels saved, and the ones that could not be (their videos import unlinked). */
+  channelsSaved: number;
+  channelsFailed: { handle: string; reason: string }[];
 }
 
 const BUTTON =
@@ -66,6 +123,7 @@ export const ImportSection = () => {
   const [result, setResult] = useState<ImportResult | null>(null);
 
   const importBatch = trpc.youtubeVideos.importBatch.useMutation();
+  const upsertChannel = trpc.youtubeVideos.upsertChannel.useMutation();
   const isImporting = progress !== null;
 
   const preview = (value: string) => {
@@ -87,7 +145,7 @@ export const ImportSection = () => {
     if (!file) return;
 
     if (file.size > IMPORT_MAX_CHARS) {
-      setParsed({ ok: false, error: "That file is larger than 5 MB. Split the export." });
+      setParsed({ ok: false, error: "That file is larger than 15 MB. Split the export." });
       return;
     }
 
@@ -107,16 +165,49 @@ export const ImportSection = () => {
    * `previous` carries the totals of an earlier run when retrying, so the
    * result reads as one import rather than restarting from zero.
    */
-  const runImport = async (rows: YoutubeImportRow[], previous?: ImportResult) => {
+  const runImport = async (rows: YoutubeImportRow[], previous?: ImportResult, channels: ParsedChannel[] = []) => {
     const next: ImportResult = {
       inserted: previous?.inserted ?? 0,
       skipped: previous?.skipped ?? 0,
       // Batch failures are being retried now; row-level rejections stand.
       failed: previous?.failed.filter((row) => !row.retry) ?? [],
+      channelsSaved: previous?.channelsSaved ?? 0,
+      channelsFailed: previous?.channelsFailed ?? [],
     };
 
     setResult(null);
     setProgress({ done: 0, total: rows.length });
+
+    // Channels first: upload each one's avatar and banner to the bucket, then
+    // save the channel, so the videos below have a row to link to.
+    if (channels.length > 0) {
+      const { data } = await createClient().auth.getUser();
+      const userId = data.user?.id;
+      for (const channel of channels) {
+        try {
+          if (!userId) throw new Error("Sign in again to upload the channel images.");
+          const [avatar, banner] = await Promise.all([
+            channel.avatar ? uploadChannelImage(channel.avatar, channelImagePath(userId, channel.handle, "avatar")) : null,
+            channel.banner ? uploadChannelImage(channel.banner, channelImagePath(userId, channel.handle, "banner")) : null,
+          ]);
+          await upsertChannel.mutateAsync({
+            handle: channel.handle,
+            name: channel.name,
+            subscribersText: channel.subscribersText,
+            videoCountText: channel.videoCountText,
+            sourceUrl: channel.sourceUrl,
+            avatar,
+            banner,
+          });
+          next.channelsSaved += 1;
+        } catch (error) {
+          next.channelsFailed.push({
+            handle: channel.handle,
+            reason: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+    }
 
     for (let start = 0; start < rows.length; start += IMPORT_BATCH_SIZE) {
       const batch = rows.slice(start, start + IMPORT_BATCH_SIZE);
@@ -144,8 +235,8 @@ export const ImportSection = () => {
     setResult(next);
     utils.youtubeVideos.getRecent.invalidate();
 
-    if (next.failed.length > 0) {
-      toast.error(`Import finished with ${next.failed.length} failed`);
+    if (next.failed.length > 0 || next.channelsFailed.length > 0) {
+      toast.error(`Import finished with ${next.failed.length + next.channelsFailed.length} failed`);
     } else {
       toast.success(`Imported ${next.inserted}, skipped ${next.skipped}`);
     }
@@ -208,6 +299,17 @@ export const ImportSection = () => {
             <Stat label="Untitled" value={parsed.placeholderTitles} />
           </div>
 
+          {parsed.channels.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">
+                {parsed.channels.length === 1 ? "Channel" : `${parsed.channels.length} channels`}
+              </p>
+              {parsed.channels.map((channel) => (
+                <ChannelPreview key={channel.handle} channel={channel} />
+              ))}
+            </div>
+          )}
+
           {parsed.unrelated > 0 && (
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -261,7 +363,7 @@ export const ImportSection = () => {
             type="button"
             className={`${BUTTON_PRIMARY} w-full`}
             disabled={isImporting || rowsToImport.length === 0}
-            onClick={() => runImport(rowsToImport)}
+            onClick={() => runImport(rowsToImport, undefined, parsed.channels)}
           >
             {isImporting
               ? `Importing ${progress.done.toLocaleString()} of ${progress.total.toLocaleString()}`
@@ -279,6 +381,19 @@ export const ImportSection = () => {
             <Stat label="Already present" value={result.skipped} />
             <Stat label="Failed" value={result.failed.length} />
           </div>
+
+          {(result.channelsSaved > 0 || result.channelsFailed.length > 0) && (
+            <p className="text-xs text-muted-foreground">
+              {result.channelsSaved} channel{result.channelsSaved === 1 ? "" : "s"} saved
+            </p>
+          )}
+          {result.channelsFailed.map((channel) => (
+            <p key={channel.handle} className="text-xs">
+              <span className="font-medium">{channel.handle}:</span>{" "}
+              <span className="text-red-600">{channel.reason}</span>{" "}
+              <span className="text-muted-foreground">— its videos were imported without the channel</span>
+            </p>
+          ))}
 
           {result.failed.length > 0 && (
             <div className="space-y-1">

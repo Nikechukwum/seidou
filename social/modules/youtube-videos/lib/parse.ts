@@ -13,7 +13,11 @@ export const IMPORT_BATCH_SIZE = 200;
 
 /** Upper bounds on one export, so a wrong file fails fast instead of freezing the tab. */
 export const IMPORT_MAX_ROWS = 20_000;
-export const IMPORT_MAX_CHARS = 5 * 1024 * 1024;
+/** Room for a few channels' avatar and banner embedded as data URLs. */
+export const IMPORT_MAX_CHARS = 15 * 1024 * 1024;
+/** Per image, after decoding — the `social` bucket's own ceiling. */
+export const CHANNEL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+export const CHANNEL_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 /** What the export tool writes when it could not find a real value. */
 const PLACEHOLDER_CATEGORY = "uncategorized";
@@ -65,6 +69,20 @@ export const youtubeThumbnailUrl = (youtubeId: string) =>
 export const youtubeEmbedUrl = (youtubeId: string) =>
   `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&playsinline=1`;
 
+/**
+ * "@Zeltik" / "zeltik" -> "@zeltik". YouTube handles are case-insensitive, so
+ * the lowercase form is the identity. Null when it cannot be a handle.
+ */
+export const normalizeHandle = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim().replace(/^@/, "").toLowerCase() ?? "";
+  if (!trimmed || trimmed.length > 100 || /[\s/?#]/.test(trimmed)) return null;
+  return `@${trimmed}`;
+};
+
+export const channelHandleSchema = z
+  .string()
+  .regex(/^@[^\sA-Z/?#]{1,100}$/, "Not a channel handle");
+
 /** One row as the import sends it to the server and the server stores it. */
 export const youtubeImportRowSchema = z.object({
   youtubeId: z.string().regex(YOUTUBE_ID_PATTERN, "Not a YouTube video id"),
@@ -73,6 +91,8 @@ export const youtubeImportRowSchema = z.object({
   channelName: z.string().trim().min(1).max(200).nullable(),
   actualChannelName: z.string().trim().min(1).max(200).nullable(),
   isUnrelatedChannel: z.boolean(),
+  /** Links the video to a channel sent with the same import. */
+  channelHandle: channelHandleSchema.nullable().default(null),
 });
 
 export type YoutubeImportRow = z.infer<typeof youtubeImportRowSchema>;
@@ -85,7 +105,106 @@ const exportRowSchema = z.object({
   videoTitle: z.string(),
   actualChannelName: z.string().nullish(),
   isUnrelatedChannel: z.boolean().nullish(),
+  channelHandle: z.string().nullish(),
 });
+
+/** One channel as the converter writes it (version 2 exports). */
+const exportChannelSchema = z.object({
+  handle: z.string(),
+  name: z.string().nullish(),
+  subscribers: z.string().nullish(),
+  videoCount: z.string().nullish(),
+  sourceUrl: z.string().nullish(),
+  avatar: z.string().nullish(),
+  banner: z.string().nullish(),
+});
+
+/** An embedded image, decoded far enough to check it before it is uploaded. */
+export interface ChannelImage {
+  dataUrl: string;
+  type: (typeof CHANNEL_IMAGE_TYPES)[number];
+  bytes: number;
+}
+
+/** A channel ready to import: its details, plus the images still to upload. */
+export interface ParsedChannel {
+  handle: string;
+  name: string;
+  subscribersText: string | null;
+  videoCountText: string | null;
+  sourceUrl: string | null;
+  avatar: ChannelImage | null;
+  banner: ChannelImage | null;
+  /** Why an image that was in the file is not being used. */
+  imageProblems: string[];
+}
+
+/** What the server stores for a channel once its images are uploaded. */
+export const youtubeChannelInputSchema = z.object({
+  handle: channelHandleSchema,
+  name: z.string().trim().min(1).max(200),
+  subscribersText: z.string().trim().min(1).max(100).nullable(),
+  videoCountText: z.string().trim().min(1).max(100).nullable(),
+  sourceUrl: z.string().trim().url().max(500).nullable(),
+  avatar: z.object({ url: z.string().url().max(1000), key: z.string().min(1).max(300) }).nullable(),
+  banner: z.object({ url: z.string().url().max(1000), key: z.string().min(1).max(300) }).nullable(),
+});
+
+export type YoutubeChannelInput = z.infer<typeof youtubeChannelInputSchema>;
+
+/** Checks an embedded data URL: an allowed image type, inside the size limit. */
+const readChannelImage = (
+  value: string | null | undefined,
+  label: string,
+  problems: string[]
+): ChannelImage | null => {
+  if (!value) return null;
+  const match = value.match(/^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match) {
+    problems.push(`${label} is not an embedded image`);
+    return null;
+  }
+  const type = match[1].toLowerCase();
+  if (!(CHANNEL_IMAGE_TYPES as readonly string[]).includes(type)) {
+    problems.push(`${label} is ${type}; use JPEG, PNG or WebP`);
+    return null;
+  }
+  const base64 = match[2].replace(/\s/g, "");
+  const bytes = Math.floor((base64.length * 3) / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0);
+  if (bytes > CHANNEL_IMAGE_MAX_BYTES) {
+    problems.push(`${label} is larger than 5 MB`);
+    return null;
+  }
+  return { dataUrl: value, type: type as ChannelImage["type"], bytes };
+};
+
+const parseChannels = (raw: unknown): ParsedChannel[] => {
+  if (!Array.isArray(raw)) return [];
+  const byHandle = new Map<string, ParsedChannel>();
+  raw.forEach((item) => {
+    const parsed = exportChannelSchema.safeParse(item);
+    if (!parsed.success) return;
+    const handle = normalizeHandle(parsed.data.handle);
+    if (!handle) return;
+    const problems: string[] = [];
+    const text = (v: string | null | undefined, max: number) => {
+      const t = v?.trim() ?? "";
+      return t ? t.slice(0, max) : null;
+    };
+    const sourceUrl = text(parsed.data.sourceUrl, 500);
+    byHandle.set(handle, {
+      handle,
+      name: text(parsed.data.name, 200) ?? handle.slice(1),
+      subscribersText: text(parsed.data.subscribers, 100),
+      videoCountText: text(parsed.data.videoCount, 100),
+      sourceUrl: sourceUrl && /^https?:\/\//i.test(sourceUrl) ? sourceUrl : null,
+      avatar: readChannelImage(parsed.data.avatar, "Avatar", problems),
+      banner: readChannelImage(parsed.data.banner, "Banner", problems),
+      imageProblems: problems,
+    });
+  });
+  return [...byHandle.values()];
+};
 
 export interface InvalidExportRow {
   /** 1-based position in the pasted array. */
@@ -101,6 +220,8 @@ export type ParsedExport =
       total: number;
       /** Valid rows, one per video id. */
       rows: YoutubeImportRow[];
+      /** Channels in the file (version 2 exports). Empty for older exports. */
+      channels: ParsedChannel[];
       invalid: InvalidExportRow[];
       /** Rows dropped because an earlier row in the same file had the same id. */
       duplicates: number;
@@ -144,6 +265,17 @@ export const parseExport = (text: string): ParsedExport => {
     data = JSON.parse(text);
   } catch {
     return { ok: false, error: "That is not valid JSON." };
+  }
+
+  // Version 2 exports are { channels, videos }; older ones a bare array.
+  let channels: ParsedChannel[] = [];
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const library = data as { channels?: unknown; videos?: unknown };
+    if (!Array.isArray(library.videos)) {
+      return { ok: false, error: "Expected a JSON array of videos, or { channels, videos }." };
+    }
+    channels = parseChannels(library.channels);
+    data = library.videos;
   }
 
   if (!Array.isArray(data)) {
@@ -190,6 +322,11 @@ export const parseExport = (text: string): ParsedExport => {
         PLACEHOLDER_CHANNEL
       ),
       isUnrelatedChannel: parsed.data.isUnrelatedChannel ?? false,
+      // Only linked when the channel itself came with the file.
+      channelHandle: (() => {
+        const handle = normalizeHandle(parsed.data.channelHandle);
+        return handle && channels.some((c) => c.handle === handle) ? handle : null;
+      })(),
     });
 
     if (!row.success) {
@@ -211,6 +348,7 @@ export const parseExport = (text: string): ParsedExport => {
     ok: true,
     total: data.length,
     rows,
+    channels,
     invalid,
     duplicates,
     placeholderTitles: rows.filter(

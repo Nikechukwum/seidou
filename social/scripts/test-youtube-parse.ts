@@ -70,6 +70,7 @@ test("optional fields may be missing", () => {
       channelName: "Some Channel",
       actualChannelName: null,
       isUnrelatedChannel: false,
+      channelHandle: null,
     },
   ]);
 });
@@ -133,4 +134,46 @@ test("input that is not a usable export is refused, not thrown", () => {
   for (const text of ["", "{not json", "{}", "[]"]) {
     assert.equal(parseExport(text).ok, false, text);
   }
+});
+
+// --- Version 2 exports: { channels, videos } --------------------------------
+
+// A 1x1 transparent PNG.
+const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+const channel = (overrides: Record<string, unknown> = {}) => ({
+  handle: "@Zeltik",
+  name: "Zeltik",
+  subscribers: "890K subscribers",
+  videoCount: "458 videos",
+  sourceUrl: "https://www.youtube.com/@Zeltik/videos",
+  avatar: PNG,
+  banner: null,
+  ...overrides,
+});
+
+test("a version 2 export carries its channels, handle normalised", () => {
+  const result = parse({ version: 2, channels: [channel()], videos: [row({ channelHandle: "@Zeltik" })] });
+  assert.equal(result.channels.length, 1);
+  assert.equal(result.channels[0].handle, "@zeltik");
+  assert.equal(result.channels[0].avatar?.type, "image/png");
+  assert.equal(result.channels[0].banner, null);
+  assert.equal(result.rows[0].channelHandle, "@zeltik");
+});
+
+test("a video only links to a channel that came with the file", () => {
+  const result = parse({ version: 2, channels: [channel()], videos: [row({ channelHandle: "@someoneelse" })] });
+  assert.equal(result.rows[0].channelHandle, null);
+});
+
+test("an embedded image that is not JPEG/PNG/WebP is dropped and explained", () => {
+  const result = parse({ version: 2, channels: [channel({ avatar: "data:image/gif;base64,R0lGOD==" })], videos: [row()] });
+  assert.equal(result.channels[0].avatar, null);
+  assert.match(result.channels[0].imageProblems[0], /image\/gif/);
+});
+
+test("older bare-array exports still import, with no channels", () => {
+  const result = parse([row()]);
+  assert.equal(result.channels.length, 0);
+  assert.equal(result.rows[0].channelHandle, null);
 });

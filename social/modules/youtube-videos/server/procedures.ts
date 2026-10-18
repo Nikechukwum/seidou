@@ -1,15 +1,31 @@
 import { z } from "zod";
-import { desc } from "drizzle-orm";
+import { and, desc, inArray, isNull, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 
 import { db } from "@/social/db";
-import { youtubeVideos } from "@/social/db/schema";
+import { youtubeChannels, youtubeVideos } from "@/social/db/schema";
 import { adminProcedure, createTRPCRouter } from "@/social/trpc/init";
 
 import {
   IMPORT_BATCH_SIZE,
+  youtubeChannelInputSchema,
   youtubeImportRowSchema,
   type YoutubeImportRow,
 } from "../lib/parse";
+
+/**
+ * Channel images must be objects the import page uploaded to OUR bucket,
+ * under youtube-channels/ — never an arbitrary URL that would be rendered
+ * later as if it were ours.
+ */
+const CHANNEL_IMAGE_PREFIX = "youtube-channels/";
+const isOurChannelImage = (image: { url: string; key: string } | null) => {
+  if (!image) return true;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
+  if (!base || !image.key.startsWith(CHANNEL_IMAGE_PREFIX) || image.key.includes("..")) return false;
+  const expected = `${base}/storage/v1/object/public/social/${image.key}`;
+  return image.url === expected || image.url.startsWith(`${expected}?`);
+};
 
 /** How many rows the import page lists under "Last imported". */
 const RECENT_LIMIT = 10;
@@ -28,6 +44,53 @@ export const youtubeVideosRouter = createTRPCRouter({
       .orderBy(desc(youtubeVideos.createdAt), desc(youtubeVideos.id))
       .limit(RECENT_LIMIT);
   }),
+
+  /**
+   * Creates or updates one channel. Called by the import page for each channel
+   * in the file, after it has uploaded the channel's images, and before the
+   * videos — so their channelHandle has a row to point at.
+   *
+   * A re-import overwrites the details. An image is only replaced when a new
+   * one came with the import; otherwise the stored one is kept.
+   */
+  upsertChannel: adminProcedure
+    .input(youtubeChannelInputSchema)
+    .mutation(async ({ input }) => {
+      if (!isOurChannelImage(input.avatar) || !isOurChannelImage(input.banner)) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Channel images must be uploaded by the import page." });
+      }
+
+      const [row] = await db
+        .insert(youtubeChannels)
+        .values({
+          handle: input.handle,
+          name: input.name,
+          subscribersText: input.subscribersText,
+          videoCountText: input.videoCountText,
+          sourceUrl: input.sourceUrl,
+          avatarUrl: input.avatar?.url ?? null,
+          avatarKey: input.avatar?.key ?? null,
+          bannerUrl: input.banner?.url ?? null,
+          bannerKey: input.banner?.key ?? null,
+        })
+        .onConflictDoUpdate({
+          target: youtubeChannels.handle,
+          set: {
+            name: input.name,
+            subscribersText: input.subscribersText,
+            videoCountText: input.videoCountText,
+            sourceUrl: sql`coalesce(excluded.source_url, ${youtubeChannels.sourceUrl})`,
+            avatarUrl: sql`coalesce(excluded.avatar_url, ${youtubeChannels.avatarUrl})`,
+            avatarKey: sql`coalesce(excluded.avatar_key, ${youtubeChannels.avatarKey})`,
+            bannerUrl: sql`coalesce(excluded.banner_url, ${youtubeChannels.bannerUrl})`,
+            bannerKey: sql`coalesce(excluded.banner_key, ${youtubeChannels.bannerKey})`,
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({ id: youtubeChannels.id, handle: youtubeChannels.handle });
+
+      return row;
+    }),
 
   /**
    * Writes one batch of an import.
@@ -70,11 +133,45 @@ export const youtubeVideosRouter = createTRPCRouter({
         return { inserted: 0, skipped: 0, failed };
       }
 
+      // Resolve each row's channelHandle to the channel row upsertChannel
+      // wrote. A handle with no row (its channel failed to save) leaves the
+      // video unlinked; a later import of that channel links it.
+      const handles = [...new Set(valid.flatMap((row) => row.channelHandle ?? []))];
+      const channelIds = new Map<string, string>();
+      if (handles.length > 0) {
+        const channels = await db
+          .select({ id: youtubeChannels.id, handle: youtubeChannels.handle })
+          .from(youtubeChannels)
+          .where(inArray(youtubeChannels.handle, handles));
+        channels.forEach((c) => channelIds.set(c.handle, c.id));
+      }
+      const channelIdOf = (row: YoutubeImportRow) =>
+        (row.channelHandle && channelIds.get(row.channelHandle)) || null;
+
       const insertedRows = await db
         .insert(youtubeVideos)
-        .values(valid)
+        .values(valid.map((row) => {
+          const { channelHandle: _handle, ...video } = row;
+          return { ...video, channelId: channelIdOf(row) };
+        }))
         .onConflictDoNothing({ target: youtubeVideos.youtubeId })
         .returning({ youtubeId: youtubeVideos.youtubeId });
+
+      // Videos that were already here are left as they are — except that one
+      // imported before its channel was known gets linked now.
+      const inserted = new Set(insertedRows.map((r) => r.youtubeId));
+      const toLink = new Map<string, string[]>();
+      valid.forEach((row) => {
+        const channelId = channelIdOf(row);
+        if (!channelId || inserted.has(row.youtubeId)) return;
+        toLink.set(channelId, [...(toLink.get(channelId) ?? []), row.youtubeId]);
+      });
+      for (const [channelId, youtubeIds] of toLink) {
+        await db
+          .update(youtubeVideos)
+          .set({ channelId, updatedAt: sql`now()` })
+          .where(and(inArray(youtubeVideos.youtubeId, youtubeIds), isNull(youtubeVideos.channelId)));
+      }
 
       return {
         inserted: insertedRows.length,

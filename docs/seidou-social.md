@@ -40,7 +40,8 @@ declared-vs-actual and can propose dropping commerce columns from
 | `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ✅ |
 | `0002_storage.sql` | `social` storage bucket + policies | ✅ |
 | `0003_watch_rewards.sql` | `watch_reward_progress`, `watch_reward_grants`, RLS | ✅ |
-| `0004_youtube_videos.sql` | `youtube_videos`, RLS | ⬜ |
+| `0004_youtube_videos.sql` | `youtube_videos`, RLS | ✅ |
+| `0005_youtube_channels.sql` | `youtube_channels`, `youtube_videos.channel_id`, RLS | ⬜ |
 
 Also run `supabase/loyalty_rewards_claim.sql` (the `claim_loyalty_reward`
 RPC) — it lives with the commerce SQL because the claim pages use it. ✅
@@ -94,6 +95,16 @@ not appear in the feeds yet.
 - **Writes.** Batches of 200 through `youtubeVideos.importBatch`, each one a
   single atomic insert. A failed batch is reported and can be retried; the
   others carry on.
+- **Channels.** The converter reads the saved channel page's header (name,
+  handle, subscriber and video counts) and, once you add the page's `_files`
+  folder, embeds the avatar and banner. Exports with channels are
+  `{ version: 2, channels, videos }`; older bare arrays still import. The page
+  previews each channel, uploads its images to the `social` bucket at
+  `youtube-channels/<your user id>/<handle>/avatar|banner` (allowed by the
+  0002 policies), saves it to `youtube_channels` through
+  `youtubeVideos.upsertChannel`, then links each video by `channelHandle`.
+  Re-importing a channel updates it; an image is only replaced when a new one
+  is sent.
 - **Playback.** `YouTubeThumbnailItem` takes a `videoUrl` and a title, and
   opens `YouTubePlayerOverlay`, which mounts the embed iframe only while open.
   The page lists the last 10 imported videos with it.
