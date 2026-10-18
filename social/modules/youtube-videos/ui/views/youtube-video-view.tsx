@@ -8,7 +8,9 @@ import { Skeleton } from "@/social/components/ui/skeleton";
 import { UserAvatar } from "@/social/components/user-avatar";
 import { VideoBackBar } from "@/social/modules/videos/ui/components/video-back-bar";
 
-import { YouTubeGridCard } from "../components/youtube-grid-card";
+import Link from "next/link";
+
+import { YouTubeGridCard, youtubeChannelPath } from "../components/youtube-grid-card";
 
 /**
  * Watch page for an imported YouTube video. Same shape as the upload watch
@@ -61,21 +63,28 @@ const YouTubeVideoSuspense = ({ youtubeId }: { youtubeId: string }) => {
       <div className="space-y-4 px-4">
         <h1 className="break-words text-xl font-bold leading-snug">{video.title}</h1>
 
-        <div className="flex items-center gap-3">
-          <UserAvatar imageUrl={video.channel?.avatarUrl} name={channelName} size="lg" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold">{channelName}</p>
-            {video.channel?.subscribersText && (
-              <p className="truncate text-xs text-muted-foreground">{video.channel.subscribersText}</p>
-            )}
-          </div>
-        </div>
+        {/* Opens the channel page when the video has a channel. */}
+        {(() => {
+          const row = (
+            <>
+              <UserAvatar imageUrl={video.channel?.avatarUrl} name={channelName} size="lg" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold">{channelName}</p>
+                {video.channel?.subscribersText && (
+                  <p className="truncate text-xs text-muted-foreground">{video.channel.subscribersText}</p>
+                )}
+              </div>
+            </>
+          );
+          return video.channel ? (
+            <Link prefetch href={youtubeChannelPath(video.channel.handle)} className="flex items-center gap-3">
+              {row}
+            </Link>
+          ) : (
+            <div className="flex items-center gap-3">{row}</div>
+          );
+        })()}
 
-        {video.category && (
-          <span className="inline-block rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-            {video.category}
-          </span>
-        )}
       </div>
 
       {more.length > 0 && (

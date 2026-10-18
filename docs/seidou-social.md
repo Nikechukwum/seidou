@@ -135,6 +135,7 @@ open on their own watch page, `/youtube/[youtubeId]`.
   /playlists/history         watch history                 (auth)
   /studio                    your videos                   (auth)
   /youtube/[youtubeId]       watch an imported YouTube video
+  /youtube/channel/[handle]  an imported YouTube channel
   /studio/videos/[videoId]   edit a video                  (auth)
 
 /api/social/trpc/[trpc]      the API

@@ -43,6 +43,7 @@ const watchColumns = {
   category: youtubeVideos.category,
   channelName: sql<string | null>`coalesce(${youtubeChannels.name}, ${youtubeVideos.actualChannelName}, ${youtubeVideos.channelName})`,
   channelAvatarUrl: youtubeChannels.avatarUrl,
+  channelHandle: youtubeChannels.handle,
   createdAt: youtubeVideos.createdAt,
 };
 
@@ -74,6 +75,34 @@ export const youtubeVideosRouter = createTRPCRouter({
       if (!video) throw new TRPCError({ code: "NOT_FOUND" });
       // leftJoin fills every channel field with null when there is no channel.
       return { ...video, channel: video.channel?.id ? video.channel : null };
+    }),
+
+  /**
+   * A YouTube channel's page: its details and its imported videos, newest
+   * first. `handle` comes from the URL without the "@".
+   */
+  getChannel: baseProcedure
+    .input(z.object({ handle: z.string().min(1).max(100) }))
+    .query(async ({ input }) => {
+      const handle = `@${input.handle.replace(/^@/, "").toLowerCase()}`;
+
+      const [channel] = await db
+        .select()
+        .from(youtubeChannels)
+        .where(eq(youtubeChannels.handle, handle))
+        .limit(1);
+
+      if (!channel) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const videos = await db
+        .select(watchColumns)
+        .from(youtubeVideos)
+        .leftJoin(youtubeChannels, eq(youtubeVideos.channelId, youtubeChannels.id))
+        .where(eq(youtubeVideos.channelId, channel.id))
+        .orderBy(desc(youtubeVideos.createdAt), desc(youtubeVideos.id))
+        .limit(200);
+
+      return { channel, videos };
     }),
 
   /**

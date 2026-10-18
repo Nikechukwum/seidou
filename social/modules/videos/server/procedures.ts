@@ -565,6 +565,7 @@ export const videosRouter = createTRPCRouter({
                 category: youtubeVideos.category,
                 channelName: sql<string | null>`coalesce(${youtubeChannels.name}, ${youtubeVideos.actualChannelName}, ${youtubeVideos.channelName})`,
                 channelAvatarUrl: youtubeChannels.avatarUrl,
+                channelHandle: youtubeChannels.handle,
                 createdAt: youtubeVideos.createdAt,
               })
               .from(youtubeVideos)

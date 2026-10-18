@@ -12,10 +12,16 @@ export interface YouTubeGridCardData {
   category: string | null;
   channelName: string | null;
   channelAvatarUrl: string | null;
+  /** Set when the video is linked to an imported channel. */
+  channelHandle: string | null;
 }
 
 /** Where an imported video's watch page lives. */
 export const youtubeWatchPath = (youtubeId: string) => socialPath(`/youtube/${youtubeId}`);
+
+/** A YouTube channel's page — "@zeltik" -> /youtube/channel/zeltik. */
+export const youtubeChannelPath = (handle: string) =>
+  socialPath(`/youtube/channel/${encodeURIComponent(handle.replace(/^@/, ""))}`);
 
 /**
  * An imported YouTube video in the feed. Laid out like VideoGridCard — full
@@ -25,6 +31,8 @@ export const youtubeWatchPath = (youtubeId: string) => socialPath(`/youtube/${yo
 export const YouTubeGridCard = ({ data }: { data: YouTubeGridCardData }) => {
   const href = youtubeWatchPath(data.youtubeId);
   const channel = data.channelName ?? "YouTube";
+  // The avatar opens the channel when there is one, like a user's avatar does.
+  const channelHref = data.channelHandle ? youtubeChannelPath(data.channelHandle) : href;
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -41,7 +49,7 @@ export const YouTubeGridCard = ({ data }: { data: YouTubeGridCardData }) => {
         </div>
       </Link>
       <div className="flex gap-3">
-        <Link prefetch href={href}>
+        <Link prefetch href={channelHref}>
           <UserAvatar imageUrl={data.channelAvatarUrl} name={channel} />
         </Link>
         <Link prefetch href={href} className="min-w-0 flex-1">
