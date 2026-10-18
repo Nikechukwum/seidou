@@ -84,8 +84,17 @@ into `youtube_videos`, a table of its own — these are not Mux uploads. They
 appear in the home feed (`videos.getFeed`, merged with uploads by date) and
 open on their own watch page, `/youtube/[youtubeId]`.
 
-- **Input.** Paste the JSON export from the video-library tool, or choose the
-  file. "Preview" shows what would be written; nothing is sent until "Import".
+- **Input, step 1 (channel page).** Upload the YouTube channel's Videos
+  tab saved with Ctrl+S, as Chrome named it. Every linked video is looked up
+  on YouTube for its title and channel (`youtubeVideos.lookup`, oEmbed,
+  server-side). On the page's card set the channel name, pick the category
+  from the app's own list (so imports always match a category chip), and add
+  the avatar and banner from the saved `_files` folder. "Continue" goes to
+  step 2; "Download as JSON" keeps a file instead. This replaces the separate
+  converter app.
+- **Input, step 2 (import).** The preview of exactly what will be written;
+  nothing is sent until "Import". It can also be reached directly with an
+  existing JSON export ("I have a JSON export").
 - **Identity.** The 11-character video id, read from whatever URL shape the
   export has. It is unique in the table, and the insert is
   `ON CONFLICT DO NOTHING`, so a video already present is skipped and left

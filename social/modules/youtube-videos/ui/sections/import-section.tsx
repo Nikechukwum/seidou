@@ -112,12 +112,22 @@ const More = ({ count }: { count: number }) =>
  * batches, one after another; a batch that fails is recorded and the rest
  * carry on, so one bad request does not cost the whole import.
  */
-export const ImportSection = () => {
+export const ImportSection = ({
+  convertedText,
+  onBack,
+}: {
+  /** The export built by step 1. When set, the paste box is replaced by it. */
+  convertedText?: string;
+  /** Back to step 1. */
+  onBack?: () => void;
+} = {}) => {
   const utils = trpc.useUtils();
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const [text, setText] = useState("");
-  const [parsed, setParsed] = useState<ParsedExport | null>(null);
+  const [text, setText] = useState(convertedText ?? "");
+  const [parsed, setParsed] = useState<ParsedExport | null>(() =>
+    convertedText ? parseExport(convertedText) : null
+  );
   const [includeUnrelated, setIncludeUnrelated] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -244,7 +254,19 @@ export const ImportSection = () => {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-3">
+      {onBack && (
+        <button
+          type="button"
+          className="text-sm font-semibold text-gray-600 underline underline-offset-2 disabled:opacity-40"
+          disabled={isImporting}
+          onClick={onBack}
+        >
+          ← Back to the HTML step
+        </button>
+      )}
+
+      {/* From step 1 the export is already built — no paste box. */}
+      <div className={convertedText ? "hidden" : "space-y-3"}>
         <textarea
           value={text}
           onChange={(event) => onTextChange(event.target.value)}

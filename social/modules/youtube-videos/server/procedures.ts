@@ -47,7 +47,52 @@ const watchColumns = {
   createdAt: youtubeVideos.createdAt,
 };
 
+/** How many oEmbed requests run at once — polite to YouTube, still quick. */
+const LOOKUP_CONCURRENCY = 6;
+
+/**
+ * YouTube's own title and channel for one video, from its public oEmbed
+ * endpoint (no API key). Null when YouTube does not answer — the import then
+ * keeps the title read from the saved page.
+ */
+const lookupVideo = async (youtubeId: string) => {
+  try {
+    const response = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${youtubeId}`)}&format=json`,
+      { signal: AbortSignal.timeout(8000), cache: "no-store" }
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as { title?: unknown; author_name?: unknown };
+    return {
+      title: typeof data.title === "string" ? data.title : null,
+      author: typeof data.author_name === "string" ? data.author_name : null,
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const youtubeVideosRouter = createTRPCRouter({
+  /**
+   * Step 1 of /import: YouTube's title and channel name for up to 50 videos
+   * read from a saved page. Run on the server because YouTube's oEmbed
+   * endpoint cannot be called from the browser (no CORS).
+   */
+  lookup: adminProcedure
+    .input(z.object({ youtubeIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{11}$/)).min(1).max(50) }))
+    .mutation(async ({ input }) => {
+      const results: Record<string, { title: string | null; author: string | null } | null> = {};
+      const queue = [...new Set(input.youtubeIds)];
+      await Promise.all(
+        Array.from({ length: Math.min(LOOKUP_CONCURRENCY, queue.length) }, async () => {
+          for (let id = queue.shift(); id; id = queue.shift()) {
+            results[id] = await lookupVideo(id);
+          }
+        })
+      );
+      return results;
+    }),
+
   /**
    * One imported video for its watch page, with its channel. Public, like
    * videos.getOne — imported videos appear in the public feed.
