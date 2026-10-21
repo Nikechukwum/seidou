@@ -15,7 +15,7 @@ const SeidouSocialPage = async ({ searchParams }: PageProps) => {
   // and stream in, while the client components below suspend on the same keys.
   // makeQueryClient dehydrates pending queries, which is what makes this work.
   void trpc.categories.getMany.prefetch();
-  void trpc.videos.getMany.prefetchInfinite({
+  void trpc.videos.getFeed.prefetchInfinite({
     categoryId,
     limit: DEFAULT_LIMIT,
   });

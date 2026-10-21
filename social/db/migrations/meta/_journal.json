@@ -29,6 +29,20 @@
       "when": 1789294281252,
       "tag": "0003_watch_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791222750666,
+      "tag": "0004_youtube_videos",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792342855053,
+      "tag": "0005_youtube_channels",
+      "breakpoints": true
     }
   ]
 }

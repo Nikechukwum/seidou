@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   bigint,
+  boolean,
   check,
   date,
   doublePrecision,
@@ -421,3 +422,69 @@ export const watchRewardGrantRelations = relations(watchRewardGrants, ({ one }) 
     references: [users.id],
   }),
 }));
+
+/**
+ * YouTube videos brought in by the import page — see
+ * social/modules/youtube-videos and migrations/0004_youtube_videos.sql.
+ *
+ * Deliberately separate from `videos`: those are Mux uploads owned by a user,
+ * these are references to videos hosted on YouTube and played in an iframe.
+ * `youtube_id` is the identity, and its unique constraint is what makes
+ * re-importing an overlapping export safe. The watch URL, embed URL and
+ * thumbnail are all derived from it, so none of them is stored.
+ *
+ * `category` and `channel_name` are plain text, not lookups: they come from
+ * the search the video was found by. Null means the export had no real value.
+ */
+/**
+ * The YouTube channels the imported videos come from — see
+ * migrations/0005_youtube_channels.sql.
+ *
+ * One row per channel, so its avatar, banner and counts are stored once rather
+ * than repeated on every video. `handle` is the identity ("@zeltik", stored
+ * lowercase because YouTube handles are case-insensitive; `name` keeps the
+ * display casing). Re-importing a channel updates this row in place.
+ *
+ * The images are copies in the `social` storage bucket (`*_key` is the object
+ * path), not links to YouTube's image servers, which stop working when a
+ * channel changes its art.
+ */
+export const youtubeChannels = pgTable("youtube_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  handle: text("handle").notNull().unique(),
+  name: text("name").notNull(),
+  // As YouTube shows them: "890K subscribers", "458 videos".
+  subscribersText: text("subscribers_text"),
+  videoCountText: text("video_count_text"),
+  sourceUrl: text("source_url"),
+  avatarUrl: text("avatar_url"),
+  avatarKey: text("avatar_key"),
+  bannerUrl: text("banner_url"),
+  bannerKey: text("banner_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  check("youtube_channels_handle_format", sql`${t.handle} ~ '^@[^[:space:][:upper:]]+$'`),
+]);
+
+export const youtubeVideos = pgTable("youtube_videos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  youtubeId: text("youtube_id").notNull().unique(),
+  title: text("title").notNull(),
+  category: text("category"),
+  // The channel that was searched for.
+  channelName: text("channel_name"),
+  // The channel YouTube reports for the video.
+  actualChannelName: text("actual_channel_name"),
+  isUnrelatedChannel: boolean("is_unrelated_channel").default(false).notNull(),
+  // The channel the video was imported with. Null for older imports and for
+  // videos from an unrelated channel; set by a later import that has it.
+  channelId: uuid("channel_id").references(() => youtubeChannels.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("youtube_videos_category_idx").on(t.category),
+  index("youtube_videos_created_at_idx").on(t.createdAt),
+  index("youtube_videos_channel_id_idx").on(t.channelId),
+  check("youtube_videos_youtube_id_format", sql`${t.youtubeId} ~ '^[A-Za-z0-9_-]{11}$'`),
+]);

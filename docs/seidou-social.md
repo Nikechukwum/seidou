@@ -40,6 +40,8 @@ declared-vs-actual and can propose dropping commerce columns from
 | `0001_playlists.sql` | `playlists`, `playlist_videos`, RLS | ✅ |
 | `0002_storage.sql` | `social` storage bucket + policies | ✅ |
 | `0003_watch_rewards.sql` | `watch_reward_progress`, `watch_reward_grants`, RLS | ✅ |
+| `0004_youtube_videos.sql` | `youtube_videos`, RLS | ✅ |
+| `0005_youtube_channels.sql` | `youtube_channels`, `youtube_videos.channel_id`, RLS | ⬜ |
 
 Also run `supabase/loyalty_rewards_claim.sql` (the `claim_loyalty_reward`
 RPC) — it lives with the commerce SQL because the claim pages use it. ✅
@@ -74,6 +76,56 @@ under `npm run dev`; a production build ignores them.
 
 ---
 
+## YouTube import
+
+`/import` (top level, not under `/app-center/apps/seidou-social`) is an
+admin-only page that loads videos hosted on YouTube
+into `youtube_videos`, a table of its own — these are not Mux uploads. They
+appear in the home feed (`videos.getFeed`, merged with uploads by date) and
+open on their own watch page, `/youtube/[youtubeId]`.
+
+- **Input, step 1 (channel page).** Upload the YouTube channel's Videos
+  tab saved with Ctrl+S, as Chrome named it. Every linked video is looked up
+  on YouTube for its title and channel (`youtubeVideos.lookup`, oEmbed,
+  server-side). On the page's card set the channel name, pick the category
+  from the app's own list (so imports always match a category chip), and add
+  the avatar and banner from the saved `_files` folder. "Continue" goes to
+  step 2; "Download as JSON" keeps a file instead. This replaces the separate
+  converter app.
+- **Input, step 2 (import).** The preview of exactly what will be written;
+  nothing is sent until "Import". It can also be reached directly with an
+  existing JSON export ("I have a JSON export").
+- **Identity.** The 11-character video id, read from whatever URL shape the
+  export has. It is unique in the table, and the insert is
+  `ON CONFLICT DO NOTHING`, so a video already present is skipped and left
+  untouched. Importing overlapping exports is safe.
+- **Cleaning.** "Uncategorized" and "Unknown Channel" are stored as null.
+  Rows flagged `isUnrelatedChannel` are left out unless the box is ticked.
+  Rows with no usable id or a missing field are listed and not sent.
+- **Writes.** Batches of 200 through `youtubeVideos.importBatch`, each one a
+  single atomic insert. A failed batch is reported and can be retried; the
+  others carry on.
+- **Channels.** The converter reads the saved channel page's header (name,
+  handle, subscriber and video counts) and, once you add the page's `_files`
+  folder, embeds the avatar and banner. Exports with channels are
+  `{ version: 2, channels, videos }`; older bare arrays still import. The page
+  previews each channel, uploads its images to the `social` bucket at
+  `youtube-channels/<your user id>/<handle>/avatar|banner` (allowed by the
+  0002 policies), saves it to `youtube_channels` through
+  `youtubeVideos.upsertChannel`, then links each video by `channelHandle`.
+  Re-importing a channel updates it; an image is only replaced when a new one
+  is sent.
+- **Playback.** `YouTubeThumbnailItem` takes a `videoUrl` and a title, and
+  opens `YouTubePlayerOverlay`, which mounts the embed iframe only while open.
+  The page lists the last 10 imported videos with it.
+- **Access.** `adminProcedure` in `social/trpc/init.ts`: the signed-in user's
+  id must be in `SOCIAL_ADMIN_USER_IDS`. Unset means nobody. Everyone else
+  gets a 404.
+
+`npm run social:test-import` checks the parsing rules — no database needed.
+
+---
+
 ## Routes
 
 ```
@@ -91,6 +143,8 @@ under `npm run dev`; a production build ignores them.
   /playlists/liked           liked videos                  (auth)
   /playlists/history         watch history                 (auth)
   /studio                    your videos                   (auth)
+  /youtube/[youtubeId]       watch an imported YouTube video
+  /youtube/channel/[handle]  an imported YouTube channel
   /studio/videos/[videoId]   edit a video                  (auth)
 
 /api/social/trpc/[trpc]      the API
@@ -268,6 +322,7 @@ app/api/social/                      tRPC handler + Mux webhook
 | `DATABASE_URL` | Everything | Supabase → Connect → Transaction pooler |
 | `MUX_TOKEN_ID` / `MUX_TOKEN_SECRET` | Upload + playback | Mux → Access Tokens |
 | `MUX_WEBHOOK_SECRET` | Instant processing updates | Mux → Webhooks (optional, see below) |
+| `SOCIAL_ADMIN_USER_IDS` | The YouTube import page. Comma-separated user ids | Supabase → Authentication → Users |
 | `NEXT_PUBLIC_APP_URL` | Optional. Pins the site address used when the server has no page to read it from | Your origin |
 
 Share links and upload CORS use the address the page was actually opened on,

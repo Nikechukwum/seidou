@@ -77,3 +77,26 @@ export const protectedProcedure = t.procedure.use(async function isAuthed(opts) 
     },
   });
 });
+
+/**
+ * Requires a signed-in user whose id is listed in SOCIAL_ADMIN_USER_IDS — a
+ * comma-separated list of Supabase auth user ids.
+ *
+ * Seidou has no role column, and adding one to public.users would put it on a
+ * table the browser can write to through the commerce policies. An env
+ * allowlist cannot be changed from the app at all.
+ *
+ * Fails closed: with the variable unset or empty, nobody is an admin.
+ */
+export const adminProcedure = protectedProcedure.use(async function isAdmin(opts) {
+  const adminIds = (process.env.SOCIAL_ADMIN_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!adminIds.includes(opts.ctx.user.id.toLowerCase())) {
+    throw new TRPCError({ code: "FORBIDDEN" });
+  }
+
+  return opts.next();
+});
