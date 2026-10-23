@@ -8,9 +8,9 @@ import {
   users,
   videoReactions,
   videos,
-  videoViews,
 } from "@/social/db/schema";
 import { baseProcedure, createTRPCRouter } from "@/social/trpc/init";
+import { videoViewCount } from "@/social/modules/videos/server/view-count";
 
 /**
  * "Up next" on the watch page: other public videos in the same category,
@@ -47,7 +47,7 @@ export const suggestionsRouter = createTRPCRouter({
         .select({
           ...getTableColumns(videos),
           user: socialUserColumns,
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           likeCount: db.$count(
             videoReactions,
             and(

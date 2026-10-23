@@ -1,6 +1,8 @@
 import Image from "next/image";
+import { ZapIcon } from "lucide-react";
 
 import { formatDuration } from "@/social/lib/utils";
+import { isOptimizableImage } from "@/social/lib/image";
 import { Skeleton } from "@/social/components/ui/skeleton";
 
 import { THUMBNAIL_FALLBACK } from "../../constants";
@@ -10,6 +12,7 @@ interface VideoThumbnailProps {
   duration: number;
   imageUrl?: string | null;
   previewUrl?: string | null;
+  isShort?: boolean;
 }
 
 export const VideoThumbnailSkeleton = () => {
@@ -25,13 +28,17 @@ export const VideoThumbnail = ({
   imageUrl,
   previewUrl,
   duration,
+  isShort = false,
 }: VideoThumbnailProps) => {
+  const src = imageUrl || THUMBNAIL_FALLBACK;
+
   return (
     <div className="relative group">
       <div className="relative w-full overflow-hidden rounded-xl aspect-video bg-muted">
         <Image
-          src={imageUrl || THUMBNAIL_FALLBACK}
+          src={src}
           alt={title}
+          unoptimized={!isOptimizableImage(src)}
           fill
           // One column inside a max-w-md shell, so never wider than 448px.
           sizes="(max-width: 448px) 100vw, 448px"
@@ -49,9 +56,20 @@ export const VideoThumbnail = ({
         />
       </div>
 
-      <div className="absolute bottom-2 right-2 px-1 py-0.5 rounded bg-black/80 text-white text-xs font-medium">
-        {formatDuration(duration)}
-      </div>
+      {/* Imported videos arrive without a duration (stored as 0), and a
+          badge reading 00:00 would claim the video is empty. */}
+      {(isShort || duration > 0) && (
+        <div className="absolute bottom-2 right-2 flex items-center gap-1 px-1 py-0.5 rounded bg-black/80 text-white text-xs font-medium">
+          {isShort ? (
+            <>
+              <ZapIcon className="size-3 fill-white" />
+              SHORTS
+            </>
+          ) : (
+            formatDuration(duration)
+          )}
+        </div>
+      )}
     </div>
   );
 };

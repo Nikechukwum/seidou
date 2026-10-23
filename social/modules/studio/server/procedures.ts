@@ -7,9 +7,9 @@ import {
   comments,
   videoReactions,
   videos,
-  videoViews,
 } from "@/social/db/schema";
 import { createTRPCRouter, protectedProcedure } from "@/social/trpc/init";
+import { videoViewCount } from "@/social/modules/videos/server/view-count";
 
 /**
  * The creator's own videos — including private ones, which is why every
@@ -52,7 +52,7 @@ export const studioRouter = createTRPCRouter({
       const data = await db
         .select({
           ...getTableColumns(videos),
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           commentCount: db.$count(comments, eq(comments.videoId, videos.id)),
           likeCount: db.$count(
             videoReactions,

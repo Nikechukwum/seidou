@@ -9,11 +9,13 @@ import { socialPath } from "@/social/constants";
 interface SocialSearchInputProps {
   defaultQuery?: string;
   defaultCategoryId?: string;
+  placeholder?: string;
 }
 
 export const SocialSearchInput = ({
   defaultQuery = "",
   defaultCategoryId,
+  placeholder = "Search videos",
 }: SocialSearchInputProps) => {
   const router = useRouter();
   const [value, setValue] = useState(defaultQuery);
@@ -36,7 +38,7 @@ export const SocialSearchInput = ({
       <input
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search videos"
+        placeholder={placeholder}
         className="w-full rounded-full border border-gray-200 bg-white py-2 pl-10 pr-9 text-sm outline-none transition-all focus:border-black focus:ring-1 focus:ring-black"
       />
       {value && (
