@@ -7,9 +7,9 @@ import {
   users,
   videoReactions,
   videos,
-  videoViews,
 } from "@/social/db/schema";
 import { baseProcedure, createTRPCRouter } from "@/social/trpc/init";
+import { videoViewCount } from "@/social/modules/videos/server/view-count";
 
 export const searchRouter = createTRPCRouter({
   getMany: baseProcedure
@@ -33,7 +33,7 @@ export const searchRouter = createTRPCRouter({
         .select({
           ...getTableColumns(videos),
           user: socialUserColumns,
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           likeCount: db.$count(
             videoReactions,
             and(

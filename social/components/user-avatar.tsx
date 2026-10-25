@@ -3,6 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/social/lib/utils";
 import { avatarColour } from "@/social/lib/avatar-colour";
+import { isOptimizableImage } from "@/social/lib/image";
 
 /**
  * Rewritten on next/image rather than the Radix Avatar the upstream project
@@ -88,6 +89,7 @@ export const UserAvatar = ({
           fill
           sizes={AVATAR_SIZES[size ?? "default"]}
           quality={65}
+          unoptimized={!isOptimizableImage(imageUrl)}
           className="object-cover"
         />
       ) : (

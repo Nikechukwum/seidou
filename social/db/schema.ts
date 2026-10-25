@@ -38,6 +38,8 @@ export const videoVisibility = pgEnum("video_visibility", [
   "public",
 ]);
 
+export const videoKind = pgEnum("video_kind", ["video", "short"]);
+
 /**
  * Seidou's EXISTING users table — shared with the commerce app.
  *
@@ -112,7 +114,7 @@ export const socialUserColumns = {
   updatedAt: users.updatedAt,
 };
 
-export const userRelations = relations(users, ({ many }) => ({
+export const userRelations = relations(users, ({ one, many }) => ({
   videos: many(videos),
   videoViews: many(videoViews),
   videoReactions: many(videoReactions),
@@ -126,6 +128,7 @@ export const userRelations = relations(users, ({ many }) => ({
   commentReactions: many(commentReactions),
   playlists: many(playlists),
   watchRewardGrants: many(watchRewardGrants),
+  socialProfile: one(socialProfiles),
 }));
 
 export const categories = pgTable("categories", {
@@ -164,9 +167,22 @@ export const videos = pgTable("videos", {
   categoryId: uuid("category_id").references(() => categories.id, {
     onDelete: "set null",
   }),
+  // Imported catalogue videos (social/scripts/import-videos.ts) have no Mux
+  // asset — they play from sourceUrl instead. See migrations/0004_catalogue.sql.
+  sourceUrl: text("source_url"),
+  externalId: text("external_id").unique("videos_external_id_key"),
+  importedViewCount: integer("imported_view_count").default(0).notNull(),
+  kind: videoKind("kind").default("video").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (t) => [
+  index("videos_category_created_idx")
+    .on(t.categoryId, t.createdAt.desc(), t.id.desc())
+    .where(sql`${t.visibility} = 'public'`),
+  index("videos_category_kind_created_idx")
+    .on(t.categoryId, t.kind, t.createdAt.desc(), t.id.desc())
+    .where(sql`${t.visibility} = 'public'`),
+]);
 
 export const videoSelectSchema = createSelectSchema(videos);
 export const videoInsertSchema = createInsertSchema(videos);
@@ -261,6 +277,7 @@ export const videoViews = pgTable("video_views", {
     name: "video_views_pk",
     columns: [t.userId, t.videoId],
   }),
+  index("video_views_video_id_idx").on(t.videoId),
 ]);
 
 export const videoViewSelectSchema = createSelectSchema(videoViews);
@@ -289,6 +306,7 @@ export const videoReactions = pgTable("video_reactions", {
     name: "video_reactions_pk",
     columns: [t.userId, t.videoId],
   }),
+  index("video_reactions_video_id_type_idx").on(t.videoId, t.type),
 ]);
 
 export const videoReactionSelectSchema = createSelectSchema(videoReactions);
@@ -418,6 +436,35 @@ export const watchRewardGrants = pgTable("watch_reward_grants", {
 export const watchRewardGrantRelations = relations(watchRewardGrants, ({ one }) => ({
   user: one(users, {
     fields: [watchRewardGrants.userId],
+    references: [users.id],
+  }),
+}));
+
+/**
+ * Social-only profile data, kept out of the shared commerce users table.
+ *
+ * Two kinds of row:
+ *   - a real user's onboarding answers. `onboardedAt` set means they have
+ *     finished onboarding and go straight to the feed.
+ *   - an imported channel ("ESPN FC") stored as a placeholder user. Those have
+ *     `channelKey` set, which is how the importer finds the same channel again.
+ */
+export const socialProfiles = pgTable("social_profiles", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  gender: text("gender"),
+  country: text("country"),
+  // Category slugs, e.g. "music", "movies-shows".
+  interests: text("interests").array().default(sql`'{}'::text[]`).notNull(),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  onboardedAt: timestamp("onboarded_at", { withTimezone: true }),
+  channelKey: text("channel_key").unique("social_profiles_channel_key_key"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const socialProfileRelations = relations(socialProfiles, ({ one }) => ({
+  user: one(users, {
+    fields: [socialProfiles.userId],
     references: [users.id],
   }),
 }));

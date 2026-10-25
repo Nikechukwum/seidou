@@ -13,6 +13,7 @@ import {
   videoViews,
 } from "@/social/db/schema";
 import { createTRPCRouter, protectedProcedure } from "@/social/trpc/init";
+import { videoViewCount } from "@/social/modules/videos/server/view-count";
 
 /**
  * Playlists, plus the two "virtual" ones — liked videos and watch history.
@@ -29,7 +30,7 @@ import { createTRPCRouter, protectedProcedure } from "@/social/trpc/init";
 // Shared by every procedure that returns videos, so the shapes stay identical
 // and the card components can consume any of them.
 const videoCounts = {
-  viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+  viewCount: videoViewCount(),
   likeCount: db.$count(
     videoReactions,
     and(eq(videoReactions.videoId, videos.id), eq(videoReactions.type, "like"))

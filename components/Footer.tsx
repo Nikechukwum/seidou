@@ -12,7 +12,9 @@ export const Footer = ({}: Props) => {
       '/signin',
       '/signup',
       // Has its own sticky Continue button, which the footer would cover
-      '/onboarding'
+      '/onboarding',
+      // Seidou Social onboarding — same reason
+      '/app-center/apps/seidou-social/onboarding'
    ]
    // Matches any /auction/free-auction/<something> (table page) — robust to quirks
    const isTablePage = /^\/auction\/free-auction\//.test(pathname) && !pathname.endsWith('/free-auction')

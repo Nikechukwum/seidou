@@ -124,7 +124,7 @@ export const SocialFeedHeader = ({
             <div className="ml-auto flex items-center gap-1">
               <Link
                 prefetch
-                href={socialPath("/search")}
+                href={socialPath("/explore")}
                 aria-label="Search"
                 className="p-2"
               >

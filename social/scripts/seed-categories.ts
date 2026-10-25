@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 
 import { categories } from "@/social/db/schema";
+import { SOCIAL_CATEGORIES } from "@/social/modules/explore/constants";
 
 /**
  * Opens its own connection rather than importing `@/social/db`, which is
@@ -13,7 +14,13 @@ import { categories } from "@/social/db/schema";
  * Run with: npm run social:seed-categories
  */
 
-const categoryNames = [
+// Must match SOCIAL_CATEGORIES in social/modules/explore/constants.ts — the
+// Explore grid and onboarding resolve their slugs against these names.
+// Imported here rather than repeated so the two cannot drift.
+const exploreCategoryNames = SOCIAL_CATEGORIES.map((category) => category.name);
+
+// The original upload categories. Kept: existing videos point at them.
+const legacyCategoryNames = [
   "Cars and vehicles",
   "Comedy",
   "Education",
@@ -28,6 +35,10 @@ const categoryNames = [
   "Science and technology",
   "Sports",
   "Travel and events",
+];
+
+const categoryNames = [
+  ...new Set([...exploreCategoryNames, ...legacyCategoryNames]),
 ];
 
 async function main() {

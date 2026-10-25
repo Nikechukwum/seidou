@@ -11,6 +11,8 @@ import { subscriptionsRouter } from '@/social/modules/subscriptions/server/proce
 import { videoReactionsRouter } from '@/social/modules/video-reactions/server/procedures';
 import { commentReactionsRouter } from '@/social/modules/comment-reactions/server/procedures';
 import { watchRewardsRouter } from '@/social/modules/watch-rewards/server/procedures';
+import { exploreRouter } from '@/social/modules/explore/server/procedures';
+import { socialProfilesRouter } from '@/social/modules/social-profiles/server/procedures';
 
 import { createTRPCRouter } from '../init';
 
@@ -29,6 +31,8 @@ export const appRouter = createTRPCRouter({
   videoReactions: videoReactionsRouter,
   commentReactions: commentReactionsRouter,
   watchRewards: watchRewardsRouter,
+  explore: exploreRouter,
+  socialProfiles: socialProfilesRouter,
 });
 
 export type AppRouter = typeof appRouter;

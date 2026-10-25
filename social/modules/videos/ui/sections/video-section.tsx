@@ -98,12 +98,14 @@ const VideoSectionSuspense = ({ videoId }: VideoSectionProps) => {
         <div className="aspect-video bg-black overflow-hidden relative">
           <VideoPlayer
             playbackId={video.muxPlaybackId}
+            sourceUrl={video.sourceUrl}
             thumbnailUrl={video.thumbnailUrl}
             onPlay={handlePlay}
             {...watchRewardHandlers}
           />
         </div>
-        <VideoBanner status={video.muxStatus} />
+        {/* Imported videos never go through Mux, so they are never "processing". */}
+        {!video.sourceUrl && <VideoBanner status={video.muxStatus} />}
       </div>
       <div className="px-4">
         <VideoTopRow video={video} />

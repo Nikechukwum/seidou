@@ -20,7 +20,6 @@ import {
   videoReactions,
   videos,
   videoUpdateSchema,
-  videoViews,
 } from "@/social/db/schema";
 import {
   baseProcedure,
@@ -29,6 +28,7 @@ import {
 } from "@/social/trpc/init";
 import { headers } from "next/headers";
 import { getAppUrl } from "@/social/constants";
+import { videoViewCount } from "./view-count";
 
 /**
  * Videos: the feeds, the watch page, and the studio's write operations.
@@ -377,7 +377,7 @@ export const videosRouter = createTRPCRouter({
               Boolean
             ),
           },
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           likeCount: db.$count(
             videoReactions,
             and(
@@ -431,7 +431,7 @@ export const videosRouter = createTRPCRouter({
         .select({
           ...getTableColumns(videos),
           user: socialUserColumns,
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           likeCount: db.$count(
             videoReactions,
             and(
@@ -496,10 +496,7 @@ export const videosRouter = createTRPCRouter({
 
       // Ordering by a correlated count, so the same subquery is reused for the
       // select, the cursor comparison and the ordering.
-      const viewCountSubquery = db.$count(
-        videoViews,
-        eq(videoViews.videoId, videos.id)
-      );
+      const viewCountSubquery = videoViewCount();
 
       const data = await db
         .select({
@@ -578,7 +575,7 @@ export const videosRouter = createTRPCRouter({
         .select({
           ...getTableColumns(videos),
           user: socialUserColumns,
-          viewCount: db.$count(videoViews, eq(videoViews.videoId, videos.id)),
+          viewCount: videoViewCount(),
           likeCount: db.$count(
             videoReactions,
             and(
