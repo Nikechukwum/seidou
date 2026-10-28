@@ -5,10 +5,11 @@ import { ErrorBoundary } from "react-error-boundary";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
-import { SearchIcon, UserRoundIcon } from "lucide-react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 
 import { trpc } from "@/social/trpc/client";
 import { socialPath } from "@/social/constants";
+import { UnderConstructionModal } from "@/social/components/under-construction-modal";
 
 interface SocialFeedHeaderProps {
   title: string;
@@ -27,6 +28,11 @@ interface SocialFeedHeaderProps {
    * navigated into — Seidou's footer already gets you out of the app.
    */
   showBack?: boolean;
+  /**
+   * The hairline under the header. The search page turns it off: there it ran
+   * directly beneath the search input and read as an unwanted divider.
+   */
+  showBorder?: boolean;
 }
 
 /**
@@ -48,9 +54,11 @@ export const SocialFeedHeader = ({
   categoryId,
   showCategories = true,
   showBack = false,
+  showBorder = true,
 }: SocialFeedHeaderProps) => {
   const router = useRouter();
   const [fullHeader, setFullHeader] = useState(true);
+  const [showComingSoon, setShowComingSoon] = useState(false);
   const lastScrollValue = useRef<number>(0);
 
   useEffect(() => {
@@ -90,11 +98,12 @@ export const SocialFeedHeader = ({
   };
 
   return (
-    <header
-      className={`duration-300 bg-white fixed max-w-md top-0 z-10 w-full border-b border-b-[#E6E6E6] ${
-        !fullHeader && showCategories ? "-translate-y-14" : ""
-      }`}
-    >
+    <>
+      <header
+        className={`duration-300 bg-white fixed max-w-md top-0 z-10 w-full ${
+          showBorder ? "border-b border-b-[#E6E6E6]" : ""
+        } ${!fullHeader && showCategories ? "-translate-y-14" : ""}`}
+      >
       {/* Top row */}
       <div className="h-14 flex items-center px-3 pt-3">
         {showBack && (
@@ -130,14 +139,14 @@ export const SocialFeedHeader = ({
               >
                 <SearchIcon className="size-5" />
               </Link>
-              <Link
-                prefetch
-                href={socialPath("/social-profile")}
-                aria-label="Social profile"
+              <button
+                type="button"
+                onClick={() => setShowComingSoon(true)}
+                aria-label="Create"
                 className="p-2"
               >
-                <UserRoundIcon className="size-5" />
-              </Link>
+                <PlusIcon className="size-6" strokeWidth={2} />
+              </button>
             </div>
           </>
         )}
@@ -159,6 +168,12 @@ export const SocialFeedHeader = ({
         </div>
       )}
     </header>
+
+    <UnderConstructionModal
+      isActive={showComingSoon}
+      setIsActive={setShowComingSoon}
+    />
+    </>
   );
 };
 

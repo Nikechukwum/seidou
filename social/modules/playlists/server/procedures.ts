@@ -13,7 +13,7 @@ import {
   videoViews,
 } from "@/social/db/schema";
 import { createTRPCRouter, protectedProcedure } from "@/social/trpc/init";
-import { videoViewCount } from "@/social/modules/videos/server/view-count";
+import { asTimestamp, videoUpdatedAtMs, videoViewCount } from "@/social/modules/videos/server/view-count";
 
 /**
  * Playlists, plus the two "virtual" ones — liked videos and watch history.
@@ -265,16 +265,16 @@ export const playlistsRouter = createTRPCRouter({
             eq(videos.visibility, "public"),
             cursor
               ? or(
-                  lt(videos.updatedAt, cursor.updatedAt),
+                  lt(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                   and(
-                    eq(videos.updatedAt, cursor.updatedAt),
+                    eq(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                     lt(videos.id, cursor.id)
                   )
                 )
               : undefined
           )
         )
-        .orderBy(desc(videos.updatedAt), desc(videos.id))
+        .orderBy(desc(videoUpdatedAtMs()), desc(videos.id))
         .limit(limit + 1);
 
       const hasMore = data.length > limit;

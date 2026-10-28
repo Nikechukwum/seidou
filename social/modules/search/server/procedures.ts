@@ -9,7 +9,7 @@ import {
   videos,
 } from "@/social/db/schema";
 import { baseProcedure, createTRPCRouter } from "@/social/trpc/init";
-import { videoViewCount } from "@/social/modules/videos/server/view-count";
+import { asTimestamp, videoUpdatedAtMs, videoViewCount } from "@/social/modules/videos/server/view-count";
 
 export const searchRouter = createTRPCRouter({
   getMany: baseProcedure
@@ -62,16 +62,16 @@ export const searchRouter = createTRPCRouter({
             categoryId ? eq(videos.categoryId, categoryId) : undefined,
             cursor
               ? or(
-                  lt(videos.updatedAt, cursor.updatedAt),
+                  lt(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                   and(
-                    eq(videos.updatedAt, cursor.updatedAt),
+                    eq(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                     lt(videos.id, cursor.id)
                   )
                 )
               : undefined
           )
         )
-        .orderBy(desc(videos.updatedAt), desc(videos.id))
+        .orderBy(desc(videoUpdatedAtMs()), desc(videos.id))
         .limit(limit + 1);
 
       const hasMore = data.length > limit;

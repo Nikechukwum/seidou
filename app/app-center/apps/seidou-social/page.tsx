@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { HydrateClient, trpc } from "@/social/trpc/server";
-import { DEFAULT_LIMIT, socialPath } from "@/social/constants";
+import { HOME_FEED_LIMIT, socialPath } from "@/social/constants";
 import { HomeView } from "@/social/modules/home/ui/views/home-view";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,8 @@ const SeidouSocialPage = async ({ searchParams }: PageProps) => {
   void trpc.categories.getMany.prefetch();
   void trpc.videos.getMany.prefetchInfinite({
     categoryId,
-    limit: DEFAULT_LIMIT,
+    kind: "video",
+    limit: HOME_FEED_LIMIT,
   });
 
   return (

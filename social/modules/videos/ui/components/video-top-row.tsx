@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { formatDistanceToNow, format } from "date-fns";
 
 import { Skeleton } from "@/social/components/ui/skeleton";
 
@@ -41,16 +40,6 @@ export const VideoTopRow = ({ video }: VideoTopRowProps) => {
     [video.viewCount]
   );
 
-  const compactDate = useMemo(
-    () => formatDistanceToNow(video.createdAt, { addSuffix: true }),
-    [video.createdAt]
-  );
-
-  const expandedDate = useMemo(
-    () => format(video.createdAt, "d MMM yyyy"),
-    [video.createdAt]
-  );
-
   return (
     <div className="flex flex-col gap-4 mt-4">
       <h1 className="text-lg font-semibold">{video.title}</h1>
@@ -69,8 +58,6 @@ export const VideoTopRow = ({ video }: VideoTopRowProps) => {
       <VideoDescription
         compactViews={compactViews}
         expandedViews={expandedViews}
-        compactDate={compactDate}
-        expandedDate={expandedDate}
         description={video.description}
       />
     </div>

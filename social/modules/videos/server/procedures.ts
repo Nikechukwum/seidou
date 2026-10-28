@@ -28,7 +28,7 @@ import {
 } from "@/social/trpc/init";
 import { headers } from "next/headers";
 import { getAppUrl } from "@/social/constants";
-import { videoViewCount } from "./view-count";
+import { asTimestamp, videoUpdatedAtMs, videoViewCount } from "./view-count";
 
 /**
  * Videos: the feeds, the watch page, and the studio's write operations.
@@ -415,6 +415,8 @@ export const videosRouter = createTRPCRouter({
       z.object({
         categoryId: z.string().uuid().nullish(),
         userId: z.string().uuid().nullish(),
+        /** Shorts are the same rows with kind "short" — see /shorts. */
+        kind: z.enum(["video", "short"]).nullish(),
         cursor: z
           .object({
             id: z.string().uuid(),
@@ -425,7 +427,7 @@ export const videosRouter = createTRPCRouter({
       })
     )
     .query(async ({ input }) => {
-      const { cursor, limit, categoryId, userId } = input;
+      const { cursor, limit, categoryId, userId, kind } = input;
 
       const data = await db
         .select({
@@ -454,18 +456,19 @@ export const videosRouter = createTRPCRouter({
             eq(videos.visibility, "public"),
             userId ? eq(videos.userId, userId) : undefined,
             categoryId ? eq(videos.categoryId, categoryId) : undefined,
+            kind ? eq(videos.kind, kind) : undefined,
             cursor
               ? or(
-                  lt(videos.updatedAt, cursor.updatedAt),
+                  lt(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                   and(
-                    eq(videos.updatedAt, cursor.updatedAt),
+                    eq(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                     lt(videos.id, cursor.id)
                   )
                 )
               : undefined
           )
         )
-        .orderBy(desc(videos.updatedAt), desc(videos.id))
+        .orderBy(desc(videoUpdatedAtMs()), desc(videos.id))
         // One extra row tells us whether another page exists.
         .limit(limit + 1);
 
@@ -599,16 +602,16 @@ export const videosRouter = createTRPCRouter({
             eq(videos.visibility, "public"),
             cursor
               ? or(
-                  lt(videos.updatedAt, cursor.updatedAt),
+                  lt(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                   and(
-                    eq(videos.updatedAt, cursor.updatedAt),
+                    eq(videoUpdatedAtMs(), asTimestamp(cursor.updatedAt)),
                     lt(videos.id, cursor.id)
                   )
                 )
               : undefined
           )
         )
-        .orderBy(desc(videos.updatedAt), desc(videos.id))
+        .orderBy(desc(videoUpdatedAtMs()), desc(videos.id))
         .limit(limit + 1);
 
       const hasMore = data.length > limit;

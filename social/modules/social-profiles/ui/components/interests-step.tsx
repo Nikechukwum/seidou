@@ -1,4 +1,4 @@
-import { SOCIAL_CATEGORIES } from "@/social/modules/explore/constants";
+import { ONBOARDING_CATEGORIES } from "@/social/modules/explore/constants";
 import { CategoryCard } from "@/social/modules/explore/ui/components/category-card";
 
 import { MIN_INTERESTS } from "../../constants";
@@ -36,7 +36,7 @@ export const InterestsStep = ({
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-2.5">
-        {SOCIAL_CATEGORIES.map((category) => {
+        {ONBOARDING_CATEGORIES.map((category) => {
           const isSelected = selected.includes(category.slug);
           return (
             <button

@@ -17,8 +17,8 @@ export const ExploreView = () => {
     <div className="min-h-lvh bg-white">
       <SocialFeedHeader
         title="Explore"
-        showBack
         showCategories={false}
+        showBorder={false}
         titleSlot={
           <SocialSearchInput placeholder="Search for videos, creators, topics..." />
         }

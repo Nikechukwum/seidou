@@ -45,7 +45,10 @@ export const CategoryHeader = ({ title, slug, tab }: CategoryHeaderProps) => {
         </h1>
       </div>
 
-      <nav className="no-scrollbar flex gap-x-1.5 overflow-x-auto px-3 py-2.5">
+      {/* justify-between spreads the four tabs across the row instead of
+          bunching them left with a gap at the end; gap-x-3 is the minimum
+          spacing, and below that (very narrow phones) the row scrolls. */}
+      <nav className="no-scrollbar flex justify-between gap-x-3 overflow-x-auto px-4 py-3">
         {CATEGORY_TABS.map((value) => {
           const active = value === tab;
           const href =
