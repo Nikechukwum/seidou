@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { trpc } from "@/social/trpc/client";
@@ -89,6 +89,21 @@ const VideoSectionSuspense = ({ videoId }: VideoSectionProps) => {
     if (!isSignedIn) return;
     createView.mutate({ videoId });
   };
+
+  // YouTube embeds cannot report a play event to us, so an imported video
+  // records its view when the watch page opens. video_views is unique per
+  // (user, video), so repeat visits neither duplicate nor inflate the count.
+  const recordedSourceView = useRef(false);
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    if (!video.sourceUrl) return;
+    if (recordedSourceView.current) return;
+
+    recordedSourceView.current = true;
+    createView.mutate({ videoId });
+    // createView.mutate is stable; the ref guards against a second call.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, video.sourceUrl, videoId]);
 
   return (
     <>

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useMemo } from "react";
-import { formatDistanceToNow } from "date-fns";
 
 import { socialPath } from "@/social/constants";
 import { isOptimizableImage } from "@/social/lib/image";
@@ -30,9 +29,8 @@ export const ShortCard = ({ data }: { data: ShortItem }) => {
     const views = Intl.NumberFormat("en", { notation: "compact" }).format(
       data.viewCount
     );
-    const date = formatDistanceToNow(data.createdAt, { addSuffix: true });
-    return `${views} views • ${date}`;
-  }, [data.viewCount, data.createdAt]);
+    return `${views} views`;
+  }, [data.viewCount]);
 
   return (
     <Link

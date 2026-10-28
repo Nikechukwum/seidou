@@ -25,7 +25,7 @@ interface VideoPlayerProps {
  * (watch?v=, youtu.be/, /shorts/, /embed/) or a direct file. Returns the
  * YouTube video id, or null for anything else.
  */
-const getYouTubeId = (url: string): string | null => {
+export const getYouTubeId = (url: string): string | null => {
   let parsed: URL;
   try {
     parsed = new URL(url);

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { useMemo } from "react";
-import { formatDistanceToNow } from "date-fns";
 
 import { socialPath } from "@/social/constants";
 import { Skeleton } from "@/social/components/ui/skeleton";
@@ -35,10 +34,6 @@ export const VideoInfo = ({ data, onRemove }: VideoInfoProps) => {
     );
   }, [data.viewCount]);
 
-  const compactDate = useMemo(() => {
-    return formatDistanceToNow(data.createdAt, { addSuffix: true });
-  }, [data.createdAt]);
-
   return (
     <div className="flex gap-3">
       <Link prefetch href={socialPath(`/users/${data.user.id}`)}>
@@ -54,8 +49,11 @@ export const VideoInfo = ({ data, onRemove }: VideoInfoProps) => {
           <UserInfo name={data.user.name} />
         </Link>
         <Link prefetch href={socialPath(`/videos/${data.id}`)}>
+          {/* Date removed on purpose: imported rows carried the source's
+              "7 days ago", which made organic videos look stale. Views are
+              Seidou's own count. */}
           <p className="text-sm text-gray-600 line-clamp-1">
-            {compactViews} views • {compactDate}
+            {compactViews} {data.viewCount === 1 ? "view" : "views"}
           </p>
         </Link>
       </div>

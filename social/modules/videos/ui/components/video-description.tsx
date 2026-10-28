@@ -8,16 +8,12 @@ import { cn } from "@/social/lib/utils";
 interface VideoDescriptionProps {
   compactViews: string;
   expandedViews: string;
-  compactDate: string;
-  expandedDate: string;
   description?: string | null;
 }
 
 export const VideoDescription = ({
   compactViews,
   expandedViews,
-  compactDate,
-  expandedDate,
   description,
 }: VideoDescriptionProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -28,11 +24,10 @@ export const VideoDescription = ({
       className="bg-secondary/50 rounded-xl p-3 cursor-pointer transition"
     >
       <div className="flex gap-2 text-sm mb-2">
+        {/* Only Seidou's own view count is shown. Imported videos no longer
+            leak the source's view count or upload date. */}
         <span className="font-medium">
           {isExpanded ? expandedViews : compactViews} views
-        </span>
-        <span className="font-medium">
-          {isExpanded ? expandedDate : compactDate}
         </span>
       </div>
       <div className="relative">

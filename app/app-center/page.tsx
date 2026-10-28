@@ -7,7 +7,7 @@ const AppCenterPage = () => {
     const router = useRouter();
     
     return ( 
-        <PageLayout pageTitle="App Center" noBackButton className="px-6 space-y-8 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Mini Apps" noBackButton className="px-6 space-y-8 bg-[#f5f5f5]">
             <BigCard
                 title="Apps"
                 description="Experience a variety of apps designed to enhance your Seidou journey."

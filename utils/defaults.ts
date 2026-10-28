@@ -135,8 +135,8 @@ const FOOTER_LINKS = [
          href: '/auction',
       },
       {
-         label: 'App Center',
-         icon: 'apps',
+         label: 'Mini Apps',
+         icon: 'grid_view',
          href: '/app-center',
       },
       {
