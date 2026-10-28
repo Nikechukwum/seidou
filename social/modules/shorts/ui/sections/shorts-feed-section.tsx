@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { trpc } from "@/social/trpc/client";
@@ -35,6 +35,9 @@ const ShortsFeedSectionSuspense = ({ onAction }: ShortsFeedSectionProps) => {
     { getNextPageParam: (lastPage) => lastPage.nextCursor }
   );
 
+  // Shared across shorts so unmuting once carries on as the viewer scrolls.
+  const [isMuted, setIsMuted] = useState(true);
+
   const items = shorts.pages.flatMap((page) => page.items);
 
   if (items.length === 0) {
@@ -48,7 +51,13 @@ const ShortsFeedSectionSuspense = ({ onAction }: ShortsFeedSectionProps) => {
   return (
     <div>
       {items.map((video) => (
-        <ShortItem key={video.id} video={video} onAction={onAction} />
+        <ShortItem
+          key={video.id}
+          video={video}
+          isMuted={isMuted}
+          onToggleMute={() => setIsMuted((muted) => !muted)}
+          onAction={onAction}
+        />
       ))}
       <InfiniteScroll
         hasNextPage={query.hasNextPage}
