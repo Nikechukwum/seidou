@@ -4,10 +4,12 @@ import { Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { trpc } from "@/social/trpc/client";
-import { HOME_FEED_LIMIT } from "@/social/constants";
+import { DEFAULT_LIMIT } from "@/social/constants";
 import { InfiniteScroll } from "@/social/components/infinite-scroll";
-
-import { HomeVideoCard, HomeVideoCardSkeleton } from "../components/home-video-card";
+import {
+  VideoGridCard,
+  VideoGridCardSkeleton,
+} from "@/social/modules/videos/ui/components/video-grid-card";
 
 interface HomeVideosSectionProps {
   categoryId?: string;
@@ -37,9 +39,9 @@ export const HomeVideosSection = ({ categoryId }: HomeVideosSectionProps) => {
 
 const HomeVideosSectionSkeleton = () => {
   return (
-    <div className="grid grid-cols-2 gap-x-2.5 gap-y-2.5 px-2.5">
-      {Array.from({ length: HOME_FEED_LIMIT }).map((_, i) => (
-        <HomeVideoCardSkeleton key={i} />
+    <div className="flex flex-col gap-6 px-4">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <VideoGridCardSkeleton key={i} />
       ))}
     </div>
   );
@@ -47,10 +49,9 @@ const HomeVideosSectionSkeleton = () => {
 
 const HomeVideosSectionSuspense = ({ categoryId }: HomeVideosSectionProps) => {
   const [videos, query] = trpc.videos.getMany.useSuspenseInfiniteQuery(
-    // Shorts have their own player at /shorts — the home feed shows the
-    // long-form catalogue, otherwise the freshly imported shorts would fill
-    // the entire first page.
-    { categoryId, kind: "video", limit: HOME_FEED_LIMIT },
+    // Shorts have their own player at /shorts. Without this the ten imported
+    // shorts would fill the top of the feed; the feed is the long-form list.
+    { categoryId, kind: "video", limit: DEFAULT_LIMIT },
     { getNextPageParam: (lastPage) => lastPage.nextCursor }
   );
 
@@ -66,12 +67,10 @@ const HomeVideosSectionSuspense = ({ categoryId }: HomeVideosSectionProps) => {
 
   return (
     <div>
-      {/* Two columns, ten to a page: on a phone the first screen holds the
-          whole first page without scrolling. The metadata is overlaid on the
-          thumbnail — see home-video-card.tsx — which is what buys the height. */}
-      <div className="grid grid-cols-2 gap-x-2.5 gap-y-2.5 px-2.5">
+      {/* Single column: the shell is max-w-md, so a grid has nowhere to go. */}
+      <div className="flex flex-col gap-6 px-4">
         {items.map((video) => (
-          <HomeVideoCard key={video.id} data={video} />
+          <VideoGridCard key={video.id} data={video} />
         ))}
       </div>
       <InfiniteScroll

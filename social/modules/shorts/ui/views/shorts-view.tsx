@@ -19,10 +19,17 @@ export const ShortsView = () => {
     if (!main) return;
 
     const previous = main.style.scrollSnapType;
+    const previousScrollbar = main.style.scrollbarWidth;
+    const hadNoScrollbar = main.classList.contains("no-scrollbar");
     main.style.scrollSnapType = "y mandatory";
+    // The scrollbar shows as a white strip beside the black player
+    main.style.scrollbarWidth = "none";
+    main.classList.add("no-scrollbar");
 
     return () => {
       main.style.scrollSnapType = previous;
+      main.style.scrollbarWidth = previousScrollbar;
+      if (!hadNoScrollbar) main.classList.remove("no-scrollbar");
     };
   }, []);
 
