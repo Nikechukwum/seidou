@@ -1,11 +1,5 @@
 export const DEFAULT_LIMIT = 5;
 
-/**
- * First page of the home feed. Ten videos in the two-column grid fill the
- * first screen without the old full-width cards that only showed two.
- */
-export const HOME_FEED_LIMIT = 10;
-
 /** Verticals per page on the dedicated /shorts player. */
 export const SHORTS_FEED_LIMIT = 10;
 

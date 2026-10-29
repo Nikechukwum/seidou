@@ -61,11 +61,14 @@ export const Footer = ({}: Props) => {
    const isGamePage = /^\/auction\/games\//.test(pathname)
 
    const isActive = !(hiddenFooterPaths.includes(pathname) || isTablePage || isGamePage)
+   // Shorts is a full-screen black player, so the bar goes dark to match
+   const isShortsPage = pathname.startsWith(socialPath('/shorts'))
 
   return (
    <>
-      {isActive && <footer className="h-15 fixed bottom-0 max-w-md w-full border-t border-t-[#0000001A] bg-white 
-      px-8 flex justify-between items-center text-xs">
+      {isActive && <footer className={`h-15 fixed bottom-0 max-w-md w-full border-t px-8 flex justify-between items-center text-xs ${
+         isShortsPage ? 'border-t-white/10 bg-black text-white' : 'border-t-[#0000001A] bg-white'
+      }`}>
          {links.map((link, index)=>{
             const {label, icon, href} = link
             const active = isActiveLink(href)
