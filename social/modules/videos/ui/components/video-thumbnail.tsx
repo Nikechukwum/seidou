@@ -39,6 +39,9 @@ export const VideoThumbnail = ({
           src={src}
           alt={title}
           unoptimized={!isOptimizableImage(src)}
+          // X's image CDN (pbs.twimg.com) refuses requests that carry
+          // another site's Referer, so imported X thumbnails need none.
+          referrerPolicy="no-referrer"
           fill
           // One column inside a max-w-md shell, so never wider than 448px.
           sizes="(max-width: 448px) 100vw, 448px"
