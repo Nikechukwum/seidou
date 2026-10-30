@@ -54,6 +54,26 @@ export const getYouTubeId = (url: string): string | null => {
   return null;
 };
 
+/**
+ * An X (Twitter) post link — x.com/<user>/status/<id> or /i/status/<id>.
+ * Returns the post id, or null for anything else. The page is not a video
+ * file, so the player streams the post's MP4 through /api/social/videos/x.
+ */
+export const getXPostId = (url: string): string | null => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.replace(/^(www\.|mobile\.)/, "");
+  if (host !== "x.com" && host !== "twitter.com") return null;
+
+  const match = parsed.pathname.match(/^\/[^/]+\/status(?:es)?\/(\d+)/);
+  return match ? match[1] : null;
+};
+
 export const VideoPlayerSkeleton = () => {
   return <div className="aspect-video bg-black" />;
 };
@@ -87,9 +107,12 @@ export const VideoPlayer = ({
       );
     }
 
+    // An X post plays just its video, proxied — see that route for why.
+    const xPostId = getXPostId(sourceUrl);
+
     return (
       <video
-        src={sourceUrl}
+        src={xPostId ? `/api/social/videos/x/${xPostId}` : sourceUrl}
         poster={thumbnailUrl || THUMBNAIL_FALLBACK}
         controls
         playsInline

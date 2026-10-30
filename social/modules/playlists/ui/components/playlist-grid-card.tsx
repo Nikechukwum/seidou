@@ -3,6 +3,7 @@ import Image from "next/image";
 import { ListVideoIcon, PlayIcon } from "lucide-react";
 
 import { socialPath } from "@/social/constants";
+import { isOptimizableImage } from "@/social/lib/image";
 import { Skeleton } from "@/social/components/ui/skeleton";
 import { THUMBNAIL_FALLBACK } from "@/social/modules/videos/constants";
 
@@ -28,6 +29,9 @@ export const PlaylistGridCard = ({ data }: PlaylistGridCardProps) => {
           <Image
             src={data.thumbnailUrl || THUMBNAIL_FALLBACK}
             alt={data.name}
+            unoptimized={!isOptimizableImage(data.thumbnailUrl || THUMBNAIL_FALLBACK)}
+            // See VideoThumbnail: X's image CDN rejects a foreign Referer.
+            referrerPolicy="no-referrer"
             fill
             sizes="(max-width: 448px) 100vw, 448px"
             quality={65}
