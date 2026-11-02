@@ -81,6 +81,10 @@ revoke all on function public.fruit_cooldown_remaining(uuid, uuid, text) from pu
 -- assert_fruit_cooldown — the guard every fruit RPC calls up front. Raises a
 -- friendly message while the fruit is still cooling down. p_label is the
 -- human name ("Freeze Fruit") so the error reads naturally.
+--
+-- DISABLED-COOLDOWN: the check is commented out, so no fruit is ever refused.
+-- To bring the cooldown back, uncomment the three lines below, remove the
+-- "null;" line, and re-run this file. Casts keep being logged in the ledger.
 -- ----------------------------------------------------------------------------
 create or replace function public.assert_fruit_cooldown(
   p_auction_id uuid,
@@ -96,10 +100,11 @@ as $$
 declare
   v_remaining int;
 begin
-  v_remaining := public.fruit_cooldown_remaining(p_auction_id, p_user_id, p_fruit_id);
-  if v_remaining > 0 then
-    raise exception '% is still cooling down — % more second(s)', p_label, v_remaining;
-  end if;
+  null;
+  -- v_remaining := public.fruit_cooldown_remaining(p_auction_id, p_user_id, p_fruit_id);
+  -- if v_remaining > 0 then
+  --   raise exception '% is still cooling down — % more second(s)', p_label, v_remaining;
+  -- end if;
 end;
 $$;
 

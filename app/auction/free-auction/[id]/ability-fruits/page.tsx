@@ -11,7 +11,9 @@
 // Testing phase: every user holds all 10 fruits, 10 uses each.
 // ============================================================================
 
-import { useEffect, useState } from 'react'
+// DISABLED-COOLDOWN: restore useEffect when the cooldown effects below come back.
+// import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { PageLayout } from '@/components/PageLayout'
 import { Modal } from '@/components/Modal'
@@ -31,12 +33,13 @@ const AbilityFruitsPage = () => {
     const [comingSoon, setComingSoon] = useState<AbilityFruit | null>(null)
     // Set by the frozen check on Activate: "You are currently frozen — wait Xs".
     const [freezeNotice, setFreezeNotice] = useState<{ remaining: number } | null>(null)
+    // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
     // Seconds left before each fruit can fire again, keyed by fruit id. Every
     // fruit shares the negate-style cooldown; the count here is read once from
     // the server and ticked down locally while this page is open.
-    const [cooldowns, setCooldowns] = useState<Record<string, number>>({})
+    // const [cooldowns, setCooldowns] = useState<Record<string, number>>({})
     // Set when Activate is tapped on a fruit that is still cooling down.
-    const [cooldownNotice, setCooldownNotice] = useState<AbilityFruit | null>(null)
+    // const [cooldownNotice, setCooldownNotice] = useState<AbilityFruit | null>(null)
     // Set when Activate is tapped on the Shield/Mirror defense fruits: they are
     // played against an incoming effect on the table, not armed.
     const [defenseNotice, setDefenseNotice] = useState<AbilityFruit | null>(null)
@@ -62,54 +65,56 @@ const AbilityFruitsPage = () => {
     const usage = getFruitUsage(auctionId)
     const bonuses = getFruitBonuses(auctionId)
 
+    // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
     // Read the live cooldowns when the page opens (whatever you just cast runs
     // its countdown server-side, so re-entering the page shows the truth).
-    useEffect(() => {
-        let cancelled = false
-        const load = async () => {
-            try {
-                const res = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
-                const data = await res.json()
-                if (!cancelled && res.ok && data?.cooldowns) {
-                    setCooldowns(data.cooldowns)
-                }
-            } catch {
-                // keep whatever we already have — a failed read must not block the page
-            }
-        }
-        void load()
-        return () => {
-            cancelled = true
-        }
-    }, [auctionId])
+    // useEffect(() => {
+    //     let cancelled = false
+    //     const load = async () => {
+    //         try {
+    //             const res = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+    //             const data = await res.json()
+    //             if (!cancelled && res.ok && data?.cooldowns) {
+    //                 setCooldowns(data.cooldowns)
+    //             }
+    //         } catch {
+    //             // keep whatever we already have — a failed read must not block the page
+    //         }
+    //     }
+    //     void load()
+    //     return () => {
+    //         cancelled = true
+    //     }
+    // }, [auctionId])
 
     // Count the on-screen "N s" pills down locally between reads.
-    useEffect(() => {
-        if (Object.keys(cooldowns).length === 0) return
-        const t = setInterval(() => {
-            setCooldowns((prev) => {
-                const next: Record<string, number> = {}
-                for (const [id, secs] of Object.entries(prev)) {
-                    if (secs > 1) next[id] = secs - 1
-                }
-                return next
-            })
-        }, 1000)
-        return () => clearInterval(t)
-    }, [cooldowns])
+    // useEffect(() => {
+    //     if (Object.keys(cooldowns).length === 0) return
+    //     const t = setInterval(() => {
+    //         setCooldowns((prev) => {
+    //             const next: Record<string, number> = {}
+    //             for (const [id, secs] of Object.entries(prev)) {
+    //                 if (secs > 1) next[id] = secs - 1
+    //             }
+    //             return next
+    //         })
+    //     }, 1000)
+    //     return () => clearInterval(t)
+    // }, [cooldowns])
 
     const handleActivate = async (fruit: AbilityFruit) => {
         if (!fruit.available) {
             setComingSoon(fruit)
             return
         }
+        // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
         // COOLDOWN: the same fruit cannot be fired twice within 20s — stopped
         // here with a notice, before the table arms it. Applies to Negate too.
-        const coolingFor = cooldowns[fruit.id] ?? 0
-        if (coolingFor > 0) {
-            setCooldownNotice(fruit)
-            return
-        }
+        // const coolingFor = cooldowns[fruit.id] ?? 0
+        // if (coolingFor > 0) {
+        //     setCooldownNotice(fruit)
+        //     return
+        // }
         // A player frozen by someone else's Freeze Fruit cannot activate any
         // fruit except NEGATE — the freeze's one designed counter. Checking here
         // means the "you are currently frozen" response arrives the moment they
@@ -163,7 +168,8 @@ const AbilityFruitsPage = () => {
 
             <div className="flex flex-col gap-4">
                 {ABILITY_FRUITS.map((fruit) => {
-                    const coolingFor = cooldowns[fruit.id] ?? 0
+                    // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
+                    // const coolingFor = cooldowns[fruit.id] ?? 0
                     const usesLeft = availableUses(auctionId, usage, bonuses, fruit.id)
                     return (
                     <div
@@ -185,17 +191,20 @@ const AbilityFruitsPage = () => {
                                         SOON
                                     </span>
                                 )}
+                                {/* DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
                                 {fruit.available && coolingFor > 0 && (
                                     <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">
                                         COOLING {coolingFor}s
                                     </span>
                                 )}
+                                */}
                             </div>
                             <p className="mt-1 text-sm text-gray-500">{fruit.tagline}</p>
 
                             <div className="mt-3 flex gap-2">
                                 <Button
-                                    text={coolingFor > 0 ? `Activate · ${coolingFor}s` : 'Activate'}
+                                    // DISABLED-COOLDOWN: text={coolingFor > 0 ? `Activate · ${coolingFor}s` : 'Activate'}
+                                    text="Activate"
                                     size="xs"
                                     classname="flex-1"
                                     onClick={() => void handleActivate(fruit)}
@@ -252,6 +261,7 @@ const AbilityFruitsPage = () => {
                 )}
             </Modal>
 
+            {/* DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
             <Modal isActive={!!cooldownNotice} setIsActive={() => setCooldownNotice(null)}>
                 {cooldownNotice && (
                     <div className="flex flex-col items-center text-center">
@@ -265,6 +275,7 @@ const AbilityFruitsPage = () => {
                     </div>
                 )}
             </Modal>
+            */}
 
             <Modal isActive={!!defenseNotice} setIsActive={() => setDefenseNotice(null)}>
                 {defenseNotice && (

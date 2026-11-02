@@ -98,7 +98,9 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         name: 'Shield Shield Fruit',
         tagline: 'Blocks the next fruit aimed at you during its reaction window.',
         description:
-            'You do not throw the Shield — you HOLD it. The moment an ability fruit targets you (Divide, Swap, Steal, Freeze), a reaction window opens for 5 seconds and this is your moment: play the Shield and the effect bounces off you, leaving your bid untouched. It blocks your share only — everyone else still eats the effect. The Shield is consumed and needs its cooldown before it can save you again.',
+            // DISABLED-COOLDOWN: add this sentence back when the cooldown returns:
+            // "The Shield is consumed and needs its cooldown before it can save you again."
+            'You do not throw the Shield — you HOLD it. The moment an ability fruit targets you (Divide, Swap, Steal, Freeze), a reaction window opens for 5 seconds and this is your moment: play the Shield and the effect bounces off you, leaving your bid untouched. It blocks your share only — everyone else still eats the effect.',
         image: '/ability-fruits/shield.png',
         accent: { base: '#2563eb', spark: '#fcd34d', deep: '#1e3a8a' },
         available: true,
@@ -200,7 +202,9 @@ export const ABILITY_FRUITS: AbilityFruit[] = [
         name: 'Negate Fruit',
         tagline: 'Cancels the last ability fruit used on you and puts your bid back.',
         description:
-            "Activate and the fruit cancels the most recent ability fruit effect that hit you — a divide, a steal, a swap, a freeze — and restores your bid to exactly what it was before that effect landed. It only ever undoes the LAST effect, it does not shield you from anything that comes next, and it cannot be used when nothing has been done to you. After use the fruit needs a short cooldown before it can be eaten again.",
+            // DISABLED-COOLDOWN: add this sentence back when the cooldown returns:
+            // "After use the fruit needs a short cooldown before it can be eaten again."
+            "Activate and the fruit cancels the most recent ability fruit effect that hit you — a divide, a steal, a swap, a freeze — and restores your bid to exactly what it was before that effect landed. It only ever undoes the LAST effect, it does not shield you from anything that comes next, and it cannot be used when nothing has been done to you.",
         // The red swirl orb from the design canvas — this artwork is Negate's
         // alone; Steal used to borrow it (see the note on the thief entry).
         image: '/ability-fruits/negate.png',

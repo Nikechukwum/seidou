@@ -56,7 +56,8 @@ import {
     windowRemainingSeconds,
 } from "@/lib/abilityInteractions";
 import AbilityManifestOverlay from "@/components/AbilityManifestOverlay";
-import TargetTelegraphOverlay from "@/components/TargetTelegraphOverlay";
+// DISABLED-TARGET-WARNING: uncomment to bring the red border warning back.
+// import TargetTelegraphOverlay from "@/components/TargetTelegraphOverlay";
 import ReactFruitPicker from "@/components/ReactFruitPicker";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
@@ -240,7 +241,8 @@ const LeaderboardPage = () => {
     const [feedOffsetMs, setFeedOffsetMs] = useState(0)
     // The pending interaction currently targeting ME (drives the React picker).
     const [reactTarget, setReactTarget] = useState<AbilityInteraction | null>(null)
-    const [reactCooldowns, setReactCooldowns] = useState<Partial<Record<'shield' | 'mirror', number>>>({})
+    // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
+    // const [reactCooldowns, setReactCooldowns] = useState<Partial<Record<'shield' | 'mirror', number>>>({})
     const [responding, setResponding] = useState(false)
     // interaction id -> state last seen, so a resolution fires once.
     const seenInteractionsRef = useRef<Map<number, string>>(new Map())
@@ -1118,12 +1120,13 @@ const LeaderboardPage = () => {
             return
         }
 
+        // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
         // "Negate Fruit has a cooldown (e.g., 15-20s)."
-        const cooling = Number(peek?.cooldown_remaining ?? 0)
-        if (cooling > 0) {
-            abort(`Negate Fruit is still cooling down — ${Math.ceil(cooling)}s left.`)
-            return
-        }
+        // const cooling = Number(peek?.cooldown_remaining ?? 0)
+        // if (cooling > 0) {
+        //     abort(`Negate Fruit is still cooling down — ${Math.ceil(cooling)}s left.`)
+        //     return
+        // }
         // "Prevent Negate activation if no recent effect exists."
         if (!peek?.has_effect) {
             abort('Nothing has been used on you yet — there is no effect to negate.')
@@ -1285,23 +1288,24 @@ const LeaderboardPage = () => {
             } catch {
                 // fall through to the handler — its own server commit still refuses
             }
+            // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
             // COOLDOWN: the same fruit cannot fire twice within 20s. Stopped
             // HERE (before any frame) so a player never watches a fruit explode
             // only for the server to refuse and revert it.
-            try {
-                const coolRes = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
-                const coolData = await coolRes.json()
-                const remaining = Number(coolData?.cooldowns?.[armed] ?? 0)
-                if (coolRes.ok && remaining > 0) {
-                    dispatch(showToast({
-                        type: 'error',
-                        message: `${getAbilityFruit(armed)?.name ?? 'This fruit'} is still cooling down — ${remaining} more second${remaining === 1 ? '' : 's'}.`,
-                    }))
-                    return
-                }
-            } catch {
-                // fall through — the fruit RPC's own cooldown guard still refuses
-            }
+            // try {
+            //     const coolRes = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+            //     const coolData = await coolRes.json()
+            //     const remaining = Number(coolData?.cooldowns?.[armed] ?? 0)
+            //     if (coolRes.ok && remaining > 0) {
+            //         dispatch(showToast({
+            //             type: 'error',
+            //             message: `${getAbilityFruit(armed)?.name ?? 'This fruit'} is still cooling down — ${remaining} more second${remaining === 1 ? '' : 's'}.`,
+            //         }))
+            //         return
+            //     }
+            // } catch {
+            //     // fall through — the fruit RPC's own cooldown guard still refuses
+            // }
             if (armed === 'multiply') handleMultiplySelf()
             if (armed === 'divide') handleDivideSelf()
             if (armed === 'thief') handleStealSelf()
@@ -1323,18 +1327,19 @@ const LeaderboardPage = () => {
     )
     useEffect(() => {
         setReactTarget(reactableTarget)
-        if (!reactableTarget) return
-        void (async () => {
-            try {
-                const res = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
-                const data = await res.json()
-                const c = data?.cooldowns ?? {}
-                setReactCooldowns({ shield: Number(c.shield ?? 0), mirror: Number(c.mirror ?? 0) })
-            } catch {
-                // keep the last known cooldowns
-            }
-        })()
-    }, [reactableTarget, auctionId])
+        // DISABLED-COOLDOWN: uncomment (and add auctionId to the deps) to bring the fruit cooldown back.
+        // if (!reactableTarget) return
+        // void (async () => {
+        //     try {
+        //         const res = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+        //         const data = await res.json()
+        //         const c = data?.cooldowns ?? {}
+        //         setReactCooldowns({ shield: Number(c.shield ?? 0), mirror: Number(c.mirror ?? 0) })
+        //     } catch {
+        //         // keep the last known cooldowns
+        //     }
+        // })()
+    }, [reactableTarget])
 
     // Poll the feed every ~1s. The GET already runs the server sweep first, so
     // each response is post-resolution truth; a failed poll keeps the last feed.
@@ -1997,13 +2002,15 @@ const LeaderboardPage = () => {
                 picker. The two overlays are pointer-events-none; only the
                 picker modal accepts taps. */}
             <AbilityManifestOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} />
+            {/* DISABLED-TARGET-WARNING: uncomment to bring the red border warning back.
             <TargetTelegraphOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} myUserId={myUserId} />
+            */}
             <ReactFruitPicker
                 interaction={reactTarget && reactTarget.state === 'pending' ? reactTarget : null}
                 serverNowMs={Date.now() + feedOffsetMs}
                 responding={responding}
                 myUserId={myUserId}
-                cooldowns={reactCooldowns}
+                // DISABLED-COOLDOWN: cooldowns={reactCooldowns}
                 onRespond={handleRespond}
                 onDismiss={() => setReactTarget(null)}
             />
