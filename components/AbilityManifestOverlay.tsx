@@ -102,11 +102,13 @@ function Parked({ interaction, userId }: { interaction: AbilityInteraction; user
             className="pointer-events-none fixed z-[60] flex items-center justify-center"
             style={{ left: p.x - 20, top: p.y - 20, width: 40, height: 40 }}
         >
+            {/* DISABLED-TARGET-WARNING: uncomment to bring the red ring warning back.
             <motion.span
                 className="absolute inset-0 rounded-full border-2 border-red-400"
                 animate={{ scale: [1, 1.6], opacity: [0.7, 0] }}
                 transition={{ duration: 1.1, repeat: Infinity, ease: 'easeOut' }}
             />
+            */}
             {fruit && (
                 <Image
                     src={fruit.image}
