@@ -6,7 +6,10 @@ import { playTapSound, preloadSounds, unlockSounds } from '@/utils/sound'
 // Further than this between press and release is a drag, not a tap.
 const MAX_TAP_MOVE_PX = 10
 
-// Preloads the sounds and plays the tap sound on every tap in the app. Listening
+// The tap sound only plays in the Land Wars section of the app.
+const LAND_WARS_PATH = /^\/(auction|land-wars)(\/|$)/
+
+// Preloads the sounds and plays the tap sound on every tap in Land Wars. Listening
 // once on the document means every button, link, row and tab is covered without
 // wiring each one. Browsers do not send a click after a touch scroll, and the
 // distance check below filters out mouse drags and slider drags.
@@ -21,7 +24,7 @@ export function SoundEffects() {
             pressY = e.clientY
         }
         const handleClick = (e: MouseEvent) => {
-            if (!e.isTrusted) return
+            if (!e.isTrusted || !LAND_WARS_PATH.test(window.location.pathname)) return
             // Keyboard clicks report no position, so only real pointers are measured
             const moved = e.detail > 0 && Math.hypot(e.clientX - pressX, e.clientY - pressY) > MAX_TAP_MOVE_PX
             if (!moved) playTapSound()
