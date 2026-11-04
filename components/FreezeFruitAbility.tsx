@@ -273,9 +273,9 @@ export default function FreezeFruitAbility({
     )
 }
 
-/** The blue caption bar shown under the table while a freeze is live. */
-export function FreezeStatusPill({ stage, secondsLeft }: { stage: FreezeStage; secondsLeft: number }) {
-    if (stage === 'idle') return null
+/** The blue caption bar shown under the table as a freeze starts and wears off. */
+export function FreezeStatusPill({ stage }: { stage: FreezeStage }) {
+    if (stage === 'idle' || stage === 'active') return null
 
     return (
         <div className="flex justify-center">
@@ -288,7 +288,6 @@ export function FreezeStatusPill({ stage, secondsLeft }: { stage: FreezeStage; s
             >
                 <SnowflakeIcon size={14} />
                 {stage === 'pulse' && <span>Freeze Fruit activated — freezing the table…</span>}
-                {stage === 'active' && <span>Table frozen — {secondsLeft}s left</span>}
                 {stage === 'fade' && <span>Freeze wearing off…</span>}
             </motion.div>
         </div>

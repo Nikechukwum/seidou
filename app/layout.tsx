@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import StoreProvider from "@/redux/StoreProvider";
 import { Footer } from "@/components/Footer";
 import { Toast } from "@/components/Toast";
+import { SoundEffects } from "@/components/SoundEffects";
 
 export const metadata: Metadata = {
   title: "Seidou",
@@ -32,6 +33,7 @@ export default async function RootLayout({
       <body className={`${inter.className} antialiased bg-[#eeeeee] overscroll-contain`}>
         <StoreProvider>
           <Toast />
+          <SoundEffects />
           <div id="main" className="max-w-md mx-auto overflow-scroll h-screen bg-white">
             {children}
             <Footer />

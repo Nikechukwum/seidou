@@ -47,21 +47,23 @@ import {
     AbilityInteraction,
     InteractionFeed,
     FEED_POLL_MS,
-    effectLabel,
+    // DISABLED-REACTION-WINDOW: effectLabel,
     effectShortLabel,
     feedClockOffsetMs,
     iBlockedMe,
     iReflectedMe,
     iWasAffected,
-    windowRemainingSeconds,
+    // DISABLED-REACTION-WINDOW: windowRemainingSeconds,
 } from "@/lib/abilityInteractions";
-import AbilityManifestOverlay from "@/components/AbilityManifestOverlay";
+// DISABLED-REACTION-WINDOW: uncomment to bring the in-flight fruit icons back.
+// import AbilityManifestOverlay from "@/components/AbilityManifestOverlay";
 // DISABLED-TARGET-WARNING: uncomment to bring the red border warning back.
 // import TargetTelegraphOverlay from "@/components/TargetTelegraphOverlay";
 import ReactFruitPicker from "@/components/ReactFruitPicker";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
+import { playBidIncreaseSound } from "@/utils/sound";
 
 type Bid = {
     id: number;
@@ -244,12 +246,28 @@ const LeaderboardPage = () => {
     // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
     // const [reactCooldowns, setReactCooldowns] = useState<Partial<Record<'shield' | 'mirror', number>>>({})
     const [responding, setResponding] = useState(false)
+    // The fruit I closed or already answered, so the next poll can't reopen it.
+    const closedReactIdRef = useRef<number | null>(null)
     // interaction id -> state last seen, so a resolution fires once.
     const seenInteractionsRef = useRef<Map<number, string>>(new Map())
     // the interaction my current steal countdown collects on commit.
     const stealInteractionIdRef = useRef<number | null>(null)
 
     const openFreezePopup = useCallback(() => setFreezePopupOpen(true), [])
+
+    // Reading the feed right after a cast shows it without waiting for the next
+    // poll. The GET also applies anything that is due before it answers.
+    const refreshInteractionFeed = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/landwars/ability-interactions?auctionId=${encodeURIComponent(auctionId)}`)
+            const data = await res.json()
+            if (!res.ok) return
+            setFeedOffsetMs(feedClockOffsetMs(data) ?? 0)
+            setInteractionFeed(data)
+        } catch {
+            // keep last known feed
+        }
+    }, [auctionId])
 
     const fireDelta = useCallback((userId: string, amount: number) => {
         setDeltaTriggers(prev => ({
@@ -418,6 +436,7 @@ const LeaderboardPage = () => {
             dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
             setBidAmount('')
             setPlaceBidModal(false)
+            playBidIncreaseSound()
             dispatch(showToast({ type: 'success', message: data.action === 'insert' ? 'Bid placed successfully!' : 'Bid updated successfully!' }))
         }
 
@@ -453,6 +472,7 @@ const LeaderboardPage = () => {
                     : b
             ))
             fireDelta(user.id, increment)
+            playBidIncreaseSound()
         }
 
         try {
@@ -523,6 +543,7 @@ const LeaderboardPage = () => {
 
             dispatch(PartialUpdateUser({ bidding_balance: Number(data.bidding_balance) }))
             if (user) fireDelta(user.id, increment)
+            playBidIncreaseSound()
             setQuickBidding(false)
             return true
         } catch {
@@ -624,7 +645,10 @@ const LeaderboardPage = () => {
     // target's new bid, the same green delta a normal bid raise shows.
     const handleMultiplyComplete = useCallback((id: number | string, delta: number) => {
         setMultiplyTarget(null)
-        if (delta > 0) fireDelta(String(id), delta)
+        if (delta > 0) {
+            fireDelta(String(id), delta)
+            playBidIncreaseSound()
+        }
     }, [fireDelta])
 
     //  Ability Fruit DIVIDE — interaction system. The fruit is CAST through
@@ -667,12 +691,14 @@ const LeaderboardPage = () => {
                 const data = await res.json()
                 if (!res.ok) {
                     dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Divide Fruit.' }))
+                    return
                 }
+                void refreshInteractionFeed()
             } catch {
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [divideTarget, divideStage, multiplyTarget, stealStage, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
+    }, [divideTarget, divideStage, multiplyTarget, stealStage, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch, refreshInteractionFeed])
 
     // while the fruit is in flight, capture the source card (mine) and the #1
     // card positions so the page-level overlay can fly between them.
@@ -735,12 +761,14 @@ const LeaderboardPage = () => {
                 const data = await res.json()
                 if (!res.ok) {
                     dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Steal.' }))
+                    return
                 }
+                void refreshInteractionFeed()
             } catch {
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [stealStage, divideTarget, multiplyTarget, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
+    }, [stealStage, divideTarget, multiplyTarget, swapStage, restoreStage, negateStage, freezeStage, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch, refreshInteractionFeed])
 
     // The 60s countdown: every second, each still-eligible target loses 1,000
     // BC. Anyone who runs out before zero loses their red border and badge. At
@@ -886,12 +914,14 @@ const LeaderboardPage = () => {
                 const data = await res.json()
                 if (!res.ok) {
                     dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Position Swap.' }))
+                    return
                 }
+                void refreshInteractionFeed()
             } catch {
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, interactionFeed, restoreStage, negateStage, freezeStage, myFreeze.frozen, auctionId, dispatch])
+    }, [swapStage, stealStage, divideTarget, multiplyTarget, myUserId, bids, interactionFeed, restoreStage, negateStage, freezeStage, myFreeze.frozen, auctionId, dispatch, refreshInteractionFeed])
 
     // while the fruit is in flight, capture the source card (mine) and the
     // leader's card positions so the page-level overlay can fly between them.
@@ -1203,12 +1233,14 @@ const LeaderboardPage = () => {
                 const data = await res.json()
                 if (!res.ok) {
                     dispatch(showToast({ type: 'error', message: data.error || 'Could not cast the Freeze.' }))
+                    return
                 }
+                void refreshInteractionFeed()
             } catch {
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             }
         })()
-    }, [freezeStage, stealStage, swapStage, restoreStage, negateStage, divideTarget, multiplyTarget, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch])
+    }, [freezeStage, stealStage, swapStage, restoreStage, negateStage, divideTarget, multiplyTarget, myFreeze.frozen, myUserId, bids, interactionFeed, auctionId, dispatch, refreshInteractionFeed])
 
     // FREEZE FRAME 3: measure the radial wave once the pulse stage opens. The
     // origin is the activator's own card (where the fruit sits) and the reach
@@ -1319,15 +1351,14 @@ const LeaderboardPage = () => {
     //  INTERACTION SYSTEM — feed, react target, impact bursts, and respond.
     //  ─────────────────────────────────────────────────────────────────────────
 
-    // The one pending interaction currently targeting ME → opens the React
-    // picker and pre-fetches our Shield/Mirror cooldowns.
+    // The one pending interaction currently targeting ME → opens the React picker.
     const reactableTarget = useMemo(
         () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.is_targeting_me) ?? null,
         [interactionFeed]
     )
     useEffect(() => {
-        setReactTarget(reactableTarget)
-        // DISABLED-COOLDOWN: uncomment (and add auctionId to the deps) to bring the fruit cooldown back.
+        setReactTarget(reactableTarget && reactableTarget.id !== closedReactIdRef.current ? reactableTarget : null)
+        // DISABLED-COOLDOWN: uncomment (and add auctionId to the deps) to pre-fetch the Shield/Mirror cooldowns.
         // if (!reactableTarget) return
         // void (async () => {
         //     try {
@@ -1348,40 +1379,33 @@ const LeaderboardPage = () => {
         let cancelled = false
         let timer: ReturnType<typeof setTimeout>
         const check = async () => {
-            try {
-                const res = await fetch(`/api/landwars/ability-interactions?auctionId=${encodeURIComponent(auctionId)}`)
-                const data = await res.json()
-                if (cancelled || !res.ok) return
-                setFeedOffsetMs(feedClockOffsetMs(data) ?? 0)
-                setInteractionFeed(data)
-            } catch {
-                // keep last known feed
-            }
-            timer = setTimeout(check, FEED_POLL_MS)
+            await refreshInteractionFeed()
+            if (!cancelled) timer = setTimeout(check, FEED_POLL_MS)
         }
         void check()
         return () => { cancelled = true; clearTimeout(timer) }
-    }, [auctionId, loading])
+    }, [refreshInteractionFeed, loading])
 
     // All SQL timestamps live in server time; this is "now-ish" in that clock.
     const serverNowMs = Date.now() + feedOffsetMs
 
-    const pendingInteractions = useMemo(
-        () => (interactionFeed?.interactions ?? []).filter(i => i.state === 'pending'),
-        [interactionFeed]
-    )
+    // DISABLED-REACTION-WINDOW: uncomment to bring the in-flight UI back.
+    // const pendingInteractions = useMemo(
+    //     () => (interactionFeed?.interactions ?? []).filter(i => i.state === 'pending'),
+    //     [interactionFeed]
+    // )
     // CEO broadcast rule: the in-flight animation (manifest flights + telegraph
     // rings) is visible ONLY to the activator and the target(s) — spectators
     // watch the plain table until the result lands and the bids change.
-    const viewablePending = useMemo(
-        () => pendingInteractions.filter(i => i.actor_is_me || i.is_targeting_me),
-        [pendingInteractions]
-    )
-    const myPending = useMemo(
-        () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.actor_is_me) ?? null,
-        [interactionFeed]
-    )
-    const myPendingSeconds = myPending ? windowRemainingSeconds(myPending, serverNowMs) : 0
+    // const viewablePending = useMemo(
+    //     () => pendingInteractions.filter(i => i.actor_is_me || i.is_targeting_me),
+    //     [pendingInteractions]
+    // )
+    // const myPending = useMemo(
+    //     () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.actor_is_me) ?? null,
+    //     [interactionFeed]
+    // )
+    // const myPendingSeconds = myPending ? windowRemainingSeconds(myPending, serverNowMs) : 0
 
     // IMPACT BURSTS — replay the visual on top of the server-applied numbers.
     // Nothing here is authoritative; each only fires while its outcome is fresh
@@ -1543,8 +1567,10 @@ const LeaderboardPage = () => {
                         ? '🛡 Shield up — the effect will bounce off you.'
                         : '↩️ Mirror up — the effect will be thrown straight back.',
                 }))
-                // Closing is left to the feed: the next poll sees blocked_by /
-                // reflected_by updated and is_targeting_me flips to false.
+                // I stay a target after answering, so close the popup here. It
+                // also stops the same fruit being answered with both defenses.
+                closedReactIdRef.current = interactionId
+                setReactTarget(null)
             } catch {
                 dispatch(showToast({ type: 'error', message: 'Something went wrong. Please try again.' }))
             } finally {
@@ -1891,16 +1917,16 @@ const LeaderboardPage = () => {
             )}
 
             {/*  FREEZE FRAMES 2-6 — the blue caption bar under the
-                table while the activator's freeze is live: activated ->
-                30s countdown -> fading out. */}
-            <FreezeStatusPill stage={freezeStage} secondsLeft={freezeSeconds} />
+                table as the activator's freeze starts and fades out. */}
+            <FreezeStatusPill stage={freezeStage} />
 
             {/*  RESTORE FRAMES 2-4 — the teal caption bar under
                 the table, ending on the "Restoring your resources..." spinner. */}
             <RestoreStatusPill stage={restoreStage} />
 
-            {/*  INTERACTION FRAME 1-2 — the manifest pill under the
-                table while OUR interactive fruit is in its reaction window. */}
+            {/* DISABLED-REACTION-WINDOW: uncomment to bring the "in flight" pill back.
+                INTERACTION FRAME 1-2 — the manifest pill under the
+                table while OUR interactive fruit is in its reaction window.
             <AnimatePresence>
                 {myPending && myPendingSeconds > 0 && (
                     <motion.div
@@ -1916,6 +1942,7 @@ const LeaderboardPage = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+            */}
 
             {/*  RESTORE FRAME 5 — the summary of exactly what
                 came back. Closed by Continue, never on a timer. */}
@@ -2001,7 +2028,9 @@ const LeaderboardPage = () => {
                 spidey-sense telegraph rings (z-55) and the defender's React
                 picker. The two overlays are pointer-events-none; only the
                 picker modal accepts taps. */}
+            {/* DISABLED-REACTION-WINDOW: uncomment to bring the in-flight fruit icons back.
             <AbilityManifestOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} />
+            */}
             {/* DISABLED-TARGET-WARNING: uncomment to bring the red border warning back.
             <TargetTelegraphOverlay interactions={viewablePending} serverNowMs={Date.now() + feedOffsetMs} myUserId={myUserId} />
             */}
@@ -2012,7 +2041,10 @@ const LeaderboardPage = () => {
                 myUserId={myUserId}
                 // DISABLED-COOLDOWN: cooldowns={reactCooldowns}
                 onRespond={handleRespond}
-                onDismiss={() => setReactTarget(null)}
+                onDismiss={() => {
+                    closedReactIdRef.current = reactTarget?.id ?? null
+                    setReactTarget(null)
+                }}
             />
         </PageLayout>
     );

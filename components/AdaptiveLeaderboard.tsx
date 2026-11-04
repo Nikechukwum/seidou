@@ -29,6 +29,7 @@
 // ============================================================================
 
 import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { playSlideDown, playSlideUp } from '@/utils/sound'
 
 export type LeaderboardRow = {
     id: string | number
@@ -92,6 +93,18 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
         const idx = rankedRows.findIndex((r) => String(r.userId) === String(myUserId))
         return idx === -1 ? null : idx + 1
     }, [myUserId, rankedRows])
+
+    // Slide sounds, for MY OWN rank only: every client compares just its own
+    // player's position, so nobody hears anyone else move. There is nothing to
+    // compare against on the first rank seen, so the initial load stays silent.
+    const prevPlayerRankRef = useRef<number | null>(null)
+    useEffect(() => {
+        const prev = prevPlayerRankRef.current
+        prevPlayerRankRef.current = playerRank
+        if (prev === null || playerRank === null) return
+        if (playerRank < prev) playSlideUp()
+        else if (playerRank > prev) playSlideDown()
+    }, [playerRank])
 
     // Pinned cards: #1 and the player (just #1 if the player has no bid yet,
     // or when the player IS #1). Every other rank is "free" and scrolls
