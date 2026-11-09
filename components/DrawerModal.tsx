@@ -5,6 +5,8 @@ type Props = {
     isActive: boolean;
     setIsActive: Dispatch<SetStateAction<boolean>>;
     children: ReactNode;
+    /** Stacking layer; raise it on pages with fixed bars above z-20. */
+    zIndexClass?: string;
 }
 
 const drawerVariants = {
@@ -19,13 +21,13 @@ const overlayVariants = {
     exit: { opacity: 0, transition: { duration: 0.3 } }
 }
 
-export const DrawerModal = ({isActive, setIsActive, children}: Props) => {
+export const DrawerModal = ({isActive, setIsActive, children, zIndexClass = 'z-20'}: Props) => {
     const variants = useMemo(() => ({ drawer: drawerVariants, overlay: overlayVariants }), []);
     
     return ( 
         <AnimatePresence mode="wait">
             {isActive && 
-            <div className="fixed h-dvh top-0 left-0 w-full z-20 flex items-end touch-none">
+            <div className={`fixed h-dvh top-0 left-0 w-full ${zIndexClass} flex items-end touch-none`}>
                 <motion.div 
                 {...variants.drawer}
                 className="bg-white border border-slate-200 px-7 pb-7 pt-5 rounded-t-3xl shadow-lg w-full will-change-transform">
