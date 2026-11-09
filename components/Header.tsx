@@ -9,10 +9,8 @@ type Props = {
     backNavigationType?: 'default'|'manual'|'forceToHome'
     extraButton?: ReactNode
     subHeader?: ReactNode
-    /** Shown on the left, beside the back arrow, instead of a centered title. */
-    leftTitle?: ReactNode
 }
-export const Header = ({pageTitle, noBackButton, backNavigationType = 'default', extraButton, subHeader, leftTitle}: Props) => {
+export const Header = ({pageTitle, noBackButton, backNavigationType = 'default', extraButton, subHeader}: Props) => {
     const router = useRouter()
 
     const handleBack = () => {
@@ -48,10 +46,6 @@ export const Header = ({pageTitle, noBackButton, backNavigationType = 'default',
                 </button>}
 
                 {pageTitle}
-
-                {leftTitle && <div className={`absolute top-1/2 -translate-y-1/2 flex items-center ${noBackButton ? 'left-4' : 'left-13'}`}>
-                    {leftTitle}
-                </div>}
 
                 {extraButton && <div className="absolute top-1/2 right-3 -translate-y-1/2 flex items-center">
                     {extraButton}
