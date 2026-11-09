@@ -10,8 +10,10 @@ import { useDispatch, useSelector } from "react-redux";
 import { showToast } from "@/redux/toastSlice";
 import { PartialUpdateUser } from "@/redux/authSlice";
 import { RootState } from "@/redux/store";
-import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
-import { Wallet } from "lucide-react";
+import { Bars3Icon, WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
+import { Apple, Coins, SlidersHorizontal, Wallet } from "lucide-react";
+import { DrawerModal } from "@/components/DrawerModal";
+import { IconListItem } from "@/components/IconListItem";
 import useAuth from "@/hooks/useAuth";
 import VoiceBidButton from "@/components/VoiceBidButton";
 import FloatingDelta from "@/components/FloatingDelta";
@@ -75,11 +77,11 @@ type Bid = {
 }
 
 //  "Increase Bid" renamed to "Controls"
-//  "Increase Bid" renamed to "Controls"
+//  The table's burger-menu action sheet (these used to be a row of pill tabs).
 const TABS = [
-    { key: 'buy', label: 'Buy Bidding Currency' },
-    { key: 'fruits', label: 'Ability Fruits' },
-    { key: 'controls', label: 'Controls' },
+    { key: 'buy', label: 'Buy Bidding Currency', description: 'Top up your bidding balance', Icon: Coins },
+    { key: 'fruits', label: 'Ability Fruits', description: 'Use fruits on this table', Icon: Apple },
+    { key: 'controls', label: 'Controls', description: 'Choose how you place bids', Icon: SlidersHorizontal },
 ] as const
 
 type TabKey = typeof TABS[number]['key']
@@ -89,6 +91,7 @@ const MAX_BID_LIMIT = 50_000_000
 
 const LeaderboardPage = () => {
     const [controlsModal, setControlsModal] = useState(false)
+    const [tableMenu, setTableMenu] = useState(false)
     const [placeBidModal, setPlaceBidModal] = useState(false)
     const [buyModal, setBuyModal] = useState(false)
     const [underConstructionModal, setUnderConstructionModal] = useState(false)
@@ -1586,37 +1589,56 @@ const LeaderboardPage = () => {
     }, [setBidMode])
 
 
-    //  bid controls footer always present → always use extended padding
-    const bottomPadding = 'pb-[11rem]'
+    //  bid controls footer always present. The +amount bar, the slider and
+    // the voice mic are all about 5rem tall, so they share one tight gap.
+    // The leaderboard fills the rest of the screen (100vh minus the 5rem top
+    // padding and the bid bar, leaving a ~1rem gap below the last card); the
+    // free space all goes above card 1.
+    // 5rem top + this height + 6rem bottom padding = exactly one screen, no scroll.
+    const bottomPadding = 'pb-[6rem]'
+    const leaderboardMinHeight = 'min-h-[calc(100vh-11rem)]'
 
     return (
         <PageLayout
-            pageTitle="Table"
             className={`px-4 bg-[#f5f5f5] ${bottomPadding}`}
-            extraButton={
-                <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-base text-[#111827] whitespace-nowrap">
-                        B {(user?.bidding_balance ?? 0).toLocaleString()}
-                    </span>
-                    <div className="flex items-center justify-center size-8 rounded-full bg-gray-100">
-                        <Wallet className="size-4 text-[#4b5563]" />
+            leftTitle={
+                <div className="flex items-center gap-3">
+                    <span className="font-semibold text-xl">Table</span>
+                    <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-base text-[#111827] whitespace-nowrap">
+                            B {(user?.bidding_balance ?? 0).toLocaleString()}
+                        </span>
+                        <div className="flex items-center justify-center size-8 rounded-full bg-gray-100">
+                            <Wallet className="size-4 text-[#4b5563]" />
+                        </div>
                     </div>
                 </div>
             }
-            subHeader={
-                <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
-                    {TABS.map((tab) => (
-                        <button
-                            key={tab.key}
-                            onClick={() => handleTabClick(tab.key)}
-                            className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-colors bg-gray-100 text-gray-600"
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
+            extraButton={
+                <button onClick={() => setTableMenu(true)} aria-label="Table menu">
+                    <Bars3Icon className="size-7" />
+                </button>
             }
         >
+            {/* z-40 so the menu sits above the z-30 bid bar at the bottom */}
+            <DrawerModal isActive={tableMenu} setIsActive={setTableMenu} zIndexClass="z-40">
+                <div className="space-y-4">
+                    {TABS.map((tab) => (
+                        <div
+                            key={tab.key}
+                            onClick={() => { setTableMenu(false); handleTabClick(tab.key) }}
+                            className="block rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors -mx-2 px-2"
+                        >
+                            <IconListItem
+                                title={tab.label}
+                                description={tab.description}
+                                icon={<tab.Icon className="size-5.5 text-[#4b5563]" />}
+                            />
+                        </div>
+                    ))}
+                </div>
+            </DrawerModal>
+
             <Modal isActive={underConstructionModal} setIsActive={setUnderConstructionModal}>
                 <div className="flex flex-col items-center text-center">
                     <div className="w-18 h-18 bg-gray-100 rounded-full flex items-center justify-center mb-6">
@@ -1694,6 +1716,10 @@ const LeaderboardPage = () => {
                     <p className="text-sm mt-1">Be the first to place a bid on this auction.</p>
                 </div>
             ) : (
+                // Cards sit low on the screen: the empty space goes above card 1,
+                // leaving only a small gap below the last card.
+                <div className={`flex flex-col ${leaderboardMinHeight}`}>
+                <div className="grow" />
                 <AdaptiveLeaderboard
                     rows={bids}
                     myUserId={myUserId}
@@ -1885,6 +1911,7 @@ const LeaderboardPage = () => {
                         )
                     }}
                 />
+                </div>
             )}
 
             {/*  DIVIDE FRAME 2 — the status pill under the table:
