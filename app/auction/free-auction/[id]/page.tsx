@@ -11,7 +11,7 @@ import { showToast } from "@/redux/toastSlice";
 import { PartialUpdateUser } from "@/redux/authSlice";
 import { RootState } from "@/redux/store";
 import { Bars3Icon, WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
-import { Apple, Coins, SlidersHorizontal, Wallet } from "lucide-react";
+import { Apple, Coins, SlidersHorizontal } from "lucide-react";
 import { DrawerModal } from "@/components/DrawerModal";
 import { IconListItem } from "@/components/IconListItem";
 import useAuth from "@/hooks/useAuth";
@@ -1589,35 +1589,19 @@ const LeaderboardPage = () => {
     }, [setBidMode])
 
 
-    //  bid controls footer always present. The +amount bar, the slider and
-    // the voice mic are all about 5rem tall, so they share one tight gap.
-    // The leaderboard fills the rest of the screen (100vh minus the 5rem top
-    // padding and the bid bar, leaving a ~1rem gap below the last card); the
-    // free space all goes above card 1.
-    // 5rem top + this height + 6rem bottom padding = exactly one screen, no scroll.
-    const bottomPadding = 'pb-[6rem]'
-    const leaderboardMinHeight = 'min-h-[calc(100vh-11rem)]'
-
     return (
         <PageLayout
-            className={`px-4 bg-[#f5f5f5] ${bottomPadding}`}
-            leftTitle={
-                <div className="flex items-center gap-3">
-                    <span className="font-semibold text-xl">Table</span>
-                    <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-base text-[#111827] whitespace-nowrap">
-                            B {(user?.bidding_balance ?? 0).toLocaleString()}
-                        </span>
-                        <div className="flex items-center justify-center size-8 rounded-full bg-gray-100">
-                            <Wallet className="size-4 text-[#4b5563]" />
-                        </div>
-                    </div>
-                </div>
-            }
+            pageTitle="Table"
+            className="px-4 bg-[#f5f5f5]"
             extraButton={
-                <button onClick={() => setTableMenu(true)} aria-label="Table menu">
-                    <Bars3Icon className="size-7" />
-                </button>
+                <div className="flex items-center gap-3">
+                    <span className="font-bold text-base text-[#111827] whitespace-nowrap">
+                        B {(user?.bidding_balance ?? 0).toLocaleString()}
+                    </span>
+                    <button onClick={() => setTableMenu(true)} aria-label="Table menu">
+                        <Bars3Icon className="size-7" />
+                    </button>
+                </div>
             }
         >
             {/* z-40 so the menu sits above the z-30 bid bar at the bottom */}
@@ -1716,10 +1700,27 @@ const LeaderboardPage = () => {
                     <p className="text-sm mt-1">Be the first to place a bid on this auction.</p>
                 </div>
             ) : (
-                // Cards sit low on the screen: the empty space goes above card 1,
-                // leaving only a small gap below the last card.
-                <div className={`flex flex-col ${leaderboardMinHeight}`}>
+                // The cards are PINNED between the header (4rem) and the bid
+                // bar (~5rem; bottom-24 leaves a ~1rem gap), sitting at the
+                // bottom of that space. Being fixed, nothing else on the page
+                // (a status pill, the page height, a kept scroll position) can
+                // push the last card behind the bid bar. The status pills sit
+                // above the cards, in the empty space.
+                <div className="fixed top-20 bottom-24 left-0 right-0 max-w-md mx-auto px-4 flex flex-col">
                 <div className="grow" />
+                <DivideStatusPill
+                    stage={divideStage}
+                    targetName={bids.find(b => b.userId === divideTarget)?.username}
+                    factor={DIVIDE_FACTOR}
+                />
+                <SwapStatusPill
+                    stage={swapStage}
+                    targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
+                />
+                <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
+                <FreezeStatusPill stage={freezeStage} />
+                <RestoreStatusPill stage={restoreStage} />
+                <div className="h-4 shrink-0" />
                 <AdaptiveLeaderboard
                     rows={bids}
                     myUserId={myUserId}
@@ -1914,26 +1915,8 @@ const LeaderboardPage = () => {
                 </div>
             )}
 
-            {/*  DIVIDE FRAME 2 — the status pill under the table:
-                "÷N  Dividing <name>'s bid by N". Clears once the cut lands. */}
-            <DivideStatusPill
-                stage={divideStage}
-                targetName={bids.find(b => b.userId === divideTarget)?.username}
-                factor={DIVIDE_FACTOR}
-            />
-
-            {/*  SWAP FRAMES 2-3 — the green caption bar under the
-                table while the fruit is out and in flight, mirroring the
-                narration strip on the design sheet. */}
-            <SwapStatusPill
-                stage={swapStage}
-                targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
-            />
-
-            {/*  NEGATE FRAMES 5-7 — the magenta caption bar under
-                the table, naming the effect being cancelled, turning green on
-                the frame where the bid is restored. */}
-            <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
+            {/*  The Divide / Swap / Negate / Freeze / Restore status pills
+                are rendered ABOVE the cards, inside the pinned leaderboard. */}
 
             {/*  FREEZE FRAME 3 — the radial wave leaving the activator's
                 card and washing over every other card on the table (~600ms).
@@ -1943,13 +1926,6 @@ const LeaderboardPage = () => {
                 <FreezePulseOverlay origin={freezePulse.origin} reach={freezePulse.reach} />
             )}
 
-            {/*  FREEZE FRAMES 2-6 — the blue caption bar under the
-                table as the activator's freeze starts and fades out. */}
-            <FreezeStatusPill stage={freezeStage} />
-
-            {/*  RESTORE FRAMES 2-4 — the teal caption bar under
-                the table, ending on the "Restoring your resources..." spinner. */}
-            <RestoreStatusPill stage={restoreStage} />
 
             {/* DISABLED-REACTION-WINDOW: uncomment to bring the "in flight" pill back.
                 INTERACTION FRAME 1-2 — the manifest pill under the
