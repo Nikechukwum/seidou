@@ -52,19 +52,18 @@ export default function AuctionCountdown({ endTime }: Props) {
     ]
 
     return (
-        <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-1 py-1.5">
-            <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-500">
+        <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                 {known && now >= endMs ? 'Auction ended' : 'Auction ends in'}
             </p>
-            <div className="mt-0.5 flex w-full items-stretch justify-between">
-                {columns.map((col, i) => (
+            <div className="mt-1 flex w-full items-stretch justify-between">
+                {columns.map((col) => (
                     <div key={col.label} className="flex min-w-0 flex-1 items-stretch">
-                        {i > 0 && <span className="my-1 w-px shrink-0 bg-gray-200" />}
                         <div className="flex min-w-0 flex-1 flex-col items-center">
-                            <span className="text-sm font-bold leading-tight text-gray-900 tabular-nums">
+                            <span className="text-lg font-bold leading-tight text-gray-900 tabular-nums">
                                 {col.value === undefined ? '--' : String(col.value).padStart(2, '0')}
                             </span>
-                            <span className="text-[7px] tracking-tight text-gray-500">{col.label}</span>
+                            <span className="text-[9px] text-gray-500">{col.label}</span>
                         </div>
                     </div>
                 ))}

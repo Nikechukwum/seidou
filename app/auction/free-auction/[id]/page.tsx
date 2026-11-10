@@ -1642,10 +1642,9 @@ const LeaderboardPage = () => {
                 </div>
             }
             // The fruit selector and the auction countdown, side by side in the
-            // header, at 75% of the full width and a fixed 4.5rem height (the
-            // pinned cards below are placed from that height).
+            // header. Fixed 6rem height: the pinned cards below are placed from it.
             subHeader={
-                <div className="mx-auto grid h-18 w-3/4 grid-cols-2 gap-2">
+                <div className="grid h-24 grid-cols-2 gap-2">
                     <FruitSelector
                         fruits={SELECTOR_FRUITS}
                         usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
@@ -1758,13 +1757,13 @@ const LeaderboardPage = () => {
                 // (a status pill, the page height, a kept scroll position) can
                 // push the last card behind the bid bar. The status pills sit
                 // above the cards, in the empty space.
-                // The header is 9.25rem tall with the fruit/timer row in it
-                // (4rem title row + 4.5rem row + 0.75rem padding); top-[9.75rem]
+                // The header is 10.75rem tall with the fruit/timer row in it
+                // (4rem title row + 6rem row + 0.75rem padding); top-[11.25rem]
                 // leaves a ~0.5rem gap under it, and bottom-[5.5rem] sits just
                 // above the ~5.2rem bid bar. On a screen too short for
                 // everything, this column scrolls on its own rather than
                 // letting a card slide behind the bid bar.
-                <div className="fixed top-[9.75rem] bottom-[5.5rem] left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
+                <div className="fixed top-[11.25rem] bottom-[5.5rem] left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
                 <div className="grow" />
                 <DivideStatusPill
                     stage={divideStage}
