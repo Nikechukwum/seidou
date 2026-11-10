@@ -48,7 +48,7 @@ export default function FruitSelector({ fruits, usesLeft, onActivate, onInfo }: 
     }
 
     return (
-        <div className="relative flex h-full items-center rounded-2xl border border-gray-200 bg-white px-1 py-2">
+        <div className="relative flex h-full items-center rounded-2xl border border-gray-200 bg-white px-1 py-1.5">
             <button
                 onClick={onInfo}
                 aria-label="About ability fruits"
@@ -65,7 +65,7 @@ export default function FruitSelector({ fruits, usesLeft, onActivate, onInfo }: 
                 onClick={handleTap}
                 className="flex min-w-0 flex-1 select-none flex-col items-center touch-manipulation"
             >
-                <AbilityFruitOrb fruit={fruit} size={30} />
+                <AbilityFruitOrb fruit={fruit} size={26} />
                 {/* Name under the fruit, with the uses left beside the name. */}
                 <div className="mt-0.5 flex min-w-0 max-w-full items-baseline gap-1">
                     <span className="truncate text-sm font-bold text-gray-900">{label}</span>

@@ -52,7 +52,7 @@ export default function AuctionCountdown({ endTime }: Props) {
     ]
 
     return (
-        <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-2">
+        <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-gray-200 bg-white px-2 py-1.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                 {known && now >= endMs ? 'Auction ended' : 'Auction ends in'}
             </p>
