@@ -48,7 +48,7 @@ export default function FruitSelector({ fruits, usesLeft, onActivate, onInfo }: 
     }
 
     return (
-        <div className="relative flex h-full items-center rounded-2xl border border-gray-100 bg-white px-1 py-3 shadow-sm">
+        <div className="relative flex h-full items-center rounded-2xl border border-gray-200 bg-white px-1 py-2">
             <button
                 onClick={onInfo}
                 aria-label="About ability fruits"
@@ -63,14 +63,15 @@ export default function FruitSelector({ fruits, usesLeft, onActivate, onInfo }: 
 
             <button
                 onClick={handleTap}
-                className="flex min-w-0 flex-1 select-none flex-col items-center gap-1 touch-manipulation"
+                className="flex min-w-0 flex-1 select-none flex-col items-center touch-manipulation"
             >
-                <div className="flex min-w-0 max-w-full items-center gap-1.5">
-                    <AbilityFruitOrb fruit={fruit} size={28} />
+                <AbilityFruitOrb fruit={fruit} size={30} />
+                {/* Name under the fruit, with the uses left beside the name. */}
+                <div className="mt-0.5 flex min-w-0 max-w-full items-baseline gap-1">
                     <span className="truncate text-sm font-bold text-gray-900">{label}</span>
                     <span className="shrink-0 text-xs font-semibold text-gray-500">x{usesLeft(fruit)}</span>
                 </div>
-                <span className="text-[11px] text-gray-500">Double tap to activate</span>
+                <span className="text-[10px] leading-tight text-gray-500">Double tap to activate</span>
             </button>
 
             <button onClick={() => step(1)} aria-label="Next fruit" className="shrink-0 p-1 text-gray-600 active:text-black">

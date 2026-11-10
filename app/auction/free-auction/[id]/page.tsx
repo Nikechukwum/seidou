@@ -1631,6 +1631,19 @@ const LeaderboardPage = () => {
                     </button>
                 </div>
             }
+            // The fruit selector and the auction countdown, side by side in the
+            // header. Fixed 6rem height: the pinned cards below are placed from it.
+            subHeader={
+                <div className="grid h-24 grid-cols-2 gap-2">
+                    <FruitSelector
+                        fruits={SELECTOR_FRUITS}
+                        usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
+                        onActivate={(fruit) => fireFruit(fruit.id)}
+                        onInfo={openAbilityFruits}
+                    />
+                    <AuctionCountdown endTime={auctionEndTime} />
+                </div>
+            }
         >
             {/* z-40 so the menu sits above the z-30 bid bar at the bottom */}
             <DrawerModal isActive={tableMenu} setIsActive={setTableMenu} zIndexClass="z-40">
@@ -1734,19 +1747,12 @@ const LeaderboardPage = () => {
                 // (a status pill, the page height, a kept scroll position) can
                 // push the last card behind the bid bar. The status pills sit
                 // above the cards, in the empty space.
-                // On a screen too short for everything, this column scrolls on
-                // its own rather than letting a card slide behind the bid bar.
-                <div className="fixed top-20 bottom-24 left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
-                {/* The fruit selector and the auction countdown, side by side. */}
-                <div className="grid shrink-0 grid-cols-2 gap-2">
-                    <FruitSelector
-                        fruits={SELECTOR_FRUITS}
-                        usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
-                        onActivate={(fruit) => fireFruit(fruit.id)}
-                        onInfo={openAbilityFruits}
-                    />
-                    <AuctionCountdown endTime={auctionEndTime} />
-                </div>
+                // The header is 10.75rem tall with the fruit/timer row in it
+                // (4rem title row + 6rem row + 0.75rem padding); top-[11.5rem]
+                // leaves a ~0.75rem gap under it. On a screen too short for
+                // everything, this column scrolls on its own rather than
+                // letting a card slide behind the bid bar.
+                <div className="fixed top-[11.5rem] bottom-24 left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
                 <div className="grow" />
                 <DivideStatusPill
                     stage={divideStage}
