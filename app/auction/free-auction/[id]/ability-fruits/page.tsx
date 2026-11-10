@@ -159,6 +159,8 @@ const AbilityFruitsPage = () => {
 
     return (
         <PageLayout pageTitle="Ability Fruits" className="px-4 bg-[#f5f5f5]">
+            <p className="mb-3 text-sm text-gray-500">Pick a fruit to use on this table.</p>
+
             <div className="mb-4 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3">
                 <p className="text-sm font-semibold text-purple-900">Testing phase</p>
                 <p className="mt-0.5 text-xs text-purple-700">
@@ -201,20 +203,21 @@ const AbilityFruitsPage = () => {
                             </div>
                             <p className="mt-1 text-sm text-gray-500">{fruit.tagline}</p>
 
+                            {/* One row: Learn More on the left, Activate on the right. */}
                             <div className="mt-3 flex gap-2">
-                                <Button
-                                    // DISABLED-COOLDOWN: text={coolingFor > 0 ? `Activate · ${coolingFor}s` : 'Activate'}
-                                    text="Activate"
-                                    size="xs"
-                                    classname="flex-1"
-                                    onClick={() => void handleActivate(fruit)}
-                                />
                                 <Button
                                     text="Learn More"
                                     size="xs"
                                     bordered
                                     classname="flex-1"
                                     onClick={() => setLearnMore(fruit)}
+                                />
+                                <Button
+                                    // DISABLED-COOLDOWN: text={coolingFor > 0 ? `Activate · ${coolingFor}s` : 'Activate'}
+                                    text="Activate"
+                                    size="xs"
+                                    classname="flex-1"
+                                    onClick={() => void handleActivate(fruit)}
                                 />
                             </div>
                         </div>

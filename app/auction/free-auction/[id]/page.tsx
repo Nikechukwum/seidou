@@ -44,7 +44,9 @@ import NegateFruitAbility, {
 import FreezeFruitAbility, { FreezeStatusPill, FreezePulseOverlay } from "@/components/FreezeFruitAbility";
 import AdaptiveLeaderboard from "@/components/AdaptiveLeaderboard";
 import { MULTIPLY_FACTOR, DIVIDE_FACTOR, STEAL_PER_SECOND, STEAL_FRUIT_AMOUNT, STEAL_FRUIT_DURATION_S, FREEZE_FRUIT_DURATION_S, FREEZE_PULSE_MS, FREEZE_FADE_MS, getAbilityFruit, negateEffectLabel, AbilityFruitId } from "@/lib/abilityFruits";
-import { getFruitUsage, recordFruitUse, clearFruitUsage } from "@/lib/fruitUsage";
+import { getFruitUsage, recordFruitUse, clearFruitUsage, getFruitBonuses, availableUses } from "@/lib/fruitUsage";
+import FruitSelector from "@/components/FruitSelector";
+import AuctionCountdown from "@/components/AuctionCountdown";
 import {
     AbilityInteraction,
     InteractionFeed,
@@ -86,12 +88,30 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
+// The fruits the table's selector cycles through: the ones that fire straight
+// on the table. Shield/Mirror (defense), Copy/Clone (their own pickers) and the
+// unreleased fruits stay on the full Ability Fruits page.
+const SELECTOR_FRUITS = ([
+    ['multiply', 'Multiply'],
+    ['divide', 'Divide'],
+    ['swap', 'Swap'],
+    ['thief', 'Steal'],
+    ['freeze', 'Freeze'],
+    ['restore', 'Restore'],
+    ['negate', 'Negate'],
+] as const).flatMap(([id, label]) => {
+    const fruit = getAbilityFruit(id)
+    return fruit ? [{ fruit, label }] : []
+})
+
 // DEV NOTE (design): "If the result exceeds the max bid limit, cap at the limit."
 const MAX_BID_LIMIT = 50_000_000
 
 const LeaderboardPage = () => {
     const [controlsModal, setControlsModal] = useState(false)
     const [tableMenu, setTableMenu] = useState(false)
+    // Drives the "AUCTION ENDS IN" countdown.
+    const [auctionEndTime, setAuctionEndTime] = useState<string | null>(null)
     const [placeBidModal, setPlaceBidModal] = useState(false)
     const [buyModal, setBuyModal] = useState(false)
     const [underConstructionModal, setUnderConstructionModal] = useState(false)
@@ -325,11 +345,13 @@ const LeaderboardPage = () => {
     useEffect(() => {
         const init = async () => {
             const supabase = createClient()
-            const [, { data: authData }] = await Promise.all([
+            const [, { data: authData }, { data: auctionRow }] = await Promise.all([
                 fetchBids(),
                 supabase.auth.getUser(),
+                supabase.from('Auctions').select('endTime').eq('id', auctionId).maybeSingle(),
             ])
             setCurrentUserId(authData.user?.id ?? null)
+            setAuctionEndTime(auctionRow?.endTime ?? null)
             await checkSessionRef.current(false)
             setLoading(false)
         }
@@ -1302,11 +1324,9 @@ const LeaderboardPage = () => {
     // by ~2s), so a frozen player who tapped Activate gets the "you are
     // currently frozen" popup instead of a multiply/divide/... animation that
     // the server would just revert. The Negate Fruit is the exempted fruit.
-    useEffect(() => {
-        if (loading) return
-        const armed = armedFruitRef.current
-        if (!armed) return
-        armedFruitRef.current = null
+    // Fires one fruit on the table. Used by the ?fruit= hand-off from the Ability
+    // Fruits page and by a double tap on the table's fruit selector.
+    const fireFruit = useCallback((armed: string) => {
         if (armed === 'negate') {
             void handleNegateSelf()
             return
@@ -1348,7 +1368,15 @@ const LeaderboardPage = () => {
             if (armed === 'restore') handleRestoreSelf()
             if (armed === 'freeze') handleFreezeSelf()
         })()
-    }, [loading, auctionId, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf, handleFreezeSelf])
+    }, [auctionId, handleNegateSelf, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf, handleFreezeSelf])
+
+    useEffect(() => {
+        if (loading) return
+        const armed = armedFruitRef.current
+        if (!armed) return
+        armedFruitRef.current = null
+        fireFruit(armed)
+    }, [loading, fireFruit])
 
     //  ─────────────────────────────────────────────────────────────────────────
     //  INTERACTION SYSTEM — feed, react target, impact bursts, and respond.
@@ -1706,7 +1734,19 @@ const LeaderboardPage = () => {
                 // (a status pill, the page height, a kept scroll position) can
                 // push the last card behind the bid bar. The status pills sit
                 // above the cards, in the empty space.
-                <div className="fixed top-20 bottom-24 left-0 right-0 max-w-md mx-auto px-4 flex flex-col">
+                // On a screen too short for everything, this column scrolls on
+                // its own rather than letting a card slide behind the bid bar.
+                <div className="fixed top-20 bottom-24 left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
+                {/* The fruit selector and the auction countdown, side by side. */}
+                <div className="grid shrink-0 grid-cols-2 gap-2">
+                    <FruitSelector
+                        fruits={SELECTOR_FRUITS}
+                        usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
+                        onActivate={(fruit) => fireFruit(fruit.id)}
+                        onInfo={openAbilityFruits}
+                    />
+                    <AuctionCountdown endTime={auctionEndTime} />
+                </div>
                 <div className="grow" />
                 <DivideStatusPill
                     stage={divideStage}
@@ -1720,7 +1760,7 @@ const LeaderboardPage = () => {
                 <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
                 <FreezeStatusPill stage={freezeStage} />
                 <RestoreStatusPill stage={restoreStage} />
-                <div className="h-4 shrink-0" />
+                <div className="h-3 shrink-0" />
                 <AdaptiveLeaderboard
                     rows={bids}
                     myUserId={myUserId}
@@ -1842,7 +1882,7 @@ const LeaderboardPage = () => {
                                         onBidUpdated={handleMultiplyOptimistic}
                                         onComplete={handleMultiplyComplete}
                                     >
-                                    <div className="flex items-start gap-4 p-6">
+                                    <div className="flex items-start gap-4 px-5 py-3.5">
                                         <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
                                             <AnimatePresence mode="popLayout" initial={false}>
                                                 <motion.span
