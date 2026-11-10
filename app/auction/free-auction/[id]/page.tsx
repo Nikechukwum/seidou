@@ -88,6 +88,10 @@ const TABS = [
 
 type TabKey = typeof TABS[number]['key']
 
+// DUMMY-COUNTDOWN (testing): the countdown shows this many days from when the
+// page opens. Set to null to use the auction's real end time again.
+const DUMMY_COUNTDOWN_DAYS: number | null = 10
+
 // The fruits the table's selector cycles through: the ones that fire straight
 // on the table. Shield/Mirror (defense), Copy/Clone (their own pickers) and the
 // unreleased fruits stay on the full Ability Fruits page.
@@ -112,6 +116,12 @@ const LeaderboardPage = () => {
     const [tableMenu, setTableMenu] = useState(false)
     // Drives the "AUCTION ENDS IN" countdown.
     const [auctionEndTime, setAuctionEndTime] = useState<string | null>(null)
+    // DUMMY-COUNTDOWN (testing): while this is set, the countdown runs from
+    // 10 days after the page opened instead of the auction's real end time.
+    // Set it to null to switch back to the real endTime.
+    const [dummyEndTime] = useState<string | null>(() =>
+        DUMMY_COUNTDOWN_DAYS === null ? null : new Date(Date.now() + DUMMY_COUNTDOWN_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    )
     const [placeBidModal, setPlaceBidModal] = useState(false)
     const [buyModal, setBuyModal] = useState(false)
     const [underConstructionModal, setUnderConstructionModal] = useState(false)
@@ -1641,7 +1651,7 @@ const LeaderboardPage = () => {
                         onActivate={(fruit) => fireFruit(fruit.id)}
                         onInfo={openAbilityFruits}
                     />
-                    <AuctionCountdown endTime={auctionEndTime} />
+                    <AuctionCountdown endTime={dummyEndTime ?? auctionEndTime} />
                 </div>
             }
         >
@@ -1888,7 +1898,7 @@ const LeaderboardPage = () => {
                                         onBidUpdated={handleMultiplyOptimistic}
                                         onComplete={handleMultiplyComplete}
                                     >
-                                    <div className="flex items-start gap-4 px-5 py-3.5">
+                                    <div className="flex items-start gap-4 p-6">
                                         <div className="size-10 bg-slate-600 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
                                             <AnimatePresence mode="popLayout" initial={false}>
                                                 <motion.span
