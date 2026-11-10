@@ -233,7 +233,7 @@ export default function AdaptiveLeaderboard({ rows, myUserId, renderCard }: Adap
     return (
         <div className="relative flex items-stretch gap-1">
             <div ref={setContainerEl} className={`min-w-0 flex-1 ${scrollable ? 'touch-none select-none' : 'touch-pan-y'}`}>
-                <div className="flex flex-col gap-3.5">
+                <div className="flex flex-col gap-3">
                     {slots.map((slot) => (
                         // The frame stays mounted — the data inside it
                         // changes, never the frame itself.
