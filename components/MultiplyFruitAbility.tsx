@@ -9,10 +9,20 @@
 // targetPlayerId — a player cannot aim this at anyone else. The API route and
 // the RPC enforce the same rule server-side.
 //
+// LIFECYCLE (CEO, 11 Nov 2026): every activation runs three phases, each with
+// its own sound.
+//   1. INTRODUCTION  (1s)  A miniature fruit appears on the RIGHT side of the
+//                          activator's card.          Sound: ability-intro-v2
+//   2. GROWTH        (2s)  The miniature fruit gradually grows to full size.
+//                                                     Sound: ability-growth
+//   3. MANIFESTATION (1s)  The effect itself — FRAMES 3 to 5 below (slide,
+//                          explode, settle), squeezed into one second.
+//                                                     Sound: multiply-manifestation
+// Phases 1 + 2 replace the old FRAME 2 (fruit dropped on the top-right corner).
+//
 //   FRAME 1  BEFORE BID           Current leaderboard before the ability is
 //                                 used. Plain card — no fruit, NO purple border.
-//   FRAME 2  MULTIPLY ACTIVATED   The fruit sits on the target card's TOP-RIGHT
-//                                 corner with the "xN" badge attached to it.
+//   FRAME 2  MULTIPLY ACTIVATED   (replaced by the introduction + growth phases)
 //   FRAME 3  MULTIPLY ANIMATION   The fruit slides right -> left with a speed
 //                                 trail and covers the target's info. The badge
 //                                 travels WITH the fruit (design note: "the x2
@@ -40,6 +50,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import Image from 'next/image'
 import { getAbilityFruit } from '@/lib/abilityFruits'
+import { playAbilityGrowthSound, playAbilityIntroSound, playMultiplyManifestSound } from '@/utils/sound'
 
 // Shape of one row in the leaderboard table (supports both exemplar + real data)
 export type MultiplyPlayer = {
@@ -49,13 +60,19 @@ export type MultiplyPlayer = {
     bidAmount?: number
 }
 
-type Phase = 'idle' | 'attached' | 'covering' | 'explode' | 'settled'
+type Phase = 'idle' | 'intro' | 'growth' | 'covering' | 'explode' | 'settled'
 
-// Frame durations (ms)
-const ATTACH_MS = 450
-const SLIDE_MS = 400
-const IMPACT_MS = 750
-const SETTLE_MS = 300
+// Lifecycle durations (ms)
+export const INTRO_MS = 1000
+export const GROWTH_MS = 2000
+// MANIFESTATION = SLIDE + IMPACT + SETTLE = 1000ms
+const SLIDE_MS = 300
+const IMPACT_MS = 550
+const SETTLE_MS = 150
+
+// The miniature fruit is the full-size fruit drawn at this scale; the growth
+// phase takes it from here up to 1 (full size).
+const MINI_SCALE = 0.35
 
 // Design-specified ease-out curve
 const EASE_OUT = [0.22, 1, 0.36, 1] as const
@@ -123,46 +140,83 @@ export default function MultiplyFruitAbility({
 
     const player = tableData.find((p) => p.id === playerId)
 
+    // The timers below fire up to 4s after the tap. Reading these through refs
+    // gives them the LATEST bid and callbacks, not the ones from the tap.
+    const playerRef = useRef(player)
+    playerRef.current = player
+    const onBidUpdatedRef = useRef(onBidUpdated)
+    onBidUpdatedRef.current = onBidUpdated
+    const onCompleteRef = useRef(onComplete)
+    onCompleteRef.current = onComplete
+
     // ------------------------------------------------------------------------
-    // FRAME 2 -> 5 state machine. Starts only when this card becomes the target.
+    // Lifecycle state machine. Starts only when this card becomes the target.
+    //   0ms     intro    (miniature fruit appears)        + intro sound
+    //   1000ms  growth   (fruit grows to full size)       + growth sound
+    //   3000ms  covering (manifestation: slide)           + multiply sound
+    //   3300ms  explode  (bid is multiplied HERE)
+    //   3850ms  settled
+    //   4000ms  idle     (parent floats the green +amount)
     // ------------------------------------------------------------------------
     useEffect(() => {
+        // The parent cancelled this activation before it finished (e.g. the
+        // player turned out to be frozen): drop the overlay. The cleanup of
+        // the previous run has already cleared the pending timers.
+        if (!isTarget) {
+            if (processedRef.current !== null) {
+                processedRef.current = null
+                setPhase('idle')
+            }
+            return
+        }
         // Only start once per target activation
-        if (!isTarget || processedRef.current === targetPlayerId) return
+        if (processedRef.current === targetPlayerId) return
         processedRef.current = targetPlayerId
 
-        const current = Number(player?.bidAmount ?? player?.bid ?? 0)
-        // DEV NOTE: cap at the max bid limit if the multiplied result exceeds it.
-        const capped = Math.min(Math.floor(current * factor), maxBidLimit)
-        const delta = capped - current
+        const later = (ms: number, fn: () => void) => {
+            timeoutsRef.current.push(setTimeout(fn, ms))
+        }
 
-        // FRAME 2: fruit lands on the target card's top-right corner
-        setPhase('attached')
+        // PHASE 1 — INTRODUCTION: starts on the very same tap, no waiting.
+        setPhase('intro')
+        playAbilityIntroSound()
 
-        // FRAME 3: fruit slides right->left and covers the target's info
-        const t1 = setTimeout(() => setPhase('covering'), ATTACH_MS)
-        timeoutsRef.current.push(t1)
+        // PHASE 2 — GROWTH
+        later(INTRO_MS, () => {
+            setPhase('growth')
+            playAbilityGrowthSound()
+        })
+
+        // PHASE 3 — MANIFESTATION (FRAME 3: fruit slides right->left and
+        // covers the target's info)
+        later(INTRO_MS + GROWTH_MS, () => {
+            setPhase('covering')
+            playMultiplyManifestSound()
+        })
 
         // FRAME 4: impact — the fruit explodes and the effect is applied.
-        // Only this player's bid changes.
-        const t2 = setTimeout(() => {
+        // Only this player's bid changes. The bid is read NOW (not at the
+        // tap), so a bid placed during the 3s build-up is multiplied too.
+        later(INTRO_MS + GROWTH_MS + SLIDE_MS, () => {
+            const live = playerRef.current
+            const current = Number(live?.bidAmount ?? live?.bid ?? 0)
+            // DEV NOTE: cap at the max bid limit if the multiplied result exceeds it.
+            const capped = Math.min(Math.floor(current * factor), maxBidLimit)
+            const delta = capped - current
             setPhase('explode')
-            onBidUpdated?.(playerId, capped)
+            onBidUpdatedRef.current?.(playerId, capped)
 
             // FRAME 5: settled — overlay comes off, parent floats the amount
             // increased next to the new bid.
-            const t3 = setTimeout(() => {
+            later(IMPACT_MS, () => {
                 setPhase('settled')
-                const t4 = setTimeout(() => {
+                later(SETTLE_MS, () => {
                     setPhase('idle')
                     processedRef.current = null
-                    onComplete?.(playerId, delta)
-                }, SETTLE_MS)
-                timeoutsRef.current.push(t4)
-            }, IMPACT_MS)
-            timeoutsRef.current.push(t3)
-        }, ATTACH_MS + SLIDE_MS)
-        timeoutsRef.current.push(t2)
+                    onCompleteRef.current?.(playerId, delta)
+                })
+            })
+        })
 
         return () => {
             timeoutsRef.current.forEach(clearTimeout)
@@ -177,19 +231,30 @@ export default function MultiplyFruitAbility({
             {children}
 
             {/* ================================================================
-                FRAME 2 — MULTIPLY ACTIVATED
-                The fruit lands on the card's top-right corner, badge attached.
+                PHASES 1 + 2 — INTRODUCTION and GROWTH
+                One element across both phases so the growth is a smooth
+                continuation: it pops in as a miniature on the RIGHT side of
+                the card (intro), then scales up to full size (growth).
+                The outer div only positions; the inner motion.div owns the
+                transform, so the two never fight over `transform`.
                ================================================================ */}
             <AnimatePresence>
-                {phase === 'attached' && (
+                {(phase === 'intro' || phase === 'growth') && (
                     <motion.div
-                        className="pointer-events-none absolute -top-3 right-1 z-30"
-                        initial={{ opacity: 0, scale: 0.4, x: 40, y: -20 }}
-                        animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+                        key="mini-fruit"
+                        className="pointer-events-none absolute top-1/2 right-4 z-30 -translate-y-1/2"
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.35, ease: EASE_OUT }}
+                        transition={{ duration: 0.15 }}
                     >
-                        <FruitWithBadge size={56} factor={factor} />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0 }}
+                            animate={{ opacity: 1, scale: phase === 'intro' ? MINI_SCALE : 1 }}
+                            transition={phase === 'intro'
+                                ? { duration: 0.35, ease: EASE_OUT }
+                                : { duration: GROWTH_MS / 1000, ease: 'easeInOut' }}
+                        >
+                            <FruitWithBadge size={56} factor={factor} />
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -265,7 +330,7 @@ export default function MultiplyFruitAbility({
                                 style={{ height: i % 2 === 0 ? 4 : 2, rotate: `${(i / 16) * 360}deg` }}
                                 initial={{ width: 0, opacity: 0 }}
                                 animate={{ width: [0, 190, 230], opacity: [0, 0.9, 0] }}
-                                transition={{ duration: 0.55, ease: EASE_OUT, delay: 0.02 * (i % 5) }}
+                                transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.015 * (i % 5) }}
                             />
                         ))}
 
@@ -274,7 +339,7 @@ export default function MultiplyFruitAbility({
                             className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-white"
                             initial={{ width: 20, height: 20, opacity: 0.95 }}
                             animate={{ width: 340, height: 340, opacity: 0 }}
-                            transition={{ duration: 0.7, ease: EASE_OUT }}
+                            transition={{ duration: 0.5, ease: EASE_OUT }}
                         />
 
                         {/* dark purple shards of the burst fruit */}
@@ -300,7 +365,7 @@ export default function MultiplyFruitAbility({
                                         scale: [1, 1.15, 0.3],
                                         rotate: (i % 2 === 0 ? 1 : -1) * 180,
                                     }}
-                                    transition={{ duration: 0.85, ease: EASE_OUT, delay: 0.04 * (i % 4) }}
+                                    transition={{ duration: 0.48, ease: EASE_OUT, delay: 0.02 * (i % 4) }}
                                 />
                             )
                         })}
@@ -311,7 +376,7 @@ export default function MultiplyFruitAbility({
                             style={{ filter: 'blur(6px)' }}
                             initial={{ width: 14, height: 14, opacity: 1 }}
                             animate={{ width: [14, 130, 90], opacity: [1, 0.9, 0] }}
-                            transition={{ duration: 0.6, ease: EASE_OUT }}
+                            transition={{ duration: 0.45, ease: EASE_OUT }}
                         />
                     </div>
                 )}

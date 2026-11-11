@@ -42,3 +42,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# personal notes
+/MULTIPLY_LIFECYCLE_EXPLAINED.md
