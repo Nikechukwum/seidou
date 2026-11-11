@@ -1326,19 +1326,42 @@ const LeaderboardPage = () => {
         }
     }, [freezeStage])
 
-    // Fire the armed fruit as soon as the table has loaded and we know who you
-    // are. FRAME 1 (the plain leaderboard) is what you see for that instant.
-    //
-    // A frozen player is stopped HERE, before any frame plays: the armed fruit
-    // is checked against the live freeze status first (the local poll can lag
-    // by ~2s), so a frozen player who tapped Activate gets the "you are
-    // currently frozen" popup instead of a multiply/divide/... animation that
-    // the server would just revert. The Negate Fruit is the exempted fruit.
     // Fires one fruit on the table. Used by the ?fruit= hand-off from the Ability
     // Fruits page and by a double tap on the table's fruit selector.
+    //
+    // For every fruit except Multiply and Negate, a frozen player is stopped
+    // HERE, before any frame plays: the fruit is checked against the live
+    // freeze status first (the local poll can lag by ~2s), so a frozen player
+    // gets the "you are currently frozen" popup instead of an animation the
+    // server would just revert. Multiply starts instantly and runs the same
+    // check in parallel (see below). Negate is exempt: it works while frozen.
     const fireFruit = useCallback((armed: string) => {
         if (armed === 'negate') {
             void handleNegateSelf()
+            return
+        }
+        // MULTIPLY starts on the SAME tap (CEO: "the introduction phase should
+        // be instant"). The freeze check runs alongside the 3s introduction +
+        // growth instead of before it. The bid only changes at the explosion
+        // (3.3s in), so if the server says "frozen" we cancel the animation
+        // long before anything is committed. handleMultiplySelf still checks
+        // the local freeze state first, and the multiply RPC refuses a frozen
+        // player server-side as the last line of defence.
+        if (armed === 'multiply') {
+            handleMultiplySelf()
+            void (async () => {
+                try {
+                    const res = await fetch(`/api/landwars/freeze-bid?auctionId=${encodeURIComponent(auctionId)}`)
+                    const data = await res.json()
+                    if (res.ok && data?.frozen && !multiplyAppliedRef.current) {
+                        setMultiplyTarget(null)
+                        setMyFreeze({ frozen: true, remaining: Number(data?.remaining_seconds ?? 0) })
+                        setFreezePopupOpen(true)
+                    }
+                } catch {
+                    // network hiccup — the multiply RPC's own frozen guard still refuses
+                }
+            })()
             return
         }
         void (async () => {
@@ -1371,7 +1394,6 @@ const LeaderboardPage = () => {
             // } catch {
             //     // fall through — the fruit RPC's own cooldown guard still refuses
             // }
-            if (armed === 'multiply') handleMultiplySelf()
             if (armed === 'divide') handleDivideSelf()
             if (armed === 'thief') handleStealSelf()
             if (armed === 'swap') handleSwapSelf()

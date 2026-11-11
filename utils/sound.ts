@@ -8,6 +8,10 @@ const SOUND_URLS = {
     bidIncrease: '/sounds/bid-increase.wav',
     slideUp: '/sounds/slide-up.wav',
     slideDown: '/sounds/slide-down.wav',
+    // Ability fruit lifecycle: introduction -> growth -> manifestation.
+    abilityIntro: '/sounds/ability-intro-v2.wav',
+    abilityGrowth: '/sounds/ability-growth.wav',
+    multiplyManifest: '/sounds/multiply-manifestation.wav',
 } as const
 
 type SoundName = keyof typeof SOUND_URLS
@@ -78,3 +82,6 @@ export const playTapSound = () => play('tap')
 export const playBidIncreaseSound = () => play('bidIncrease')
 export const playSlideUp = () => play('slideUp')
 export const playSlideDown = () => play('slideDown')
+export const playAbilityIntroSound = () => play('abilityIntro')
+export const playAbilityGrowthSound = () => play('abilityGrowth')
+export const playMultiplyManifestSound = () => play('multiplyManifest')
