@@ -10,7 +10,8 @@ const SOUND_URLS = {
     slideDown: '/sounds/slide-down.wav',
     // Ability fruit lifecycle: introduction -> growth -> manifestation.
     abilityIntro: '/sounds/ability-intro-v2.wav',
-    abilityGrowth: '/sounds/ability-growth.wav',
+    // 2s, the same length as the growth phase.
+    abilityGrowth: '/sounds/ability-growth-2s.wav',
     multiplyManifest: '/sounds/multiply-manifestation.wav',
 } as const
 

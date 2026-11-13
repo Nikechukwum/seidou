@@ -67,7 +67,9 @@ import ReactFruitPicker from "@/components/ReactFruitPicker";
 import { AnimatePresence, motion } from "motion/react";
 import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
-import { playBidIncreaseSound } from "@/utils/sound";
+import { playAbilityGrowthSound, playAbilityIntroSound, playBidIncreaseSound } from "@/utils/sound";
+import FruitLifecycleOverlay from "@/components/FruitLifecycleOverlay";
+import { FRUIT_GROWTH_MS, FRUIT_INTRO_MS, INTERACTIVE_LIFECYCLE_EFFECTS, LifecyclePhase } from "@/lib/fruitLifecycle";
 
 type Bid = {
     id: number;
@@ -1326,20 +1328,162 @@ const LeaderboardPage = () => {
         }
     }, [freezeStage])
 
+    //  ─────────────────────────────────────────────────────────────────────────
+    //  FRUIT LIFECYCLE — phases 1 (introduction) and 2 (growth) for every fruit
+    //  except Multiply (which draws its own). The miniature fruit is drawn by
+    //  <FruitLifecycleOverlay /> on MY card while `lifecycle` is set.
+    //  ─────────────────────────────────────────────────────────────────────────
+    const [lifecycle, setLifecycle] = useState<{ fruitId: AbilityFruitId; phase: LifecyclePhase } | null>(null)
+    const lifecycleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+    const cancelLifecycle = useCallback(() => {
+        lifecycleTimeoutsRef.current.forEach(clearTimeout)
+        lifecycleTimeoutsRef.current = []
+        setLifecycle(null)
+    }, [])
+
+    // intro (now) -> growth (1s) -> grown (3s). `onGrown` runs at 3s; when it
+    // is left out (interactive fruits) the fruit HOLDS until the effect lands
+    // (see the hold effect below).
+    const startLifecycle = useCallback((fruitId: AbilityFruitId, onGrown?: () => void) => {
+        lifecycleTimeoutsRef.current.forEach(clearTimeout)
+        lifecycleTimeoutsRef.current = []
+        setLifecycle({ fruitId, phase: 'intro' })
+        playAbilityIntroSound()
+        lifecycleTimeoutsRef.current.push(setTimeout(() => {
+            setLifecycle(l => (l ? { ...l, phase: 'growth' } : l))
+            playAbilityGrowthSound()
+        }, FRUIT_INTRO_MS))
+        lifecycleTimeoutsRef.current.push(setTimeout(() => {
+            setLifecycle(l => (l ? { ...l, phase: 'hold' } : l))
+            onGrown?.()
+        }, FRUIT_INTRO_MS + FRUIT_GROWTH_MS))
+    }, [])
+
+    // Clear the timers if the page goes away mid-lifecycle.
+    useEffect(() => () => lifecycleTimeoutsRef.current.forEach(clearTimeout), [])
+
+    // HOLD (interactive fruits): once grown, the fruit stays on the card while
+    // MY cast is still pending on the server. It goes the moment the cast is
+    // no longer pending — either it resolved (the effect's own animation takes
+    // over) or the cast never went through (e.g. "Place a bid first").
+    const myPendingEffect = useMemo(
+        () => (interactionFeed?.interactions ?? []).find(i => i.state === 'pending' && i.actor_is_me)?.effect_type ?? null,
+        [interactionFeed]
+    )
+    useEffect(() => {
+        if (lifecycle?.phase !== 'hold') return
+        const effect = INTERACTIVE_LIFECYCLE_EFFECTS[lifecycle.fruitId]
+        if (!effect || myPendingEffect !== effect) setLifecycle(null)
+    }, [lifecycle, myPendingEffect])
+
+    // The timers above fire seconds after the tap; they call the handlers
+    // through this ref so they always get the LATEST version (current bids,
+    // current stages), not the one from the moment of the tap.
+    const fruitHandlersRef = useRef({
+        divide: handleDivideSelf,
+        steal: handleStealSelf,
+        swap: handleSwapSelf,
+        freeze: handleFreezeSelf,
+        restore: handleRestoreSelf,
+        negate: handleNegateSelf,
+    })
+    fruitHandlersRef.current = {
+        divide: handleDivideSelf,
+        steal: handleStealSelf,
+        swap: handleSwapSelf,
+        freeze: handleFreezeSelf,
+        restore: handleRestoreSelf,
+        negate: handleNegateSelf,
+    }
+
+    // Is any fruit running right now (its lifecycle or its effect)? A second
+    // double tap during that time is ignored.
+    const fruitBusyRef = useRef(false)
+    fruitBusyRef.current = !!lifecycle || !!multiplyTarget || !!divideTarget || divideStage !== 'idle'
+        || stealStage !== 'idle' || swapStage !== 'idle' || restoreStage !== 'idle'
+        || negateStage !== 'idle' || freezeStage !== 'idle'
+
     // Fires one fruit on the table. Used by the ?fruit= hand-off from the Ability
     // Fruits page and by a double tap on the table's fruit selector.
     //
-    // For every fruit except Multiply and Negate, a frozen player is stopped
-    // HERE, before any frame plays: the fruit is checked against the live
-    // freeze status first (the local poll can lag by ~2s), so a frozen player
-    // gets the "you are currently frozen" popup instead of an animation the
-    // server would just revert. Multiply starts instantly and runs the same
-    // check in parallel (see below). Negate is exempt: it works while frozen.
+    // LIFECYCLE: every fruit starts its INTRODUCTION on the same tap, with no
+    // waiting on the network (CEO: "the introduction phase should be
+    // instant"). What follows depends on the fruit:
+    //   MULTIPLY        runs its own intro/growth inside MultiplyFruitAbility.
+    //   DIVIDE / SWAP / STEAL / FREEZE (interactive)
+    //                   the cast goes to the server straight away (after the
+    //                   ~0.3s freeze check), so the 3s intro + growth plays
+    //                   INSIDE the server's reaction window. The grown fruit
+    //                   then holds on the card until the effect lands.
+    //   RESTORE / NEGATE (instant on the server)
+    //                   the existing effect is started when growth ends.
+    // The freeze check ("is this player frozen right now?") runs IN PARALLEL
+    // with the introduction instead of before it; a frozen player's lifecycle
+    // is cancelled and they get the usual popup. Negate is exempt: it is the
+    // one fruit that works while frozen.
     const fireFruit = useCallback((armed: string) => {
+        // One fruit at a time: ignore a double tap while anything is running.
+        if (fruitBusyRef.current) return
+
         if (armed === 'negate') {
-            void handleNegateSelf()
+            startLifecycle('negate', () => {
+                setLifecycle(null)
+                void fruitHandlersRef.current.negate()
+            })
             return
         }
+
+        if (armed !== 'multiply') {
+            const interactive = !!INTERACTIVE_LIFECYCLE_EFFECTS[armed as AbilityFruitId]
+            let frozen = false
+            // Restore has no reaction window: its effect starts when growth ends.
+            startLifecycle(armed as AbilityFruitId, interactive ? undefined : () => {
+                setLifecycle(null)
+                if (!frozen && armed === 'restore') fruitHandlersRef.current.restore()
+            })
+            void (async () => {
+                try {
+                    const res = await fetch(`/api/landwars/freeze-bid?auctionId=${encodeURIComponent(auctionId)}`)
+                    const data = await res.json()
+                    if (res.ok && data?.frozen) {
+                        frozen = true
+                        cancelLifecycle()
+                        setMyFreeze({ frozen: true, remaining: Number(data?.remaining_seconds ?? 0) })
+                        setFreezePopupOpen(true)
+                        return
+                    }
+                } catch {
+                    // network hiccup — fall through; the fruit's own server commit still refuses a frozen player
+                }
+                // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
+                // COOLDOWN: the same fruit cannot fire twice within 20s.
+                // try {
+                //     const coolRes = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
+                //     const coolData = await coolRes.json()
+                //     const remaining = Number(coolData?.cooldowns?.[armed] ?? 0)
+                //     if (coolRes.ok && remaining > 0) {
+                //         cancelLifecycle()
+                //         dispatch(showToast({
+                //             type: 'error',
+                //             message: `${getAbilityFruit(armed)?.name ?? 'This fruit'} is still cooling down — ${remaining} more second${remaining === 1 ? '' : 's'}.`,
+                //         }))
+                //         return
+                //     }
+                // } catch {
+                //     // fall through — the fruit RPC's own cooldown guard still refuses
+                // }
+                // Interactive fruits cast NOW, so the reaction window runs
+                // alongside the introduction and growth.
+                const h = fruitHandlersRef.current
+                if (armed === 'divide') h.divide()
+                if (armed === 'thief') h.steal()
+                if (armed === 'swap') h.swap()
+                if (armed === 'freeze') h.freeze()
+            })()
+            return
+        }
+
         // MULTIPLY starts on the SAME tap (CEO: "the introduction phase should
         // be instant"). The freeze check runs alongside the 3s introduction +
         // growth instead of before it. The bid only changes at the explosion
@@ -1362,45 +1506,8 @@ const LeaderboardPage = () => {
                     // network hiccup — the multiply RPC's own frozen guard still refuses
                 }
             })()
-            return
         }
-        void (async () => {
-            try {
-                const res = await fetch(`/api/landwars/freeze-bid?auctionId=${encodeURIComponent(auctionId)}`)
-                const data = await res.json()
-                if (res.ok && data?.frozen) {
-                    setMyFreeze({ frozen: true, remaining: Number(data?.remaining_seconds ?? 0) })
-                    setFreezePopupOpen(true)
-                    return
-                }
-            } catch {
-                // fall through to the handler — its own server commit still refuses
-            }
-            // DISABLED-COOLDOWN: uncomment to bring the fruit cooldown back.
-            // COOLDOWN: the same fruit cannot fire twice within 20s. Stopped
-            // HERE (before any frame) so a player never watches a fruit explode
-            // only for the server to refuse and revert it.
-            // try {
-            //     const coolRes = await fetch(`/api/landwars/fruit-cooldown?auctionId=${encodeURIComponent(auctionId)}`)
-            //     const coolData = await coolRes.json()
-            //     const remaining = Number(coolData?.cooldowns?.[armed] ?? 0)
-            //     if (coolRes.ok && remaining > 0) {
-            //         dispatch(showToast({
-            //             type: 'error',
-            //             message: `${getAbilityFruit(armed)?.name ?? 'This fruit'} is still cooling down — ${remaining} more second${remaining === 1 ? '' : 's'}.`,
-            //         }))
-            //         return
-            //     }
-            // } catch {
-            //     // fall through — the fruit RPC's own cooldown guard still refuses
-            // }
-            if (armed === 'divide') handleDivideSelf()
-            if (armed === 'thief') handleStealSelf()
-            if (armed === 'swap') handleSwapSelf()
-            if (armed === 'restore') handleRestoreSelf()
-            if (armed === 'freeze') handleFreezeSelf()
-        })()
-    }, [auctionId, handleNegateSelf, handleMultiplySelf, handleDivideSelf, handleStealSelf, handleSwapSelf, handleRestoreSelf, handleFreezeSelf])
+    }, [auctionId, handleMultiplySelf, startLifecycle, cancelLifecycle])
 
     useEffect(() => {
         if (loading) return
@@ -1853,7 +1960,7 @@ const LeaderboardPage = () => {
                                 // (transition-colors alone would snap the glow off) and
                                 // runs for FREEZE_FADE_MS, the sheet's ~400ms fade.
                                 style={{ transitionDuration: `${FREEZE_FADE_MS}ms` }}
-                                className={`bg-white rounded-3xl shadow-sm border transition-[border-color,box-shadow,background-color] ${
+                                className={`relative bg-white rounded-3xl shadow-sm border transition-[border-color,box-shadow,background-color] ${
                                     isFreezeBordered
                                         ? 'border-[#3DA5FF] shadow-[0_0_18px_rgba(61,165,255,0.35)]'
                                         : isStealLiveTarget
@@ -1987,6 +2094,15 @@ const LeaderboardPage = () => {
                                 </RestoreFruitAbility>
                                 </NegateFruitAbility>
                                 </FreezeFruitAbility>
+
+                                {/*  LIFECYCLE phases 1 + 2 — the miniature fruit growing on
+                                    the right of MY card (every fruit except Multiply). */}
+                                {lifecycle && String(bid.userId) === String(myUserId) && getAbilityFruit(lifecycle.fruitId) && (
+                                    <FruitLifecycleOverlay
+                                        fruit={getAbilityFruit(lifecycle.fruitId)!}
+                                        phase={lifecycle.phase}
+                                    />
+                                )}
                             </motion.div>
                         )
                     }}

@@ -51,6 +51,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import Image from 'next/image'
 import { getAbilityFruit } from '@/lib/abilityFruits'
 import { playAbilityGrowthSound, playAbilityIntroSound, playMultiplyManifestSound } from '@/utils/sound'
+import { FRUIT_GROWTH_MS, FRUIT_INTRO_MS, FRUIT_MINI_SCALE } from '@/lib/fruitLifecycle'
 
 // Shape of one row in the leaderboard table (supports both exemplar + real data)
 export type MultiplyPlayer = {
@@ -62,9 +63,9 @@ export type MultiplyPlayer = {
 
 type Phase = 'idle' | 'intro' | 'growth' | 'covering' | 'explode' | 'settled'
 
-// Lifecycle durations (ms)
-export const INTRO_MS = 1000
-export const GROWTH_MS = 2000
+// Lifecycle durations (ms) — shared with every fruit (lib/fruitLifecycle.ts)
+const INTRO_MS = FRUIT_INTRO_MS
+const GROWTH_MS = FRUIT_GROWTH_MS
 // MANIFESTATION = SLIDE + IMPACT + SETTLE = 1000ms
 const SLIDE_MS = 300
 const IMPACT_MS = 550
@@ -72,7 +73,7 @@ const SETTLE_MS = 150
 
 // The miniature fruit is the full-size fruit drawn at this scale; the growth
 // phase takes it from here up to 1 (full size).
-const MINI_SCALE = 0.35
+const MINI_SCALE = FRUIT_MINI_SCALE
 
 // Design-specified ease-out curve
 const EASE_OUT = [0.22, 1, 0.36, 1] as const
