@@ -2,7 +2,7 @@
 import { ToggleCart } from "@/redux/cartSlice";
 import { RootState } from "@/redux/store";
 import { SEARCH_FILTERS, FilterMap } from "@/utils/defaults";
-import { ChevronDown, Gift, Handbag, Plus, Search } from "lucide-react";
+import { Gift, Handbag, Plus, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, SetStateAction, useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -105,7 +105,6 @@ export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
                         aria-label="Open menu"
                     >
                         <h1 className="font-semibold text-2xl">Seidou</h1>
-                        <ChevronDown className={`size-5 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {dropdownOpen && (
                         <div className="absolute top-full left-0 mt-2 w-60 bg-white rounded-2xl border border-gray-100 shadow-lg p-1.5 z-50">
@@ -119,7 +118,7 @@ export const HomeHeader = ({filterAction, filters, filterLabels}: Props) => {
                                 <div className="flex items-center justify-center size-10 rounded-xl bg-gray-100 shrink-0">
                                     <Gift className="size-5 text-[#4b5563]" />
                                 </div>
-                                <span className="font-medium text-sm">Loyalty Rewards</span>
+                                <span className="font-medium text-sm">Reward Hub</span>
                             </button>
                         </div>
                     )}

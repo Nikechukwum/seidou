@@ -7,22 +7,18 @@ import { WrenchScrewdriverIcon } from "@heroicons/react/24/solid";
 import { useSelector } from "react-redux";
 import { RootState } from "@/redux/store";
 import useAuth from "@/hooks/useAuth";
-import useClaimLoyaltyReward from "@/hooks/useClaimLoyaltyReward";
 
 const LandWarsWalletPage = () => {
     const [modal, setModal] = useState(false)
     const { checkSession } = useAuth();
-    const { claim, claimingId } = useClaimLoyaltyReward()
     const { user } = useSelector((state: RootState) => state.auth);
-
-    const rewards = user?.loyalty_rewards ?? []
 
     useEffect(() => {
         checkSession(false);
     }, []);
 
     return (
-        <PageLayout pageTitle="Land Wars Wallet" className="px-4 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Land Wars Wallet" className="px-4 bg-white">
 
             <Modal isActive={modal} setIsActive={setModal}>
                 <div className="flex flex-col items-center text-center">
@@ -61,44 +57,8 @@ const LandWarsWalletPage = () => {
                 </div>
             </div>
 
-            {/* Rewards Section */}
-            <div className="mt-8">
-                {rewards.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center text-center py-16 text-slate-500">
-                        <p className="font-medium">No rewards yet</p>
-                        <p className="text-sm mt-1">Any unclaimed rewards will appear here.</p>
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-3.5">
-                        {rewards.map((reward) => (
-                            <div
-                                key={reward.id}
-                                className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 flex items-center justify-between gap-3"
-                            >
-                                <span className="font-bold text-lg text-gray-900">
-                                    B {reward.amount}
-                                </span>
-                                <div className="flex gap-2">
-                                    <Button
-                                        text="Learn More"
-                                        size="xs"
-                                        bordered
-                                        classname="text-xs"
-                                        onClick={() => setModal(true)}
-                                    />
-                                    <button
-                                        className="bg-[#60A5FA] hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-bold py-2 px-4 rounded-full transition-colors"
-                                        onClick={() => claim(reward)}
-                                        disabled={claimingId !== null}
-                                    >
-                                        {claimingId === reward.id ? "Claiming..." : "Claim"}
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+            {/* Unclaimed rewards are NOT listed here: they live in the Reward Hub
+                (/auction/loyalty-rewards). The wallet only shows the balance. */}
         </PageLayout>
     );
 }

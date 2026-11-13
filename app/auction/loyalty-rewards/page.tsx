@@ -24,7 +24,7 @@ const LoyaltyRewardsPage = () => {
     }, [])
 
     return (
-        <PageLayout pageTitle="Loyalty Rewards" className="px-4 bg-[#f5f5f5]">
+        <PageLayout pageTitle="Reward Hub" className="px-4 bg-white">
 
             <Modal isActive={featureModal} setIsActive={setFeatureModal}>
                 <div className="flex flex-col items-center text-center">
@@ -62,15 +62,18 @@ const LoyaltyRewardsPage = () => {
                                 <InformationCircleIcon className="size-5.5 text-gray-500"/>
                             </div>
                             <div className="flex justify-between">
+                                {/* Both buttons share one fixed width (w-28) so Claim
+                                    matches Learn More exactly. Claim gets a transparent
+                                    border so its height matches the bordered Learn More. */}
                                 <Button
                                     text="Learn More"
-                                    classname="text-xs"
+                                    classname="text-xs w-28"
                                     size="xs"
                                     bordered={true}
                                     onClick={() => setFeatureModal(true)}
                                 />
                                 <button
-                                    className="bg-[#60A5FA] hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-bold py-2 px-4 rounded-full transition-colors"
+                                    className="w-28 border border-transparent bg-[#60A5FA] hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-bold py-2 px-4 rounded-full transition-colors"
                                     onClick={() => claim(reward)}
                                     disabled={claimingId !== null}
                                 >
