@@ -1,7 +1,7 @@
 /**
  * Loyalty rewards: unclaimed bidding-currency rewards stored on
- * users.loyalty_rewards and claimed from the Land Wars Wallet (and the two
- * other loyalty-reward pages).
+ * users.loyalty_rewards and claimed from the Reward Hub
+ * (/auction/loyalty-rewards and /profile/loyalty-rewards).
  *
  * Client-safe. The amounts here are a display mirror only — what a claim
  * actually credits is decided by the allowlist in

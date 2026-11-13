@@ -2,34 +2,20 @@
 
 import AuctionCategoryCard from "@/components/AuctionCategoryCard";
 import { DrawerModal } from "@/components/DrawerModal";
-import { IconListItem } from "@/components/IconListItem";
 import { PageLayout } from "@/components/PageLayout";
 import { Bars3Icon } from "@heroicons/react/24/solid";
-import { Gamepad2, ShoppingBag, Wallet } from "lucide-react";
+import { Gamepad2, Gift, ShoppingBag, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
 const AuctionPage = () => {
     const [drawer, setDrawer] = useState(false)
+    // The burger-menu action sheet: one row, icon on top and its label below.
     const drawerItems = [
-        {
-            title: 'Land Wars Store',
-            description: 'Explore available assets',
-            icon: <ShoppingBag className="size-5.5 text-[#4b5563]"/>,
-            route: 'auction/store'
-        },
-        {
-            title: 'Land Wars Games',
-            description: 'Earn bidding currency faster',
-            icon: <Gamepad2 className="size-5.5 text-[#4b5563]"/>,
-            route: 'auction/games'
-        },
-        {
-            title: 'Land Wars Wallet',
-            description: 'View balance and history',
-            icon: <Wallet className="size-5.5 text-[#4b5563]" />,
-            route: '/land-wars/wallet'
-        }
+        { title: 'Store', icon: ShoppingBag, route: '/auction/store' },
+        { title: 'Games', icon: Gamepad2, route: '/auction/games' },
+        { title: 'Wallet', icon: Wallet, route: '/land-wars/wallet' },
+        { title: 'Reward Hub', icon: Gift, route: '/auction/loyalty-rewards' },
     ]
     return (
         <PageLayout 
@@ -42,19 +28,19 @@ const AuctionPage = () => {
             </button>
         }>
             <DrawerModal isActive={drawer} setIsActive={setDrawer}>
-                <div className="space-y-4">
-                    {drawerItems.map((item, idx)=>{
-                        return(
-                            <Link key={idx} href={item.route} className="block rounded-2xl hover:bg-gray-50 active:bg-gray-100 transition-colors -mx-2 px-2">
-                                <IconListItem
-                                title={item.title}
-                                icon={item.icon}
-                                description={item.description}
-                                />
-                            </Link>
-                        )
-                    })}
-
+                <div className="grid grid-cols-4 gap-2">
+                    {drawerItems.map((item) => (
+                        <Link
+                            key={item.title}
+                            href={item.route}
+                            className="group flex flex-col items-center gap-2 rounded-2xl py-2 active:bg-gray-100 transition-colors"
+                        >
+                            <div className="flex items-center justify-center size-14 rounded-2xl bg-[#f3f4f6] group-active:scale-95 transition-transform">
+                                <item.icon className="size-6 text-[#4b5563]" />
+                            </div>
+                            <span className="text-xs font-medium text-gray-900 text-center">{item.title}</span>
+                        </Link>
+                    ))}
                 </div>
             </DrawerModal>
 
