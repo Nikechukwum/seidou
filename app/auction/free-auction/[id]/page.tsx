@@ -53,6 +53,7 @@ import {
     FEED_POLL_MS,
     // DISABLED-REACTION-WINDOW: effectLabel,
     effectShortLabel,
+    effectFruitId,
     feedClockOffsetMs,
     iBlockedMe,
     iReflectedMe,
@@ -69,6 +70,7 @@ import Image from "next/image";
 import { useBidControls } from "@/hooks/useBidControls";
 import { playAbilityGrowthSound, playAbilityIntroSound, playBidIncreaseSound } from "@/utils/sound";
 import FruitLifecycleOverlay from "@/components/FruitLifecycleOverlay";
+import { EventsCard, EventsSheet, EventScope, TableEvent } from "@/components/TableEvents";
 import { FRUIT_GROWTH_MS, FRUIT_INTRO_MS, INTERACTIVE_LIFECYCLE_EFFECTS, LifecyclePhase } from "@/lib/fruitLifecycle";
 
 type Bid = {
@@ -116,6 +118,41 @@ const MAX_BID_LIMIT = 50_000_000
 const LeaderboardPage = () => {
     const [controlsModal, setControlsModal] = useState(false)
     const [tableMenu, setTableMenu] = useState(false)
+
+    // ── TABLE EVENTS ────────────────────────────────────────────────────────
+    // The list behind the "Events" card in the header. Kept in memory for this
+    // visit to the table (it starts empty on every page load).
+    //   Global   = fruit plays on this table (mine and other players').
+    //   Personal = anything that involves me: my fruits, fruits aimed at me,
+    //              and every toast shown to me here (bids, purchases,
+    //              "Insufficient Bidding Credits", ...).
+    const [tableEvents, setTableEvents] = useState<TableEvent[]>([])
+    const [eventsSheet, setEventsSheet] = useState<EventScope | null>(null)
+    const eventIdRef = useRef(0)
+    const addTableEvent = useCallback((e: Omit<TableEvent, 'id' | 'at'>) => {
+        eventIdRef.current += 1
+        const entry = { ...e, id: eventIdRef.current, at: Date.now() }
+        // keep the newest 100
+        setTableEvents(prev => [...prev, entry].slice(-100))
+    }, [])
+
+    // Every toast shown on this page becomes a PERSONAL event. Watching the
+    // toast store (instead of editing every showToast call) means new toasts
+    // are logged automatically. The toast already on screen when the page
+    // opens is skipped.
+    const toastState = useSelector((state: RootState) => state.toast)
+    const lastToastIdRef = useRef(toastState.id)
+    useEffect(() => {
+        if (toastState.id === lastToastIdRef.current) return
+        lastToastIdRef.current = toastState.id
+        if (!toastState.visible || !toastState.message) return
+        addTableEvent({
+            text: toastState.message,
+            tone: toastState.type === 'success' ? 'success' : 'error',
+            global: false,
+            personal: true,
+        })
+    }, [toastState.id, toastState.visible, toastState.message, toastState.type, addTableEvent])
     // Drives the "AUCTION ENDS IN" countdown.
     const [auctionEndTime, setAuctionEndTime] = useState<string | null>(null)
     // DUMMY-COUNTDOWN (testing): while this is set, the countdown runs from
@@ -1426,6 +1463,16 @@ const LeaderboardPage = () => {
         // One fruit at a time: ignore a double tap while anything is running.
         if (fruitBusyRef.current) return
 
+        // EVENTS: my own fruit play — Global (the table sees it) and Personal.
+        const label = SELECTOR_FRUITS.find(f => f.fruit.id === armed)?.label
+        addTableEvent({
+            text: `You used the ${label ?? getAbilityFruit(armed)?.name ?? 'ability'} Fruit`,
+            tone: 'fruit',
+            global: true,
+            personal: true,
+            fruitId: getAbilityFruit(armed)?.id,
+        })
+
         if (armed === 'negate') {
             startLifecycle('negate', () => {
                 setLifecycle(null)
@@ -1507,7 +1554,7 @@ const LeaderboardPage = () => {
                 }
             })()
         }
-    }, [auctionId, handleMultiplySelf, startLifecycle, cancelLifecycle])
+    }, [auctionId, handleMultiplySelf, startLifecycle, cancelLifecycle, addTableEvent])
 
     useEffect(() => {
         if (loading) return
@@ -1680,6 +1727,19 @@ const LeaderboardPage = () => {
                 const resolvedMs = Date.parse(it.resolved_at ?? '')
                 const fresh = Number.isFinite(resolvedMs) && serverNowMs - resolvedMs < 4000
                 if (fresh) {
+                    // EVENTS: another player's fruit landed on the table. It is
+                    // Global; it is Personal too when it was aimed at me.
+                    // (My own fruits are logged when I activate them.)
+                    if (!it.actor_is_me) {
+                        const who = usernameCacheRef.current.get(it.actor_user_id) || 'A player'
+                        addTableEvent({
+                            text: `${who} used the ${effectShortLabel(it.effect_type)} Fruit${it.is_targeting_me ? ' on you' : ''}`,
+                            tone: 'fruit',
+                            global: true,
+                            personal: it.is_targeting_me,
+                            fruitId: effectFruitId(it.effect_type),
+                        })
+                    }
                     if (it.actor_is_me) {
                         if (it.effect_type === 'divide') burstDivide(it)
                         else if (it.effect_type === 'swap') burstSwap(it)
@@ -1711,7 +1771,7 @@ const LeaderboardPage = () => {
             }
             seen.set(it.id, it.state)
         }
-    }, [interactionFeed, myUserId, serverNowMs, burstDivide, burstSwap, startStealDrain, startFreezeImpact, dispatch])
+    }, [interactionFeed, myUserId, serverNowMs, burstDivide, burstSwap, startStealDrain, startFreezeImpact, dispatch, addTableEvent])
 
     // RESPOND — the defender casts Shield (blocks) or Mirror (reflects) on the
     // interaction currently targeting them.
@@ -1772,18 +1832,72 @@ const LeaderboardPage = () => {
             }
             // The fruit selector and the auction countdown, side by side in the
             // header. Fixed 4.75rem height: the pinned cards below are placed from it.
+            // HEADER CAROUSEL: [ Ability Fruit ] [ Events ] [ Auction Timer ].
+            // A horizontal scroll-snap row. The first two fill ~84% of the
+            // width, so the timer PEEKS in on the right edge (~11%) as the hint
+            // that the row can be swiped. A soft white fade sits over the peek.
             subHeader={
-                <div className="mb-2 grid h-[4.75rem] grid-cols-2 gap-3 px-1">
-                    <FruitSelector
-                        fruits={SELECTOR_FRUITS}
-                        usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
-                        onActivate={(fruit) => fireFruit(fruit.id)}
-                        onInfo={openAbilityFruits}
-                    />
-                    <AuctionCountdown endTime={dummyEndTime ?? auctionEndTime} />
+                <div className="relative mb-2 h-[4.75rem]">
+                    <div className="flex h-full snap-x snap-mandatory gap-2 overflow-x-auto no-scrollbar scroll-px-1 px-1">
+                        <div className="h-full w-[42%] shrink-0 snap-start">
+                            <FruitSelector
+                                fruits={SELECTOR_FRUITS}
+                                usesLeft={(fruit) => availableUses(auctionId, getFruitUsage(auctionId), getFruitBonuses(auctionId), fruit.id)}
+                                onActivate={(fruit) => fireFruit(fruit.id)}
+                                onInfo={openAbilityFruits}
+                            />
+                        </div>
+                        <div className="h-full w-[42%] shrink-0 snap-start">
+                            <EventsCard
+                                globalCount={tableEvents.filter(e => e.global).length}
+                                personalCount={tableEvents.filter(e => e.personal).length}
+                                onOpen={setEventsSheet}
+                            />
+                        </div>
+                        {/* Wider than the other two, so all four columns fit once
+                            it is swiped fully into view. */}
+                        <div className="h-full w-[55%] shrink-0 snap-end">
+                            <AuctionCountdown endTime={dummyEndTime ?? auctionEndTime} />
+                        </div>
+                    </div>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-white to-transparent" />
                 </div>
             }
         >
+            <EventsSheet scope={eventsSheet} events={tableEvents} onClose={() => setEventsSheet(null)} />
+
+            {/*  FLOATING STATUS PILLS — the fruit events (Divide, Swap, Negate,
+                Freeze, Restore, Multiply). A fixed overlay just below the title
+                row, drawn ABOVE the header carousel (z-50), so it never pushes
+                the player cards down. Each pill disappears when its fruit's
+                stage ends. pointer-events-none: taps pass through to the header. */}
+            <div className="pointer-events-none fixed top-14 left-0 right-0 z-50 mx-auto flex max-w-md flex-col items-center gap-1 px-4">
+                <DivideStatusPill
+                    stage={divideStage}
+                    targetName={bids.find(b => b.userId === divideTarget)?.username}
+                    factor={DIVIDE_FACTOR}
+                />
+                <SwapStatusPill
+                    stage={swapStage}
+                    targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
+                />
+                <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
+                <FreezeStatusPill stage={freezeStage} />
+                <RestoreStatusPill stage={restoreStage} />
+                <AnimatePresence>
+                    {multiplyTarget && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.25 }}
+                            className="flex items-center gap-1.5 rounded-full bg-purple-600 px-3 py-1 text-xs font-semibold text-white shadow-md"
+                        >
+                            ×{MULTIPLY_FACTOR} Multiply Fruit activated
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
             {/* z-40 so the menu sits above the z-30 bid bar at the bottom */}
             <DrawerModal isActive={tableMenu} setIsActive={setTableMenu} zIndexClass="z-40">
                 <div className="space-y-4">
@@ -1895,18 +2009,6 @@ const LeaderboardPage = () => {
                 // Cards start right under the header; any spare room is left
                 // below the last card, above the bid bar.
                 <div className="fixed top-[10.75rem] bottom-[5.5rem] left-0 right-0 max-w-md mx-auto px-4 flex flex-col overflow-y-auto no-scrollbar">
-                <DivideStatusPill
-                    stage={divideStage}
-                    targetName={bids.find(b => b.userId === divideTarget)?.username}
-                    factor={DIVIDE_FACTOR}
-                />
-                <SwapStatusPill
-                    stage={swapStage}
-                    targetName={bids.find(b => String(b.userId) === swapTargetId)?.username}
-                />
-                <NegateStatusPill stage={negateStage} effectLabel={negateLabel} />
-                <FreezeStatusPill stage={freezeStage} />
-                <RestoreStatusPill stage={restoreStage} />
                 <AdaptiveLeaderboard
                     rows={bids}
                     myUserId={myUserId}

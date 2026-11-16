@@ -137,7 +137,7 @@ export function RestoreStatusPill({ stage }: { stage: RestoreStage }) {
                     transition={{ duration: 0.3, ease: RESTORE_EASE_OUT }}
                 >
                     <div
-                        className="mt-4 flex items-center gap-2 rounded-full px-4 py-2 shadow-lg"
+                        className="flex items-center gap-1.5 rounded-full px-3 py-1 shadow-md"
                         style={{ backgroundColor: TEAL_DEEP }}
                     >
                         {stage === 'restoring' && (
@@ -148,7 +148,7 @@ export function RestoreStatusPill({ stage }: { stage: RestoreStage }) {
                                 transition={{ duration: 0.9, repeat: Infinity, ease: 'linear' }}
                             />
                         )}
-                        <span className="text-sm font-semibold text-white">{label}</span>
+                        <span className="text-xs font-semibold text-white">{label}</span>
                     </div>
                 </motion.div>
             )}

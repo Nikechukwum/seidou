@@ -280,7 +280,7 @@ export function FreezeStatusPill({ stage }: { stage: FreezeStage }) {
     return (
         <div className="flex justify-center">
             <motion.div
-                className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white shadow-md"
                 style={{ backgroundColor: ICE_DEEP }}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
