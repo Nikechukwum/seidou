@@ -31,21 +31,25 @@ export const Toast = () => {
                     exit={{ y: -80, opacity: 0, x: '-50%' }}
                     transition={{ duration: 0.3 }}
                     onClick={() => dispatch(hideToast())}
-                    className="fixed top-4.5 left-1/2 z-50 w-[calc(100vw-2rem)] max-w-sm cursor-pointer"
+                    // A floating overlay: fixed, so it never pushes the page down.
+                    // w-max sizes the box to its text, so the padding is the same
+                    // on both sides and it stays centred (it used to span the full
+                    // width with the text on the left).
+                    className="fixed top-3 left-1/2 z-50 w-max max-w-[calc(100vw-2rem)] cursor-pointer"
                 >
                     <p
-                        className={`flex gap-x-1.5 items-center font-semibold text-sm rounded-full px-3.5 py-2 shadow-lg ring-1 ${
+                        className={`flex gap-x-1.5 items-center justify-center font-semibold text-xs leading-tight rounded-full px-3 py-1.5 shadow-md ring-1 ${
                             isSuccess
-                                ? 'text-green-500 bg-green-50 ring-green-500'
+                                ? 'text-green-600 bg-green-50 ring-green-500'
                                 : 'text-red-500 bg-red-50 ring-red-500'
                         }`}
                     >
                         {isSuccess ? (
-                            <CheckCircleIcon className="size-5.5 shrink-0" />
+                            <CheckCircleIcon className="size-4 shrink-0" />
                         ) : (
-                            <ExclamationCircleIcon className="size-5.5 shrink-0" />
+                            <ExclamationCircleIcon className="size-4 shrink-0" />
                         )}
-                        {message}
+                        <span className="text-center">{message}</span>
                     </p>
                 </motion.div>
             )}

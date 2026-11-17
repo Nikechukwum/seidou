@@ -120,7 +120,7 @@ export function SwapStatusPill({
                     transition={{ duration: 0.3, ease: SWAP_EASE_OUT }}
                 >
                     <div
-                        className="mt-4 flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-lg"
+                        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-white shadow-md"
                         style={{ backgroundColor: GREEN }}
                     >
                         <span className="flex size-6 items-center justify-center rounded-full bg-white/20 text-xs font-extrabold">
