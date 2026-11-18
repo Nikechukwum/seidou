@@ -118,6 +118,8 @@ const MAX_BID_LIMIT = 50_000_000
 const LeaderboardPage = () => {
     const [controlsModal, setControlsModal] = useState(false)
     const [tableMenu, setTableMenu] = useState(false)
+    // True once the header carousel is swiped to its end (hides the edge fade).
+    const [headerAtEnd, setHeaderAtEnd] = useState(false)
 
     // ── TABLE EVENTS ────────────────────────────────────────────────────────
     // The list behind the "Events" card in the header. Kept in memory for this
@@ -1838,7 +1840,17 @@ const LeaderboardPage = () => {
             // that the row can be swiped. A soft white fade sits over the peek.
             subHeader={
                 <div className="relative mb-2 h-[4.75rem]">
-                    <div className="flex h-full snap-x snap-mandatory gap-2 overflow-x-auto no-scrollbar scroll-px-1 px-1">
+                    <div
+                        className="flex h-full snap-x snap-mandatory gap-2 overflow-x-auto no-scrollbar scroll-px-1 px-1"
+                        // Hide the right-edge fade once the row is swiped to the
+                        // end, so it never covers the timer card's right border.
+                        // The snap stops ~9px short of the very end (the end
+                        // spacer + padding), so "at the end" allows 24px of slack.
+                        onScroll={(e) => {
+                            const el = e.currentTarget
+                            setHeaderAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 24)
+                        }}
+                    >
                         <div className="h-full w-[42%] shrink-0 snap-start">
                             <FruitSelector
                                 fruits={SELECTOR_FRUITS}
@@ -1847,7 +1859,10 @@ const LeaderboardPage = () => {
                                 onInfo={openAbilityFruits}
                             />
                         </div>
-                        <div className="h-full w-[42%] shrink-0 snap-start">
+                        {/* No snap point here on purpose: the row stops only at
+                            the START (fruit + events) and the END (timer in full).
+                            A stop at Events would leave the timer half cut off. */}
+                        <div className="h-full w-[42%] shrink-0">
                             <EventsCard
                                 globalCount={tableEvents.filter(e => e.global).length}
                                 personalCount={tableEvents.filter(e => e.personal).length}
@@ -1859,8 +1874,13 @@ const LeaderboardPage = () => {
                         <div className="h-full w-[55%] shrink-0 snap-end">
                             <AuctionCountdown endTime={dummyEndTime ?? auctionEndTime} />
                         </div>
+                        {/* end spacer: browsers drop a scroll row's right padding,
+                            so this keeps a gap after the last card's border */}
+                        <div className="w-px shrink-0" aria-hidden />
                     </div>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-white to-transparent" />
+                    {!headerAtEnd && (
+                        <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-white to-transparent" />
+                    )}
                 </div>
             }
         >
