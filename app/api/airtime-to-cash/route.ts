@@ -75,15 +75,30 @@ export async function POST(request: NextRequest) {
             const webhookUrl = origin.includes('localhost') ? undefined : `${origin}/api/airtime-to-cash/webhook`
 
             console.log('[airtime-to-cash] convert', { mode, ref, network: body.network, amount, userId: user.id })
-            const vtu = await convertAirtime({
-                network: body.network,
-                sender: user.email ?? user.id,
-                senderNumber,
-                amount,
-                ref,
-                sitePhone: sitePhone || undefined,
-                webhookUrl,
-            })
+            let vtu
+            try {
+                vtu = await convertAirtime({
+                    network: body.network,
+                    sender: user.email ?? user.id,
+                    senderNumber,
+                    amount,
+                    ref,
+                    sitePhone: sitePhone || undefined,
+                    webhookUrl,
+                })
+            } catch (err) {
+                // The connection can break AFTER VTUAfrica got the request, so
+                // whether it arrived is unknown. Hand back the reference so the
+                // status check can find out — never just retry the convert.
+                console.error('[airtime-to-cash] convert failed', { ref, err })
+                const e = err as Error & { cause?: { code?: string; message?: string } }
+                return NextResponse.json({
+                    mode,
+                    ref,
+                    error: 'The connection to VTUAfrica broke. Do NOT convert again — check the status of this reference first.',
+                    detail: `${e?.message ?? String(err)}${e?.cause ? ` — ${e.cause.code ?? ''} ${e.cause.message ?? ''}` : ''}`.trim(),
+                }, { status: 502 })
+            }
             console.log('[airtime-to-cash] convert response', { ref, vtu })
             return NextResponse.json({ mode, ref, webhookUrl: webhookUrl ?? null, vtu })
         }
