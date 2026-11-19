@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
+    // Images are NOT resized by Vercel any more (its quota ran out and every
+    // image answered 402). Sanity images are resized by Sanity itself and the
+    // rest are served as-is — see lib/imageLoader.ts.
+    loader: 'custom',
+    loaderFile: './lib/imageLoader.ts',
     qualities: [60, 65, 70, 75],
     deviceSizes: [
       70, 96, 160, 200, 280, 400, 680, 750, 828, 1080, 1200, 1920, 2048, 3840,
