@@ -39,19 +39,27 @@ export const ProductContainer = ({productDetails, priority}: Props) => {
 
             <div className="flex items-center justify-between px-4 py-2">
                 <div className="flex items-center">
-                    <Image
-                        className="vendorImage"
-                        placeholder="blur"
-                        blurDataURL="/placeholder.png"
-                        width={50}
-                        height={50}
-                        src={urlFor(productDetails.vendor.logo).url()}
-                        alt={productDetails.title}
-                        onClick={() => {
-                            router.push(`/vendor/${productDetails.vendor._id}`);
-                        }}
-                    />
-                    <span className="ml-5 font-semibold">{productDetails.vendor.title}</span>
+                    {productDetails.vendor?.logo ? (
+                        <Image
+                            className="vendorImage"
+                            placeholder="blur"
+                            blurDataURL="/placeholder.png"
+                            width={50}
+                            height={50}
+                            src={urlFor(productDetails.vendor.logo).url()}
+                            alt={productDetails.title}
+                            onClick={() => {
+                                router.push(`/vendor/${productDetails.vendor._id}`);
+                            }}
+                        />
+                    ) : (
+                        // Supabase catalogue products (lib/catalogue.ts) have
+                        // no vendor logo or vendor page: show the brand initial.
+                        <div className="size-[50px] shrink-0 rounded-full bg-black text-white flex items-center justify-center text-lg font-bold">
+                            {productDetails.vendor?.title?.charAt(0).toUpperCase()}
+                        </div>
+                    )}
+                    <span className="ml-5 font-semibold">{productDetails.vendor?.title}</span>
                 </div>
                 <button className="material-symbols-outlined text-2xl! p-2">
                     more_horiz
@@ -60,11 +68,11 @@ export const ProductContainer = ({productDetails, priority}: Props) => {
             <div className="w-full h-80 relative overflow-hidden">
                 <Image
                     priority={priority}
-                    placeholder="blur"
-                    blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
+                    placeholder={productDetails.defaultProductVariant?.images[0]?.lqip ? 'blur' : 'empty'}
+                    blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip || undefined}
                     className="object-cover"
                     fill
-                    src={productDetails.defaultProductVariant?.images[0]?.url}
+                    src={productDetails.defaultProductVariant?.images[0]?.url || '/placeholder.png'}
                     alt="Product Image"
                     sizes="(max-width: 768px) 500px, 500px"
                     onClick={() => {
