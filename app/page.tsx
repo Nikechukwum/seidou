@@ -16,6 +16,7 @@ import { appendToFeed, clearFeed, resetFeed, setHasMore, setLastId, setActiveFil
 import { SmallLoader } from "@/components/SmallLoader";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
+import { fetchCatalogueFeed } from "@/lib/catalogue";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -45,6 +46,8 @@ export default function Home() {
   const checkedRef = useRef(false);
   const loadedFilterRef = useRef<string | null>(null);
   const fetchingRef = useRef(false);
+  /** Supabase catalogue products for the current filter, and how many are shown. */
+  const catalogueRef = useRef<{ items: HomeProduct[] | null; offset: number }>({ items: null, offset: 0 });
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
@@ -107,6 +110,7 @@ export default function Home() {
 
     if (shouldReset) {
       setFeedLoading(true);
+      catalogueRef.current = { items: null, offset: 0 };
     }
     const current = lastId.current;
     const nextSetQuery = shouldReset ? '' : `_id > $current &&`;
@@ -153,9 +157,27 @@ export default function Home() {
         shouldReset ? dispatch(resetFeed(data)) : dispatch(appendToFeed(data));
         dispatch(setLastId(lastId.current));
       } else {
-        lastId.current = null;
-        dispatch(setLastId(null));
-        dispatch(setHasMore(false));
+        // Sanity has no more products for this filter: continue with the
+        // products imported into Supabase (lib/catalogue.ts), 5 at a time.
+        // lastId is left on the last Sanity product so Sanity stays empty.
+        const catalogue = catalogueRef.current;
+        if (catalogue.items === null) {
+          catalogue.items = await fetchCatalogueFeed(
+            categoryFilterQuery ? expandedCategories : null
+          ).catch((error) => {
+            console.error("Error fetching catalogue feed:", error);
+            return [];
+          });
+        }
+        const page = catalogue.items.slice(catalogue.offset, catalogue.offset + 5);
+        catalogue.offset += page.length;
+        if (page.length > 0) {
+          shouldReset ? dispatch(resetFeed(page)) : dispatch(appendToFeed(page));
+        } else {
+          lastId.current = null;
+          dispatch(setLastId(null));
+          dispatch(setHasMore(false));
+        }
       }
       currentFetchTotal.current += data.length;
     } catch (error) {

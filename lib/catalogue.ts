@@ -13,7 +13,7 @@
 // ============================================================================
 
 import { createClient } from '@/lib/supabase/client'
-import type { CategoryProduct } from '@/types'
+import type { CategoryProduct, HomeProduct } from '@/types'
 
 /** Naira per British pound used to show GBP prices in ₦. Change it here only. */
 export const GBP_TO_NGN = 2000
@@ -118,6 +118,33 @@ export async function fetchCatalogueProducts(slug: string, categoryTitle: string
     return (data as CatalogueRow[])
         .filter((row) => catalogueCategory(row.title) === slug)
         .map((row) => ({ ...toProduct(row, 640), categoryTitle }))
+}
+
+/**
+ * Every priced catalogue product for the Home feed (app/page.tsx), shaped
+ * like the feed's Sanity products. With `slugs`, only products whose title
+ * puts them in one of those categories; without, all of them.
+ */
+export async function fetchCatalogueFeed(slugs: string[] | null): Promise<HomeProduct[]> {
+    const { data, error } = await createClient()
+        .from('catalogue_products')
+        .select(COLUMNS)
+        .not('price', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+    if (error) throw error
+    return (data as CatalogueRow[])
+        .filter((row) => {
+            if (!slugs) return true
+            const slug = catalogueCategory(row.title)
+            return slug !== null && slugs.includes(slug)
+        })
+        .map((row) => ({
+            ...toProduct(row, 828),
+            slug: { current: '', title: row.title },
+            // no logo or vendor page: the feed card shows the brand's initial
+            vendor: { title: row.brand ?? row.channel_name ?? 'ASOS', _id: '', logo: null },
+        }) as unknown as HomeProduct)
 }
 
 /**
