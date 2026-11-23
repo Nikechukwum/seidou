@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
+    // Load every image straight from where it lives (Sanity, /public, ...)
+    // instead of through Vercel's Image Optimization. Vercel's monthly image
+    // quota ran out and it answered every image with 402 "Payment Required".
+    unoptimized: true,
     qualities: [60, 65, 70, 75],
     deviceSizes: [
       70, 96, 160, 200, 280, 400, 680, 750, 828, 1080, 1200, 1920, 2048, 3840,
