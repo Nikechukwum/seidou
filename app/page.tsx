@@ -16,7 +16,7 @@ import { appendToFeed, clearFeed, resetFeed, setHasMore, setLastId, setActiveFil
 import { SmallLoader } from "@/components/SmallLoader";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { fetchCatalogueFeed } from "@/lib/catalogue";
+import { fetchCatalogueFeed, isCatalogueId } from "@/lib/catalogue";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -173,6 +173,8 @@ export default function Home() {
         catalogue.offset += page.length;
         if (page.length > 0) {
           shouldReset ? dispatch(resetFeed(page)) : dispatch(appendToFeed(page));
+          // InfiniteScroll only asks for the next page when this grows
+          currentFetchTotal.current += page.length;
         } else {
           lastId.current = null;
           dispatch(setLastId(null));
@@ -312,7 +314,9 @@ export default function Home() {
           className="flex flex-col items-center pt-2 pb-20"
         >
           {feed.map((product, index) => {
-            if (product.vendor && product.vendor.logo)
+            // Supabase catalogue products have no vendor logo (the card shows
+            // the brand initial instead), so they are allowed through too.
+            if (product.vendor && (product.vendor.logo || isCatalogueId(product._id)))
               return (
                 <ProductContainer
                   productDetails={product}
