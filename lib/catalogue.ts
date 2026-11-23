@@ -68,12 +68,15 @@ function toNaira(price: number, currency: string | null): number {
 /**
  * ASOS image links ask for a 1926px-wide image. Images are no longer resized
  * by Vercel (next.config.ts `unoptimized`), so ask ASOS for a smaller one.
+ * ASOS does not answer Nigerian connections, so the image is loaded through
+ * our own proxy (app/api/catalogue-image/route.ts), which Vercel caches.
  */
 export function catalogueImage(url: string, width = 640): string {
     if (!url.includes('asos-media.com')) return url
-    return url
+    const sized = url
         .replace(/\$n_\d+w\$/, `$n_${width}w$`)
         .replace(/([?&])wid=\d+/, `$1wid=${width}`)
+    return `/api/catalogue-image?src=${encodeURIComponent(sized)}`
 }
 
 type CatalogueRow = {
