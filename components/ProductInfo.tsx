@@ -17,6 +17,11 @@ import { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Modal } from "./Modal";
 import { FullScreenLoader } from "./FullScreenLoader";
+import { fetchCatalogueProduct, isCatalogueId } from "@/lib/catalogue";
+
+/** Blur-preview props for next/image; catalogue products have no preview. */
+const blurProps = (lqip?: string) =>
+    lqip ? { placeholder: 'blur' as const, blurDataURL: lqip } : { placeholder: 'empty' as const }
 
 type Props = {
     // productId: string | null
@@ -83,7 +88,14 @@ export const ProductInfo = ({}: Props) => {
         setIsVisible(productId !== null)
         if(productId){
             const productFetch = async () => {
-            const results = await sanityClient.fetch(`*[_type == 'product' && _id == $productId && !(_id in path('drafts.**'))][0]{
+            // Products imported into Supabase (lib/catalogue.ts) come back in
+            // the same shape as the Sanity query below.
+            const results = isCatalogueId(productId)
+            ? await fetchCatalogueProduct(productId).catch((error) => {
+                console.error('Error fetching catalogue product:', error)
+                return null
+            })
+            : await sanityClient.fetch(`*[_type == 'product' && _id == $productId && !(_id in path('drafts.**'))][0]{
                 _id,
                 title,
                 defaultProductVariant{
@@ -158,16 +170,15 @@ export const ProductInfo = ({}: Props) => {
             {/* Expanded Image View */}
             {(fullImageView && isVisible) && 
             <div onClick={()=>{setFullImageView(false)}} className="fixed z-80 top-0 left-0 w-screen max-w-md h-dvh bg-gray-300 flex justify-center items-center overflow-hidden touch-none">
-                <Image 
+                {productDetails.defaultProductVariant?.images[0]?.lqip && <Image
                     className="object-cover object-center opacity-50"
                     fill
                     src={productDetails.defaultProductVariant?.images[0]?.lqip}
                     alt="Image Background"
-                />
+                />}
                 <div className="relative z-10 w-screen h-full">
-                    <Image 
-                        placeholder="blur"
-                        blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
+                    <Image
+                        {...blurProps(productDetails.defaultProductVariant?.images[0]?.lqip)}
                         className="object-contain shadow-lg"
                         fill
                         src={productDetails.defaultProductVariant?.images[0]?.url}
@@ -193,11 +204,10 @@ export const ProductInfo = ({}: Props) => {
                                 {/* Product Image Header */}
                                 <div className="w-full h-80 relative overflow-hidden">
                                     <Image
-                                        placeholder="blur"
-                                        blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
+                                        {...blurProps(productDetails.defaultProductVariant?.images[0]?.lqip)}
                                         className="object-cover"
                                         fill
-                                        src={productDetails.defaultProductVariant?.images[0]?.url}
+                                        src={productDetails.defaultProductVariant?.images[0]?.url || '/placeholder.png'}
                                         alt="Product Image"
                                         onClick={() => {
                                             setFullImageView(true)
@@ -246,7 +256,7 @@ export const ProductInfo = ({}: Props) => {
                                             </summary>
                                             
                                             <div className="pb-5 text-gray-600 leading-relaxed text-sm duration-300">
-                                                -
+                                                {(item === "Product Description" && productDetails.description) || '-'}
                                             </div>
                                         </details>
                                     ))}
@@ -262,7 +272,8 @@ export const ProductInfo = ({}: Props) => {
                                                 } Available`}
                                             </p>
                                         </div>
-                                        <div className="w-fit h-fit">
+                                        {/* catalogue (Supabase) brands have no logo or vendor page */}
+                                        {productDetails.vendor?.logo && <div className="w-fit h-fit">
                                             <Image
                                                 placeholder="blur"
                                                 blurDataURL="/placeholder.png"
@@ -275,7 +286,7 @@ export const ProductInfo = ({}: Props) => {
                                                     router.push(`/vendor/${productDetails.vendor._id}`);
                                                 }}
                                             />
-                                        </div>
+                                        </div>}
                                     </div>
 
                                     {/* More from Vendor */}
@@ -292,11 +303,10 @@ export const ProductInfo = ({}: Props) => {
                                                 >
                                                     <div className="w-full h-56 relative overflow-hidden rounded-xl">
                                                         <Image
-                                                            placeholder="blur"
-                                                            blurDataURL={productDetails.defaultProductVariant?.images[0]?.lqip}
+                                                            {...blurProps(productDetails.defaultProductVariant?.images[0]?.lqip)}
                                                             className="object-cover"
                                                             fill
-                                                            src={item.defaultProductVariant?.images[0]?.url}
+                                                            src={item.defaultProductVariant?.images[0]?.url || '/placeholder.png'}
                                                             alt="Product Image"
                                                             sizes="(max-width: 768px) 200px, 200px"
                                                             quality={65}
