@@ -9,6 +9,7 @@ import { Header } from '@/components/Header';
 import { FullScreenLoader } from '@/components/FullScreenLoader';
 import { ProductInfo } from '@/components/ProductInfo';
 import { CategoryProduct } from '@/types';
+import { fetchCatalogueProducts } from '@/lib/catalogue';
 
 
 export default function CategoryProductsPage() {
@@ -27,7 +28,19 @@ export default function CategoryProductsPage() {
       }
 
       try {
-        const productsData = await sanityClient.fetch<CategoryProduct[]>(
+        const categoryTitle = (await sanityClient.fetch<string | null>(
+          `*[_type == "category" && slug.current == $slug][0].title`,
+          { slug }
+        ))?.trim() ?? '';
+
+        // Products imported into Supabase (e.g. the ASOS import). A failure
+        // here must not hide the Sanity products, so it only logs.
+        const catalogueRequest = fetchCatalogueProducts(slug, categoryTitle).catch((error) => {
+          console.error('Error fetching catalogue products:', error);
+          return [] as CategoryProduct[];
+        });
+
+        const sanityProducts = await sanityClient.fetch<CategoryProduct[]>(
           `*[_type == "product" && category->slug.current == $slug]{
             _id,
             title,
@@ -43,7 +56,7 @@ export default function CategoryProductsPage() {
           { slug }
         );
 
-        setProducts(productsData);
+        setProducts([...sanityProducts, ...(await catalogueRequest)]);
       } catch (error) {
         console.error('Error fetching products:', error);
         setProducts([]);
@@ -78,8 +91,9 @@ export default function CategoryProductsPage() {
               >
                 <div className="relative aspect-[1/1.4] overflow-hidden rounded-2xl">
                   <Image
-                    placeholder="blur"
-                    blurDataURL={product.defaultProductVariant?.images[0]?.lqip}
+                    // Supabase (catalogue) products have no blur preview
+                    placeholder={product.defaultProductVariant?.images[0]?.lqip ? 'blur' : 'empty'}
+                    blurDataURL={product.defaultProductVariant?.images[0]?.lqip || undefined}
                     className="object-cover"
                     fill
                     src={product.defaultProductVariant?.images[0]?.url || '/placeholder.png'}
