@@ -67,17 +67,24 @@ function toNaira(price: number, currency: string | null): number {
 
 /**
  * ASOS image links ask for a 1926px-wide image. Images are no longer resized
- * by Vercel (next.config.ts `unoptimized`), so ask ASOS for a smaller one.
+ * by Vercel (next.config.ts `unoptimized`), so lists ask ASOS for a 640px one.
+ * ASOS only accepts its own size presets: $n_640w$ and the original $n_1920w$
+ * work, while 828 and 1080 answer 400 Bad Request (tested 24 Nov 2026). So
+ * the only choices are 'small' (640px) and 'large' (the original link).
+ *
  * ASOS does not answer Nigerian connections, so the image is loaded through
  * our own proxy (app/api/catalogue-image/route.ts), which Vercel caches.
  */
-export function catalogueImage(url: string, width = 640): string {
+export function catalogueImage(url: string, size: 'small' | 'large' = 'small'): string {
     if (!url.includes('asos-media.com')) return url
-    const sized = url
-        .replace(/\$n_\d+w\$/, `$n_${width}w$`)
-        .replace(/([?&])wid=\d+/, `$1wid=${width}`)
+    const sized = size === 'large' ? url : url
+        .replace(/\$n_\d+w\$/, '$n_640w$')
+        .replace(/([?&])wid=\d+/, '$1wid=640')
     return `/api/catalogue-image?src=${encodeURIComponent(sized)}`
 }
+
+/** The shop name to show for a catalogue product: the channel ("ASOS"), not the brand. */
+const channelOf = (row: CatalogueRow) => row.channel_name ?? row.brand ?? 'ASOS'
 
 type CatalogueRow = {
     id: string
@@ -93,9 +100,9 @@ type CatalogueRow = {
 
 const COLUMNS = 'id,title,brand,channel_name,description,price,currency,image_url,images'
 
-function toProduct(row: CatalogueRow, imageWidth: number) {
+function toProduct(row: CatalogueRow, imageSize: 'small' | 'large') {
     const images = (row.images?.length ? row.images : row.image_url ? [row.image_url] : [])
-        .map((url) => ({ url: catalogueImage(url, imageWidth), lqip: '' }))
+        .map((url) => ({ url: catalogueImage(url, imageSize), lqip: '' }))
     return {
         _id: `${CATALOGUE_ID_PREFIX}${row.id}`,
         title: row.title,
@@ -117,7 +124,7 @@ export async function fetchCatalogueProducts(slug: string, categoryTitle: string
     if (error) throw error
     return (data as CatalogueRow[])
         .filter((row) => catalogueCategory(row.title) === slug)
-        .map((row) => ({ ...toProduct(row, 640), categoryTitle }))
+        .map((row) => ({ ...toProduct(row, 'small'), categoryTitle }))
 }
 
 /**
@@ -140,16 +147,16 @@ export async function fetchCatalogueFeed(slugs: string[] | null): Promise<HomePr
             return slug !== null && slugs.includes(slug)
         })
         .map((row) => ({
-            ...toProduct(row, 828),
+            ...toProduct(row, 'small'),
             slug: { current: '', title: row.title },
-            // no logo or vendor page: the feed card shows the brand's initial
-            vendor: { title: row.brand ?? row.channel_name ?? 'ASOS', _id: '', logo: null },
+            // no logo or vendor page: the feed card shows the channel's initial
+            vendor: { title: channelOf(row), _id: '', logo: null },
         }) as unknown as HomeProduct)
 }
 
 /**
  * One catalogue product in the same shape the product popup gets from
- * Sanity, with up to 10 more products of the same brand.
+ * Sanity, with up to 10 more products from the same channel (e.g. ASOS).
  */
 export async function fetchCatalogueProduct(id: string) {
     const supabase = createClient()
@@ -161,20 +168,22 @@ export async function fetchCatalogueProduct(id: string) {
     if (error) throw error
     if (!row) return null
 
-    const brand = row.brand ?? row.channel_name ?? 'ASOS'
-    const { data: more, count } = await supabase
+    // "More from this vendor" = more from the same channel (ASOS)
+    const channel = channelOf(row)
+    let moreQuery = supabase
         .from('catalogue_products')
         .select(COLUMNS, { count: 'exact' })
-        .eq('brand', brand)
         .neq('id', row.id)
         .not('price', 'is', null)
         .limit(10)
+    moreQuery = row.channel_name ? moreQuery.eq('channel_name', row.channel_name) : moreQuery.eq('brand', channel)
+    const { data: more, count } = await moreQuery
 
     return {
-        ...toProduct(row, 1080),
+        ...toProduct(row, 'large'),
         description: row.description,
-        vendor: { title: brand, logo: null, _id: null },
-        moreFromVendor: ((more ?? []) as CatalogueRow[]).map((r) => toProduct(r, 400)),
+        vendor: { title: channel, logo: null, _id: null },
+        moreFromVendor: ((more ?? []) as CatalogueRow[]).map((r) => toProduct(r, 'small')),
         vendorProductCount: count ?? 0,
     }
 }
