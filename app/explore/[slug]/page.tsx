@@ -6,6 +6,7 @@ import { sanityClient } from '@/lib/sanity/client';
 import { Header } from '@/components/Header';
 import { FullScreenLoader } from '@/components/FullScreenLoader';
 import { ChevronRightIcon } from '@heroicons/react/20/solid';
+import { fetchCatalogueCategories } from '@/lib/catalogue';
 
 interface Category {
     _id: string;
@@ -32,6 +33,10 @@ export default function CategoryPage() {
       if (!slug) return;
 
       try {
+        // Sub-categories that only exist in Supabase (catalogue_categories)
+        // are listed after Sanity's own. They never have children.
+        const catalogueRequest = fetchCatalogueCategories(slug);
+
         const parentCategory = await sanityClient.fetch<Category>(
           `*[_type == 'category' && slug.current == $slug][0]{
             _id,
@@ -45,7 +50,17 @@ export default function CategoryPage() {
           }`,
           { slug }
         );
-        setCategory(parentCategory)
+        const catalogueChildren = (await catalogueRequest).map((child) => ({
+          _id: `catalogue-category:${child.slug}`,
+          title: child.title,
+          slug: child.slug,
+          hasChildren: false,
+        }));
+        setCategory(
+          parentCategory
+            ? { ...parentCategory, children: [...(parentCategory.children ?? []), ...catalogueChildren] }
+            : parentCategory
+        )
       } catch (error) {
         console.error('Error fetching subcategories:', error);
       } finally {
