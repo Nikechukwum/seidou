@@ -9,7 +9,7 @@ import { Header } from '@/components/Header';
 import { FullScreenLoader } from '@/components/FullScreenLoader';
 import { ProductInfo } from '@/components/ProductInfo';
 import { CategoryProduct } from '@/types';
-import { fetchCatalogueProducts } from '@/lib/catalogue';
+import { fetchCatalogueCategories, fetchCatalogueProducts } from '@/lib/catalogue';
 
 
 export default function CategoryProductsPage() {
@@ -28,10 +28,14 @@ export default function CategoryProductsPage() {
       }
 
       try {
+        // Sanity's category, or else one that only exists in Supabase
+        // (catalogue_categories, e.g. Short Sleeve Shirts).
         const categoryTitle = (await sanityClient.fetch<string | null>(
           `*[_type == "category" && slug.current == $slug][0].title`,
           { slug }
-        ))?.trim() ?? '';
+        ))?.trim()
+          || (await fetchCatalogueCategories()).find((category) => category.slug === slug)?.title
+          || '';
 
         // Products imported into Supabase (e.g. the ASOS import). A failure
         // here must not hide the Sanity products, so it only logs.

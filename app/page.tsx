@@ -16,7 +16,7 @@ import { appendToFeed, clearFeed, resetFeed, setHasMore, setLastId, setActiveFil
 import { SmallLoader } from "@/components/SmallLoader";
 import useAuth from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
-import { fetchCatalogueFeed, isCatalogueId } from "@/lib/catalogue";
+import { fetchCatalogueCategories, fetchCatalogueFeed, isCatalogueId } from "@/lib/catalogue";
 
 export default function Home() {
   const dispatch = useDispatch();
@@ -83,6 +83,17 @@ export default function Home() {
           acc[category.slug] = (category.children || []).map((child) => child.slug);
           return acc;
         }, {} as Record<string, string[]>);
+
+        // Categories that only exist in Supabase (catalogue_categories) join
+        // the tree under their parent, so a tab such as "Men's Tops" also
+        // shows the imported products in "Short Sleeve Shirts".
+        for (const extra of await fetchCatalogueCategories()) {
+          nextCategoryTitles[extra.slug] = extra.title;
+          nextCategoryTree[extra.slug] ??= [];
+          if (extra.parent_slug) {
+            nextCategoryTree[extra.parent_slug] = [...(nextCategoryTree[extra.parent_slug] ?? []), extra.slug];
+          }
+        }
 
         setCategoryTitles(nextCategoryTitles);
         setCategoryTree(nextCategoryTree);

@@ -5,7 +5,9 @@
 // ----------------------------------------------------------------------------
 // The import's own `category` column holds the brand or the ASOS page title
 // ("Mango", "Shop Women's ASOS New In ..."), not a shop category. So each
-// product is placed in a Sanity category by keywords in its title (RULES).
+// product is placed in a category by keywords in its title (RULES, or
+// MEN_RULES for men's products). Categories are Sanity's, plus a few that only
+// exist in Supabase (table catalogue_categories, see fetchCatalogueCategories).
 // A product that matches no rule, or has no price, is not shown.
 //
 // Catalogue ids are prefixed with CATALOGUE_ID_PREFIX so the product popup
@@ -17,6 +19,13 @@ import type { CategoryProduct, HomeProduct } from '@/types'
 
 /** Naira per British pound used to show GBP prices in ₦. Change it here only. */
 export const GBP_TO_NGN = 2000
+
+/**
+ * Naira per US dollar used to show USD prices in ₦ (SHEIN, and ASOS pages
+ * saved from the US site). Mid-market rate on 24 Nov 2026 was ₦1,357.64
+ * (CBN ₦1,393.62); rounded like GBP_TO_NGN. Change it here only.
+ */
+export const USD_TO_NGN = 1360
 
 export const CATALOGUE_ID_PREFIX = 'cat_'
 
@@ -32,8 +41,16 @@ export const isCatalogueId = (id: string | null | undefined): id is string =>
 const RULES: [slug: string | null, pattern: RegExp][] = [
     ['dresses', /\bdress\b/i],
     ['skirts', /\b(skirt|skort)\b/i],
-    // accessories with no women's category yet (scarves, belts, bras, ...)
-    [null, /(?<!with )\b(scarf|gloves|headband|snood|bra|nipple covers|belt|laptop case)( in\b|$)/i],
+    // coats-and-jackets is a stand-alone Sanity category, used for men too
+    ['coats-and-jackets', /\b(jacket|coat|blazer|puffer|parka|gilet)\b/i],
+    // Accessories. Their categories live in Supabase (catalogue_categories),
+    // not Sanity. "( in\b|$)" keeps "scarf detail ..." tops out of scarves.
+    ['jumpsuits', /\b(jumpsuit|playsuit|unitard)\b/i],
+    ['scarves-gloves-headbands', /(?<!with )\b(scarf|gloves|headband|snood)( in\b|$)/i],
+    ['lingerie', /(?<!with )\b(bra|nipple covers|bralette|briefs|thong)( in\b|$)/i],
+    ['women-s-belts', /(?<!with )\bbelt( in\b|$)/i],
+    // no category yet
+    [null, /\blaptop case\b/i],
     ['jeans-j', /\bjeans?\b/i],
     ['shorts', /\b(shorts|mini short|bermuda)\b/i],
     ['pants', /\b(trousers?|flares|leggings)\b/i],
@@ -51,18 +68,52 @@ const RULES: [slug: string | null, pattern: RegExp][] = [
     ['shirts-and-blouses', /\b(shirt|blouse)\b/i],
 ]
 
+/**
+ * Men's products (e.g. the SHEIN men's pages) go into the men's Sanity
+ * categories instead. Same idea as RULES: first match wins, so "polo shirt"
+ * hits polo-shirts before shirts, and "cargo shorts" cargo-shorts before
+ * shorts. `null` = not shown anywhere.
+ */
+const MEN_RULES: [slug: string | null, pattern: RegExp][] = [
+    ['coats-and-jackets', /\b(jacket|coat|blazer|bomber|parka|puffer|windbreaker|gilet|overshirt)\b/i],
+    ['hoodies-and-sweatshirts', /\b(hoodie|hooded|sweatshirt|pullover)\b/i],
+    ['jumpers-and-knitwears', /\b(jumper|cardigan|sweater|knit|knitted|knitwear)\b/i],
+    ['polo-shirts', /\bpolo\b/i],
+    ['t-shirts', /\b(t-shirts?|tees?|tshirts?|tank tops?|vests?)\b/i],
+    ['oxford-shirts', /\boxford\b/i],
+    ['jorts', /\b(jorts?|denim shorts)\b/i],
+    ['cargo-shorts', /\bcargo shorts?\b/i],
+    ['chinos-shorts', /\bshorts\b/i],
+    ['cargo-trousers', /\bcargo (trousers|pants)\b/i],
+    ['jeans3', /\bjeans?\b/i],
+    ['trousers-and-chinos', /\b(trousers?|chinos?|pants|joggers?|sweatpants)\b/i],
+    ['sneakers', /\b(sneakers?|trainers?|running shoes?)\b/i],
+    ['loafers', /\bloafers?\b/i],
+    ['brogues', /\bbrogues?\b/i],
+    ['sliders', /\b(sliders?|slides|flip[- ]flops?|slippers?)\b/i],
+    ['belts', /\bbelt\b/i],
+    ['sunglasses', /\bsunglasses\b/i],
+    ['long-sleeve-shirts', /\blong[- ]sleeves?\b.*\bshirt\b|\bshirt\b.*\blong[- ]sleeves?\b/i],
+    // Supabase category (catalogue_categories): every other men's shirt
+    ['short-sleeve-shirts', /\bshirt\b/i],
+]
+
+/** "Men's", "Mens", "Man", "Homme" (and SHEIN's Manfinity), but not "Women's". */
+const MEN_PATTERN = /\b(men'?s?|man|male|homme|manfinity)\b/i
+
 /** The Sanity category slug a catalogue product belongs to, or null. */
 export function catalogueCategory(title: string): string | null {
-    for (const [slug, pattern] of RULES) {
+    const rules = MEN_PATTERN.test(title) && !/\bwom[ae]n/i.test(title) ? MEN_RULES : RULES
+    for (const [slug, pattern] of rules) {
         if (pattern.test(title)) return slug
     }
     return null
 }
 
-/** Price in ₦, rounded to the nearest ₦100. */
+/** Price in ₦, rounded to the nearest ₦100. NGN (Temu Nigeria) is already naira. */
 function toNaira(price: number, currency: string | null): number {
-    const naira = currency === 'GBP' ? price * GBP_TO_NGN : price
-    return Math.round(naira / 100) * 100
+    const rate = currency === 'GBP' ? GBP_TO_NGN : currency === 'USD' ? USD_TO_NGN : 1
+    return Math.round((price * rate) / 100) * 100
 }
 
 /**
@@ -186,4 +237,32 @@ export async function fetchCatalogueProduct(id: string) {
         moreFromVendor: ((more ?? []) as CatalogueRow[]).map((r) => toProduct(r, 'small')),
         vendorProductCount: count ?? 0,
     }
+}
+
+/** A shop category that only exists in Supabase (see supabase/catalogue_categories.sql). */
+export type CatalogueCategory = {
+    slug: string
+    title: string
+    /** A Sanity category slug, or another catalogue category's slug. */
+    parent_slug: string | null
+}
+
+/**
+ * The Supabase-only categories, optionally just those under `parentSlug`.
+ * Returns [] if the table is missing or cannot be read, so pages that mix
+ * these with Sanity categories keep working.
+ */
+export async function fetchCatalogueCategories(parentSlug?: string): Promise<CatalogueCategory[]> {
+    let query = createClient()
+        .from('catalogue_categories')
+        .select('slug,title,parent_slug')
+        .order('sort_order')
+        .order('title')
+    if (parentSlug) query = query.eq('parent_slug', parentSlug)
+    const { data, error } = await query
+    if (error) {
+        console.error('Error fetching catalogue categories:', error)
+        return []
+    }
+    return (data ?? []) as CatalogueCategory[]
 }
